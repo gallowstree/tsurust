@@ -37,9 +37,15 @@ pub mod board {
         pub fn a(&self) -> TileEndpoint { self.a }
         pub fn b(&self) -> TileEndpoint { self.b }
 
+        /// Offset the endpoints by 2 or -2 depending on direction. We convert to signed integers to operate and then back to unsigned.
         pub fn rotated(&self, clockwise: bool) -> Segment {
-            let offset = if clockwise {6} else {2 /*actually -2 but % is not equivalent to mod for negative numbers*/};
-            Segment::new((self.a + offset) % 8, (self.b + offset) % 8 )
+            let num_endpoints = 8;
+            let offset:i8 = if clockwise { -2 } else { 2 };
+
+            // `(x+offset) % num_endpoints` but % is not equal to mod for negatives
+            let (a,b) = ( self.a as i8 + offset, self.b as i8 + offset );
+            let (a,b) = (a.rem_euclid(num_endpoints) as TileEndpoint, b.rem_euclid(num_endpoints) as TileEndpoint);
+            Segment::new(a, b)
         }
     }
 
@@ -96,4 +102,5 @@ mod tests {
         assert_eq!(tile.rotated(false), Tile::new([seg(1,7), seg(2,3), seg(0,4), seg(5,6)]));
         assert_eq!(tile.rotated(false).rotated(false).rotated(false).rotated(false),tile);
     }
+
 }
