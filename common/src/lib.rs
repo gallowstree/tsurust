@@ -94,6 +94,6 @@ mod tests {
         let tile = Tile::new([seg(7,5), seg(1,0), seg(6,2), seg(3,4)]);
 
         assert_eq!(tile.rotated(false), Tile::new([seg(1,7), seg(2,3), seg(0,4), seg(5,6)]));
-        assert_eq!(tile.rotated(true).rotated(true).rotated(true).rotated(true),tile);
+        assert_eq!(tile.rotated(false).rotated(false).rotated(false).rotated(false),tile);
     }
 }
