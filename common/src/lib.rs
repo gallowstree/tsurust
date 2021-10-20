@@ -29,14 +29,6 @@ pub mod board {
         }
     }
 
-    //--//
-
-    #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-    pub struct CellCoord {
-        pub row: usize,
-        pub col: usize
-    }
-
     #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord)]
     pub struct Segment {
         a: TileEndpoint,
@@ -62,6 +54,11 @@ pub mod board {
 
     //--//
 
+    #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+    pub struct CellCoord {
+        pub row: usize,
+        pub col: usize
+    }
 
     #[derive(Debug, Copy, Clone, PartialEq, Eq)]
     pub struct PlayerPos {
@@ -99,15 +96,12 @@ pub mod board {
         pub cell: CellCoord
     }
 
-    // -- //
-
     pub struct BoardState {
         //setup: Vec<SetupTurn|Player>  or something reflecting initial conditions?
         history: Vec<Move>,
         alive_players: Vec<Player>,
         //deck
     }
-
 
     impl BoardState {
         pub fn tile_at(&self, pos: CellCoord) -> Option<&Tile> {
