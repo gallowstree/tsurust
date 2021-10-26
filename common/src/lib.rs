@@ -1,25 +1,46 @@
+/// Code representing basic building blocks of tsuro's game logic
+
+/// # The Board
+/// The board consists of a square grid of cells. Players can place tiles inside the cell they occupy.
+/// Each cell has 8 entry points (2 on each side) identified by a number from 0 to 7.
+/// Placing a `Tile` inside a cell connects its entry points with the ones on neighboring cells according
+/// to the path segments inside the tile. Players always follow the path in front of them to the end after
+/// a tile has been placed.
+///
+///  ┌ 5 ── 4 ┐
+///  6        3   All cell entry points with their ID.
+///  │        │
+///  7        2
+///  └ 0 ── 1 ┘
+/// Todo: rename references to "endpoint" to say "entry" or "entry point"
 pub mod board {
     use arrayvec::ArrayVec;
     use std::cmp::{min, max};
+
+    /// 6 rows & 6 cols
     pub const BOARD_LENGTH:usize = 6;
+    /// max valid row/col index
     pub const MAX:usize = BOARD_LENGTH - 1;
+    /// min valid row/col index
     pub const MIN:usize = 0;
 
     pub type TileEndpoint = usize;
 
     // -- //
-
+    ///  We represent a `Tile` as a collection of four `Segment`s, which are just pairs of entry points connected by each segment.
     #[derive(Debug, Copy, Clone, PartialEq)]
     pub struct Tile {
         pub segments: [Segment; 4]
     }
 
     impl Tile {
+        /// Creates a new `Tile`. The segments are always sorted so there is only one way of representing a given tile.
         pub fn new(mut segments: [Segment; 4]) -> Tile {
             segments.sort();
             Tile {segments}
         }
 
+        /// Returns a new `Tile` with the same shape but having the segments rotated according to the `clockwise` param.
         pub fn rotated(&self, clockwise: bool) -> Tile {
             let rotated_segments: ArrayVec<Segment, 4> = self.segments
                 .into_iter()
@@ -53,13 +74,14 @@ pub mod board {
     }
 
     //--//
-
+    /// A position inside the board's grid
     #[derive(Debug, Copy, Clone, PartialEq, Eq)]
     pub struct CellCoord {
         pub row: usize,
         pub col: usize
     }
 
+    /// The position of a `Player` - consists of the cell's coordinates and the current entry point id.
     #[derive(Debug, Copy, Clone, PartialEq, Eq)]
     pub struct PlayerPos {
         pub cell: CellCoord,
@@ -71,6 +93,7 @@ pub mod board {
             PlayerPos { cell: CellCoord {row, col}, endpoint: entry}
         }
 
+        /// Is the player on the outer edge of the board? This means the player died or is at a starting position.
         pub fn on_edge(&self) -> bool {
             match (self.endpoint, self.cell.row, self.cell.col) {
                 (0 | 1, row, _) => row == MAX,
@@ -87,23 +110,27 @@ pub mod board {
     pub struct Player {
         pub pos: PlayerPos,
         // name, id or sumthing
-        // hand
+        // hand: Vec<Tile>
         // dragon: bool?
     }
 
+    /// Represents a Player's move: which tile was placed where
     pub struct Move {
         pub tile: Tile,
-        pub cell: CellCoord
+        pub cell: CellCoord,
+        // player id
     }
 
-    pub struct BoardState {
-        //setup: Vec<SetupTurn|Player>  or something reflecting initial conditions?
+    /// Board state: all the moves that have been played and the current status/positions of players
+    pub struct Board {
+        //setup: Vec<Player> something reflecting initial conditions?
         history: Vec<Move>,
         alive_players: Vec<Player>,
         //deck
     }
 
-    impl BoardState {
+    impl Board {
+        /// Get the `Tile` inside the specified cell, if there is one.
         pub fn tile_at(&self, pos: CellCoord) -> Option<&Tile> {
             self.history
                 .iter()
@@ -113,8 +140,9 @@ pub mod board {
     }
 
     // -- //
-    // server code
-    impl BoardState {
+    /// the following is server code, move it to the server module
+    impl Board {
+        /// Place the `Tile` at the given position and calculate the new Board state
         fn process_move(&mut self, mov:Move) {
             self.history.push(mov);
 
@@ -125,8 +153,9 @@ pub mod board {
             }
         }
 
+        /// Returns the final position of a player starting at the given position and following the path of the given `Tile`
         fn follow_to_the_end(&self, tile:&Tile, start:&PlayerPos) -> PlayerPos {
-            let next_pos = BoardState::next_pos(tile, start);
+            let next_pos = Board::next_pos(tile, start);
             match self.tile_at(next_pos.cell) {
                 _ if next_pos.on_edge() => next_pos,
                 None => next_pos,
@@ -134,12 +163,13 @@ pub mod board {
             }
         }
 
+        /// Returns the immediate next position of a player starting at the given position and following the path of the given `Tile`
         fn next_pos(tile:&Tile, from: &PlayerPos) -> PlayerPos {
             let tile_exit = tile.segments.iter()
                 .find(|&seg| seg.a() == from.endpoint || seg.b() == from.endpoint)
                 .map(|seg| if seg.a() != from.endpoint {seg.a()} else {seg.b()})
                 .expect("there is an invalid tile") as TileEndpoint;
-            let neighbor_entry = BoardState::neighboring_entry(tile_exit);
+            let neighbor_entry = Board::neighboring_entry(tile_exit);
 
             match (tile_exit, from.cell.row, from.cell.col) {
                 // player reached the end of the board, don't increase row/col
@@ -147,7 +177,7 @@ pub mod board {
                 (2 | 3, row, col) if col == MAX => PlayerPos::new(row, col, tile_exit),
                 (4 | 5, row, col) if row == MIN => PlayerPos::new(row, col, tile_exit),
                 (6 | 7, row, col) if col == MIN => PlayerPos::new(row, col, tile_exit),
-                // player is inside the board
+                // player is inside the board, they move to the next row/col and the neighboring cell's entry adjacent to the exit point
                 (0 | 1, row, col) => PlayerPos::new(row + 1, col, neighbor_entry),
                 (2 | 3, row, col) => PlayerPos::new(row, col + 1, neighbor_entry),
                 (4 | 5, row, col) => PlayerPos::new(row - 1, col, neighbor_entry),
@@ -156,6 +186,7 @@ pub mod board {
             }
         }
 
+        /// Returns the entry point connected to the given entry point in the neighboring cell
         fn neighboring_entry(exit:TileEndpoint) -> TileEndpoint {
             (if exit % 2 == 0 {exit + 5} else {exit + 3}) % 8
         }
@@ -166,23 +197,23 @@ pub mod board {
     }
 
     mod tests {
-        use crate::board::{BoardState, Tile, PlayerPos, seg};
+        use crate::board::{Board, Tile, PlayerPos, seg};
 
         #[test]
         fn test_next_pos_edge() {
             let tile = Tile::new([seg(5,3), seg(6,7), seg(4,0), seg(1,2)]);
 
             let from = PlayerPos::new(0,0,0);
-            assert_eq!(BoardState::next_pos(&tile, &from), PlayerPos::new(0,0,4));
+            assert_eq!(Board::next_pos(&tile, &from), PlayerPos::new(0, 0, 4));
             let from = PlayerPos::new(0,0,6);
-            assert_eq!(BoardState::next_pos(&tile, &from), PlayerPos::new(0,0,7));
+            assert_eq!(Board::next_pos(&tile, &from), PlayerPos::new(0, 0, 7));
             let from = PlayerPos::new(0,0,7);
-            assert_eq!(BoardState::next_pos(&tile, &from), PlayerPos::new(0,0,6));
+            assert_eq!(Board::next_pos(&tile, &from), PlayerPos::new(0, 0, 6));
 
             let from = PlayerPos::new(5,5,4);
-            assert_eq!(BoardState::next_pos(&tile, &from), PlayerPos::new(5,5,0));
+            assert_eq!(Board::next_pos(&tile, &from), PlayerPos::new(5, 5, 0));
             let from = PlayerPos::new(5,5,1);
-            assert_eq!(BoardState::next_pos(&tile, &from), PlayerPos::new(5,5,2));
+            assert_eq!(Board::next_pos(&tile, &from), PlayerPos::new(5, 5, 2));
         }
 
         #[test]
@@ -190,28 +221,28 @@ pub mod board {
             let tile = Tile::new([seg(5,3), seg(6,7), seg(4,0), seg(1,2)]);
 
             let from = PlayerPos::new(0,0,1);
-            assert_eq!(BoardState::next_pos(&tile, &from), PlayerPos::new(0,1,7));
+            assert_eq!(Board::next_pos(&tile, &from), PlayerPos::new(0, 1, 7));
         }
 
         #[test]
         fn test_neighboring_entry() {
-            assert_eq!(BoardState::neighboring_entry(0), 5);
-            assert_eq!(BoardState::neighboring_entry(1), 4);
-            assert_eq!(BoardState::neighboring_entry(2), 7);
-            assert_eq!(BoardState::neighboring_entry(3), 6);
-            assert_eq!(BoardState::neighboring_entry(4), 1);
-            assert_eq!(BoardState::neighboring_entry(5), 0);
-            assert_eq!(BoardState::neighboring_entry(6), 3);
-            assert_eq!(BoardState::neighboring_entry(7), 2);
+            assert_eq!(Board::neighboring_entry(0), 5);
+            assert_eq!(Board::neighboring_entry(1), 4);
+            assert_eq!(Board::neighboring_entry(2), 7);
+            assert_eq!(Board::neighboring_entry(3), 6);
+            assert_eq!(Board::neighboring_entry(4), 1);
+            assert_eq!(Board::neighboring_entry(5), 0);
+            assert_eq!(Board::neighboring_entry(6), 3);
+            assert_eq!(Board::neighboring_entry(7), 2);
 
-            assert_eq!(BoardState::neighboring_entry(5), 0);
-            assert_eq!(BoardState::neighboring_entry(4), 1);
-            assert_eq!(BoardState::neighboring_entry(7), 2);
-            assert_eq!(BoardState::neighboring_entry(6), 3);
-            assert_eq!(BoardState::neighboring_entry(1), 4);
-            assert_eq!(BoardState::neighboring_entry(0), 5);
-            assert_eq!(BoardState::neighboring_entry(3), 6);
-            assert_eq!(BoardState::neighboring_entry(2), 7);
+            assert_eq!(Board::neighboring_entry(5), 0);
+            assert_eq!(Board::neighboring_entry(4), 1);
+            assert_eq!(Board::neighboring_entry(7), 2);
+            assert_eq!(Board::neighboring_entry(6), 3);
+            assert_eq!(Board::neighboring_entry(1), 4);
+            assert_eq!(Board::neighboring_entry(0), 5);
+            assert_eq!(Board::neighboring_entry(3), 6);
+            assert_eq!(Board::neighboring_entry(2), 7);
         }
     }
 
