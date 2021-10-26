@@ -149,6 +149,7 @@ pub mod board {
             for player in &self.alive_players {
                 if let Some(tile) = self.tile_at(player.pos.cell) {
                     &self.follow_to_the_end(tile, &player.pos);
+                    //todo: update the position of the players
                 }
             }
         }
