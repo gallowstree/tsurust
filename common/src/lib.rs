@@ -16,3 +16,4 @@
 
 mod board;
 mod game;
+mod deck;
