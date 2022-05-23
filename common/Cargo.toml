@@ -1,5 +1,5 @@
 [package]
-name = "tsurust-common"
+name = "tsurust_common"
 version = "0.1.0"
 edition = "2021"
 

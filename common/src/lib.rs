@@ -14,6 +14,6 @@
 /// Todo: rename references to "endpoint" to say "entry" or "entry point"
 
 
-mod board;
-mod game;
+pub mod board;
+pub mod game;
 mod deck;
