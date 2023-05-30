@@ -3,10 +3,6 @@ use tsurust_common::board::*;
 use egui::{emath::{RectTransform, Rot2}, vec2, Color32, Frame, Pos2, Rect, Sense, Stroke, Vec2, Widget, pos2};
 use eframe::egui::{Ui, Response};
 
-const ONE_THIRD: f32 = 1.0/3.0;
-const ONE: f32 = 1.0;
-const SEGMENT_TAIL_LENGTH: f32 = 1.0/6.0;
-
 pub struct TileButton {
     tile: Tile,
     selected: bool
@@ -26,7 +22,7 @@ impl Widget for TileButton {
             //ui.ctx().request_repaint();
             let painter = ui.painter();
 
-            // normalize painter coordinatesfrom [0,0] to [1,1]
+            // normalize painter coordinatesfrom [0,0] to [3,3]
             let painter_proportions = response.rect.square_proportions();
             let to_screen = RectTransform::from_to(
                 Rect::from_min_size(Pos2::ZERO,3.*painter_proportions),
@@ -45,9 +41,7 @@ impl Widget for TileButton {
                         let points = line.map(|point| to_screen.transform_pos(point));
                         painter.line_segment(points, stroke);
                     });
-
                 });
-
         });
 
         response
