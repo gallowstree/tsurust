@@ -22,8 +22,8 @@ pub struct Tile {
 
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub struct Segment {
-    a: TileEndpoint,
-    b: TileEndpoint
+    pub a: TileEndpoint,
+    pub b: TileEndpoint
 }
 
 /// Game data about a player

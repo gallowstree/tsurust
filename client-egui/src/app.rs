@@ -1,5 +1,6 @@
 use crate::tile_button::TileButton;
 use eframe::egui::Widget;
+use tsurust_common::board::*;
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -74,14 +75,13 @@ impl eframe::App for TemplateApp {
                 ui.text_edit_singleline(label);
             });
 
-            ui.add(TileButton::new());
+            ui.add(TileButton::new(Tile::new([seg(0,3), seg(1,2), seg(4,6), seg(5,7)])));
 
             ui.add(egui::Slider::new(value, 0.0..=10.0).text("value"));
             if ui.button("Increment").clicked() {
                 *value += 1.0;
             }
 
-            ui.add(TileButton::new());
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                 ui.horizontal(|ui| {
