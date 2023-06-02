@@ -77,6 +77,7 @@ impl eframe::App for TemplateApp {
                 ui.vertical_centered(|ui| {
                     ui.heading("Bottom Panel");
                 });
+                ui.add(TileButton::new(Tile::new([seg(1,2), seg(3,4), seg(5,6), seg(7,0)])))
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
