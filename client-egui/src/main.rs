@@ -1,8 +1,6 @@
 #![warn(clippy::all, rust_2018_idioms)]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-
-
 use client_egui::TemplateApp;
 
 // When compiling natively:
@@ -12,6 +10,7 @@ fn main() {
     tracing_subscriber::fmt::init();
 
     let native_options = eframe::NativeOptions::default();
+    
     eframe::run_native(
         "eframe template",
         native_options,

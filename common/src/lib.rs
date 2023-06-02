@@ -1,4 +1,3 @@
-
 /// # The Board
 /// The board consists of a square grid of cells.
 /// Each cell has 8 entry points (2 on each side) identified by a number from 0 to 7.
@@ -12,8 +11,6 @@
 ///  7          2
 ///  └ 0 ──── 1 ┘
 /// Todo: rename references to "endpoint" to say "entry" or "entry point"
-
-
 pub mod board;
-pub mod game;
 mod deck;
+pub mod game;
