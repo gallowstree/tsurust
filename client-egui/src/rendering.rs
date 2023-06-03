@@ -1,18 +1,17 @@
-use egui::{Color32, emath::{RectTransform, Rot2}, Frame, Painter, pos2, Pos2, Rect, Sense, Stroke, vec2, Vec2, Widget};
+use egui::{Align2, Color32, emath::{RectTransform, Rot2}, FontId, Frame, Painter, pos2, Pos2, Rect, Sense, Stroke, vec2, Vec2, Widget};
 
 use tsurust_common::board::{Board, Segment, Tile, TileEndpoint};
+
+pub const TRANSPARENT_WHITE: Color32 = Color32::from_rgba_premultiplied(255, 255, 255, 191);
+pub const TRANSPARENT_GOLD: Color32 = Color32::from_rgba_premultiplied(255, 215, 0, 191);
 
 pub fn paint_board(board: &Board, ) {
 
 }
 
-pub fn paint_tile(tile: Tile, rect: Rect, painter: &Painter) {
-    let painter_proportions = rect.square_proportions();
-    let to_screen = RectTransform::from_to(
-        Rect::from_min_size(Pos2::ZERO, 3. * painter_proportions),
-        rect,
-    );
-    let stroke = Stroke::new(2., Color32::from_rgba_premultiplied(255, 255, 255, 191));
+pub fn paint_tile(tile: &Tile, rect: Rect, painter: &Painter) {
+    let to_screen = tile_to_screen_transform(rect);
+    let stroke = Stroke::new(2., TRANSPARENT_WHITE);
 
     tile.segments
         .iter()
@@ -28,6 +27,31 @@ pub fn paint_tile(tile: Tile, rect: Rect, painter: &Painter) {
                     painter.line_segment(points, stroke);
                 });
         });
+}
+
+pub fn paint_tile_button_hoverlay(rect: Rect, painter: &Painter) {
+    let to_screen = tile_to_screen_transform(rect);
+    let font_size = rect.size().x / 7.;
+    painter.rect_stroke(rect, 0.5, Stroke::new(2.0, TRANSPARENT_GOLD));
+
+    let radius = font_size * 0.86;
+    let rotate_cw_pos = to_screen.transform_pos(pos2(3., 1.5));
+    let rotate_ccw_pos = to_screen.transform_pos(pos2(0., 1.5));
+
+    painter.circle_filled(rotate_cw_pos, radius, Color32::BLACK);
+    painter.circle_filled(rotate_ccw_pos, radius, Color32::BLACK);
+
+    painter.text(rotate_cw_pos, Align2::CENTER_CENTER, "⟳", FontId::monospace(font_size), TRANSPARENT_WHITE);
+    painter.text(rotate_ccw_pos, Align2::CENTER_CENTER, "⟲", FontId::monospace(font_size), TRANSPARENT_WHITE);
+}
+
+pub fn tile_to_screen_transform(rect: Rect) -> RectTransform {
+    let painter_proportions = rect.square_proportions();
+
+    RectTransform::from_to(
+        Rect::from_min_size(Pos2::ZERO, 3. * painter_proportions),
+        rect,
+    )
 }
 
 fn segment_tail(index: TileEndpoint) -> [Pos2; 2] {

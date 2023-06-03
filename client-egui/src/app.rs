@@ -1,4 +1,5 @@
 use eframe::egui::Widget;
+use egui::vec2;
 
 use tsurust_common::board::*;
 
@@ -14,6 +15,9 @@ pub struct TemplateApp {
     // this how you opt-out of serialization of a member
     #[serde(skip)]
     value: f32,
+
+    #[serde(skip)]
+    tile: Tile
 }
 
 impl Default for TemplateApp {
@@ -22,6 +26,7 @@ impl Default for TemplateApp {
             // Example stuff:
             label: "Hello World!".to_owned(),
             value: 2.7,
+            tile: Tile::new([seg(0,2), seg(1,4), seg(3,5), seg(6,7)])
         }
     }
 }
@@ -46,7 +51,7 @@ impl eframe::App for TemplateApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        let Self { label, value } = self;
+        let Self { label, value, tile } = self;
 
         egui::TopBottomPanel::top("top_panel")
             .resizable(true)
@@ -77,7 +82,10 @@ impl eframe::App for TemplateApp {
                 ui.vertical_centered(|ui| {
                     ui.heading("Bottom Panel");
                 });
-                ui.add(TileButton::new(Tile::new([seg(1,2), seg(3,4), seg(5,6), seg(7,0)])))
+                ui.horizontal_centered(|ui|{
+                    ui.add_space(20.);
+                    ui.add(TileButton::new(tile));
+                });
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {

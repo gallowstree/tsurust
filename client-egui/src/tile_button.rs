@@ -2,33 +2,43 @@ use eframe::egui::{Response, Ui};
 use egui::{Button, Color32, emath::{RectTransform, Rot2}, Frame, Painter, pos2, Pos2, Rect, Sense, Stroke, vec2, Vec2, Widget};
 
 use tsurust_common::board::*;
-use crate::rendering::paint_tile;
 
+use crate::rendering::{paint_tile, paint_tile_button_hoverlay, tile_to_screen_transform};
 
-pub struct TileButton {
-    tile: Tile,
-    selected: bool,
+pub struct TileButton<'a> {
+    tile: &'a mut Tile,
 }
 
-impl TileButton {
-    pub fn new(tile: Tile) -> Self {
+impl<'a> TileButton<'a> {
+    pub fn new(tile: &'a mut Tile) -> Self {
         Self {
             tile,
-            selected: false,
         }
     }
 }
 
-impl Widget for TileButton {
+impl<'a> Widget for TileButton<'a> {
     fn ui(self, ui: &mut Ui) -> Response {
         let (rect, response) =
             ui.allocate_exact_size(vec2(120.0, 120.0), Sense::click().union(Sense::hover()));
+
+        let to_screen = tile_to_screen_transform(rect);
+        if response.clicked() {
+            if let Some(pos) = response.interact_pointer_pos() {
+                let pos = to_screen.inverse().transform_pos(pos);
+                if pos.x < 1. {
+                    *self.tile = self.tile.rotated(false)
+                } else if pos.x > 2. {
+                    *self.tile = self.tile.rotated(true)
+                }
+            }
+        }
 
         Frame::canvas(ui.style()).show(ui, |ui| {
             let painter = ui.painter();
             let rect = response.rect;
             if response.hovered() {
-                painter.rect_stroke(rect, 0.0, Stroke::new(1.0, Color32::GOLD));
+                paint_tile_button_hoverlay(rect, painter);
             }
             paint_tile(self.tile, Rect::from_center_size(rect.center(), vec2(119., 119.)), painter);
         });
