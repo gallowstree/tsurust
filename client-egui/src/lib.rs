@@ -1,6 +1,7 @@
 #![warn(clippy::all, rust_2018_idioms)]
 
 mod app;
+mod rendering;
 mod tile_button;
 
 pub use app::TemplateApp;
