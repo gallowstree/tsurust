@@ -59,7 +59,7 @@ impl eframe::App for TemplateApp {
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.vertical_centered(|ui| {
-                        ui.heading("Expandable Upper Panel");
+                        ui.heading("Expandable Upper Panel 🐉");
                     });
                 });
             });

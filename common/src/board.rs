@@ -10,7 +10,6 @@ pub const MIN: usize = 0;
 
 pub type TileEndpoint = usize;
 
-// TODO: probably want to change to PlayerName at some point, ID is good enough for now
 pub type PlayerID = usize;
 
 ///  We represent a `Tile` as a collection of four `Segment`s, which are just pairs of entry points connected by each segment.
@@ -29,9 +28,7 @@ pub struct Segment {
 pub struct Player {
     pub id: PlayerID,
     pub pos: PlayerPos,
-    pub alive: bool, // name, id or sumthing
-                     // hand: Vec<Tile>
-                     // dragon: bool?, actually this could be an Optional on the game state
+    pub alive: bool,
 }
 
 /// A position inside the board's grid
@@ -59,7 +56,6 @@ pub struct Move {
 pub struct Board {
     //setup: Vec<Player> something reflecting initial conditions?
     history: Vec<Move>,
-    //deck
 }
 
 impl Tile {
@@ -125,6 +121,10 @@ impl PlayerPos {
 }
 
 impl Board {
+    pub fn new() -> Board {
+        Board {history: Vec::new()}
+    }
+
     /// Get the `Tile` occupying the specified cell, if there is one.
     pub fn get_tile_at(&self, pos: CellCoord) -> Option<&Tile> {
         self.history

@@ -4,11 +4,9 @@ use egui::{Button, Color32, emath::{RectTransform, Rot2}, Frame, Painter, pos2, 
 use tsurust_common::board::*;
 
 use crate::rendering::{paint_tile, paint_tile_button_hoverlay, tile_to_screen_transform};
-
 pub struct TileButton<'a> {
     tile: &'a mut Tile,
 }
-
 impl<'a> TileButton<'a> {
     pub fn new(tile: &'a mut Tile) -> Self {
         Self {
@@ -16,7 +14,6 @@ impl<'a> TileButton<'a> {
         }
     }
 }
-
 impl<'a> Widget for TileButton<'a> {
     fn ui(self, ui: &mut Ui) -> Response {
         let (rect, response) =
