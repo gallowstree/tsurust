@@ -1,5 +1,6 @@
-use arrayvec::ArrayVec;
 use std::cmp::{max, min};
+
+use arrayvec::ArrayVec;
 
 /// 6 rows & 6 cols
 pub const BOARD_LENGTH: usize = 6;
@@ -13,7 +14,7 @@ pub type TileEndpoint = usize;
 pub type PlayerID = usize;
 
 ///  We represent a `Tile` as a collection of four `Segment`s, which are just pairs of entry points connected by each segment.
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Tile {
     pub segments: [Segment; 4],
 }
@@ -46,10 +47,11 @@ pub struct PlayerPos {
 }
 
 /// Represents a Player's move: which tile was placed where
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Move {
     pub tile: Tile,
     pub cell: CellCoord,
-    // player id
+    pub player_id: PlayerID,
 }
 
 /// Board state: all the moves that have been played and operations to calculate their results
@@ -122,7 +124,9 @@ impl PlayerPos {
 
 impl Board {
     pub fn new() -> Board {
-        Board {history: Vec::new()}
+        Board {
+            history: Vec::new(),
+        }
     }
 
     /// Get the `Tile` occupying the specified cell, if there is one.

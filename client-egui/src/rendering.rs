@@ -1,13 +1,13 @@
-use egui::{Align2, Color32, emath::{RectTransform, Rot2}, FontId, Frame, Painter, pos2, Pos2, Rect, Sense, Stroke, vec2, Vec2, Widget};
+use eframe::egui::{
+    emath::RectTransform, pos2, Align2, Color32, FontId, Painter, Pos2, Rect, Stroke,
+};
 
 use tsurust_common::board::{Board, Segment, Tile, TileEndpoint};
 
 pub const TRANSPARENT_WHITE: Color32 = Color32::from_rgba_premultiplied(255, 255, 255, 191);
 pub const TRANSPARENT_GOLD: Color32 = Color32::from_rgba_premultiplied(255, 215, 0, 191);
 
-pub fn paint_board(board: &Board, ) {
-
-}
+pub fn paint_board(board: &Board) {}
 
 pub fn paint_tile(tile: &Tile, rect: Rect, painter: &Painter) {
     let to_screen = tile_to_screen_transform(rect);
@@ -41,8 +41,20 @@ pub fn paint_tile_button_hoverlay(rect: Rect, painter: &Painter) {
     painter.circle_filled(rotate_cw_pos, radius, Color32::BLACK);
     painter.circle_filled(rotate_ccw_pos, radius, Color32::BLACK);
 
-    painter.text(rotate_cw_pos, Align2::CENTER_CENTER, "⟳", FontId::monospace(font_size), TRANSPARENT_WHITE);
-    painter.text(rotate_ccw_pos, Align2::CENTER_CENTER, "⟲", FontId::monospace(font_size), TRANSPARENT_WHITE);
+    painter.text(
+        rotate_cw_pos,
+        Align2::CENTER_CENTER,
+        "⟳",
+        FontId::monospace(font_size),
+        TRANSPARENT_WHITE,
+    );
+    painter.text(
+        rotate_ccw_pos,
+        Align2::CENTER_CENTER,
+        "⟲",
+        FontId::monospace(font_size),
+        TRANSPARENT_WHITE,
+    );
 }
 
 pub fn tile_to_screen_transform(rect: Rect) -> RectTransform {

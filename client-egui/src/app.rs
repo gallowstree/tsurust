@@ -1,9 +1,6 @@
-use eframe::egui::Widget;
-use egui::vec2;
+use eframe::egui;
 
 use tsurust_common::board::*;
-
-use crate::tile_button::TileButton;
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -17,7 +14,7 @@ pub struct TemplateApp {
     value: f32,
 
     #[serde(skip)]
-    tile: Tile
+    tile: Tile,
 }
 
 impl Default for TemplateApp {
@@ -26,7 +23,7 @@ impl Default for TemplateApp {
             // Example stuff:
             label: "Hello World!".to_owned(),
             value: 2.7,
-            tile: Tile::new([seg(0,2), seg(1,4), seg(3,5), seg(6,7)])
+            tile: Tile::new([seg(0, 2), seg(1, 4), seg(3, 5), seg(6, 7)]),
         }
     }
 }
@@ -50,7 +47,7 @@ impl TemplateApp {
 impl eframe::App for TemplateApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
         let Self { label, value, tile } = self;
 
         egui::TopBottomPanel::top("top_panel")
@@ -82,9 +79,9 @@ impl eframe::App for TemplateApp {
                 ui.vertical_centered(|ui| {
                     ui.heading("Bottom Panel");
                 });
-                ui.horizontal_centered(|ui|{
+                ui.horizontal_centered(|ui| {
                     ui.add_space(20.);
-                    ui.add(TileButton::new(tile));
+                    //ui.add(TileButton::new(tile));
                 });
             });
 

@@ -4,7 +4,7 @@ default-run = "client-egui_bin"
 version = "0.1.0"
 authors = ["Alejandro Alvarado"]
 edition = "2021"
-rust-version = "1.69"
+rust-version = "1.78"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 # tsurust_common = { path = "../common" }
@@ -15,7 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 tsurust_common = { path = "../common" }
-egui = "0.21.0"
+egui = "0.24.0"
 eframe = { version = "0.21.0", default-dependencies = false, features = [
     "accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
     "default_fonts", # Embed the default egui fonts.

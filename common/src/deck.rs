@@ -1,6 +1,7 @@
-use crate::board::*;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
+
+use crate::board::*;
 
 #[derive(Debug)]
 pub struct Deck {
@@ -15,6 +16,10 @@ impl Deck {
     pub fn take_up_to(&mut self, n: usize) -> Vec<Tile> {
         let new_len = self.tiles.len().saturating_sub(n);
         self.tiles.split_off(new_len)
+    }
+
+    pub fn put(&mut self, tiles: &Vec<Tile>) {
+        // self.tiles.append(&tiles)
     }
 
     pub fn new() -> Deck {

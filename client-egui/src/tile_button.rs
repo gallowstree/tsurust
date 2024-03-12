@@ -1,21 +1,19 @@
-use eframe::egui::{Response, Ui};
-use egui::{Button, Color32, emath::{RectTransform, Rot2}, Frame, Painter, pos2, Pos2, Rect, Sense, Stroke, vec2, Vec2, Widget};
+use eframe::egui::{vec2, Frame, Rect, Sense, Widget};
 
 use tsurust_common::board::*;
 
 use crate::rendering::{paint_tile, paint_tile_button_hoverlay, tile_to_screen_transform};
+
 pub struct TileButton<'a> {
     tile: &'a mut Tile,
 }
 impl<'a> TileButton<'a> {
     pub fn new(tile: &'a mut Tile) -> Self {
-        Self {
-            tile,
-        }
+        Self { tile }
     }
 }
 impl<'a> Widget for TileButton<'a> {
-    fn ui(self, ui: &mut Ui) -> Response {
+    fn ui(self, ui: &mut eframe::egui::Ui) -> eframe::egui::Response {
         let (rect, response) =
             ui.allocate_exact_size(vec2(120.0, 120.0), Sense::click().union(Sense::hover()));
 
@@ -37,7 +35,11 @@ impl<'a> Widget for TileButton<'a> {
             if response.hovered() {
                 paint_tile_button_hoverlay(rect, painter);
             }
-            paint_tile(self.tile, Rect::from_center_size(rect.center(), vec2(119., 119.)), painter);
+            paint_tile(
+                self.tile,
+                Rect::from_center_size(rect.center(), vec2(119., 119.)),
+                painter,
+            );
         });
         response
     }
