@@ -3,6 +3,7 @@
 mod app;
 mod rendering;
 mod tile_button;
+mod board_renderer;
 
 pub use app::TemplateApp;
 

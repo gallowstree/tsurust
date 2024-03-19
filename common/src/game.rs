@@ -40,7 +40,7 @@ impl Game {
     }
 
     fn deduct_tile_from_hand(&mut self, mov: Move) -> Result<(), &'static str> {
-        match self.hands.remove(&mov.player_id) {
+        match self.hands[&mov.player_id].iter().find(|&tile| {tile.eq(&mov.tile)}) {
             Some(_) => Ok(()),
             _ => Err("fuck the client"),
         }

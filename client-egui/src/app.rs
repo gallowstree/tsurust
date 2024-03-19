@@ -1,6 +1,7 @@
 use eframe::egui;
 
 use tsurust_common::board::*;
+use crate::tile_button::TileButton;
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -81,7 +82,7 @@ impl eframe::App for TemplateApp {
                 });
                 ui.horizontal_centered(|ui| {
                     ui.add_space(20.);
-                    //ui.add(TileButton::new(tile));
+                    ui.add(TileButton::new(tile));
                 });
             });
 

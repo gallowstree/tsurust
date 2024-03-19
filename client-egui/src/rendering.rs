@@ -1,6 +1,7 @@
 use eframe::egui::{
     emath::RectTransform, pos2, Align2, Color32, FontId, Painter, Pos2, Rect, Stroke,
 };
+use eframe::emath::Numeric;
 
 use tsurust_common::board::{Board, Segment, Tile, TileEndpoint};
 
@@ -57,13 +58,21 @@ pub fn paint_tile_button_hoverlay(rect: Rect, painter: &Painter) {
     );
 }
 
-pub fn tile_to_screen_transform(rect: Rect) -> RectTransform {
+pub fn sq_grid_to_screen(rect: Rect, rowscols: f32) -> RectTransform {
     let painter_proportions = rect.square_proportions();
 
     RectTransform::from_to(
-        Rect::from_min_size(Pos2::ZERO, 3. * painter_proportions),
-        rect,
+        Rect::from_min_size(Pos2::ZERO, rowscols* painter_proportions),
+        rect
     )
+}
+
+pub fn tile_to_screen_transform(rect: Rect) -> RectTransform {
+    sq_grid_to_screen(rect, 3.)
+}
+
+pub fn board_to_screen_transform(rect: Rect) -> RectTransform {
+    sq_grid_to_screen(rect, 6.)
 }
 
 fn segment_tail(index: TileEndpoint) -> [Pos2; 2] {
