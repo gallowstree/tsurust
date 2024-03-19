@@ -29,18 +29,21 @@ impl<'a> Widget for TileButton<'a> {
             }
         }
 
-        Frame::canvas(ui.style()).show(ui, |ui| {
-            let painter = ui.painter();
-            let rect = response.rect;
-            if response.hovered() {
-                paint_tile_button_hoverlay(rect, painter);
-            }
-            paint_tile(
-                self.tile,
-                Rect::from_center_size(rect.center(), vec2(119., 119.)),
-                painter,
-            );
-        });
+        Frame::canvas(ui.style())
+            .show(ui, |ui| {
+                let painter = ui.painter();
+                let rect = response.rect;
+
+                if response.hovered() {
+                    paint_tile_button_hoverlay(rect, painter);
+                }
+
+                paint_tile(
+                    self.tile,
+                    Rect::from_center_size(rect.center(), vec2(119., 119.)),
+                    painter,
+                );
+            });
         response
     }
 }
