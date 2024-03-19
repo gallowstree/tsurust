@@ -1,11 +1,20 @@
 use eframe::egui::{vec2, Frame, Rect, Sense, Widget, Response, Ui};
+use eframe::emath::Vec2;
+use eframe::epaint::Stroke;
+use egui::Pos2;
 
 use tsurust_common::board::*;
 
-use crate::rendering::{board_to_screen_transform, paint_tile};
+use crate::rendering::{paint_tile, TRANSPARENT_GOLD};
 
 pub struct BoardRenderer<'a> {
     history: &'a mut Vec<Move> //to-do, alias this type
+}
+
+impl <'a> BoardRenderer<'a> {
+    pub(crate) fn new(history: &'a mut Vec<Move>) -> Self {
+        Self { history }
+    }
 }
 
 impl Widget for BoardRenderer<'_> {
@@ -18,12 +27,12 @@ impl Widget for BoardRenderer<'_> {
             Sense::click().union(Sense::hover())
         );
 
-        let to_screen = board_to_screen_transform(rect);
+        ui.painter().rect_stroke(rect, 0.5, Stroke::new(2.0, TRANSPARENT_GOLD));
 
         Frame::canvas(ui.style()).show(ui, |ui| {
             let painter = ui.painter();
             let rect = response.rect;
-            let size = Rect::from_center_size(rect.center(), vec2(119., 119.));
+            let size = Rect::from_min_size(Pos2::ZERO, Vec2::new(tile_length, tile_length));
 
             let tiles = self.history
                 .iter()

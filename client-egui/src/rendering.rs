@@ -58,21 +58,13 @@ pub fn paint_tile_button_hoverlay(rect: Rect, painter: &Painter) {
     );
 }
 
-pub fn sq_grid_to_screen(rect: Rect, rowscols: f32) -> RectTransform {
+pub fn tile_to_screen_transform(rect: Rect) -> RectTransform {
     let painter_proportions = rect.square_proportions();
 
     RectTransform::from_to(
-        Rect::from_min_size(Pos2::ZERO, rowscols* painter_proportions),
+        Rect::from_min_size(Pos2::ZERO, 3.* painter_proportions),
         rect
     )
-}
-
-pub fn tile_to_screen_transform(rect: Rect) -> RectTransform {
-    sq_grid_to_screen(rect, 3.)
-}
-
-pub fn board_to_screen_transform(rect: Rect) -> RectTransform {
-    sq_grid_to_screen(rect, 6.)
 }
 
 fn segment_tail(index: TileEndpoint) -> [Pos2; 2] {

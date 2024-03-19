@@ -33,9 +33,13 @@ impl Game {
         // to-do: introduce TurnResult type or similar, design that api
         self.deduct_tile_from_hand(mov)
             .expect("this returns validation err l8r");
+
         self.board.place_tile(mov);
+
         self.update_players();
+
         self.fill_hands();
+
         self.complete_turn(mov.player_id);
     }
 

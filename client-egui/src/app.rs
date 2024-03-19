@@ -1,6 +1,7 @@
 use eframe::egui;
 
 use tsurust_common::board::*;
+use crate::board_renderer::BoardRenderer;
 use crate::tile_button::TileButton;
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -90,7 +91,15 @@ impl eframe::App for TemplateApp {
             ui.vertical_centered(|ui| {
                 ui.heading("Central Panel");
             });
-            egui::ScrollArea::vertical().show(ui, |ui| {});
+
+            ui.vertical_centered(|ui| {
+                let cell = CellCoord {row:2, col: 3};
+                let tile = Tile::new([seg(0, 2), seg(1, 4), seg(3, 5), seg(6, 7)]);
+
+                ui.add(BoardRenderer::new(
+                    &mut vec![Move {tile, cell, player_id: 1}]
+                ));
+            });
         });
     }
     /// Called by the frame work to save state before shutdown.
