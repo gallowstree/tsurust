@@ -8,6 +8,7 @@ use tsurust_common::board::{Board, Segment, Tile, TileEndpoint};
 pub const TRANSPARENT_WHITE: Color32 = Color32::from_rgba_premultiplied(255, 255, 255, 191);
 pub const TRANSPARENT_GOLD: Color32 = Color32::from_rgba_premultiplied(255, 215, 0, 191);
 
+pub const PINK: Color32 = Color32::from_rgba_premultiplied(200, 50, 125, 44);
 pub fn paint_board(board: &Board) {}
 
 pub fn paint_tile(tile: &Tile, rect: Rect, painter: &Painter) {

@@ -1,6 +1,9 @@
 use eframe::egui;
+use eframe::epaint::Color32;
+use egui::Visuals;
 
 use tsurust_common::board::*;
+use tsurust_common::game::Game;
 use crate::board_renderer::BoardRenderer;
 use crate::tile_button::TileButton;
 
@@ -17,6 +20,9 @@ pub struct TemplateApp {
 
     #[serde(skip)]
     tile: Tile,
+
+    #[serde(skip)]
+    game: tsurust_common::game::Game,
 }
 
 impl Default for TemplateApp {
@@ -26,6 +32,7 @@ impl Default for TemplateApp {
             label: "Hello World!".to_owned(),
             value: 2.7,
             tile: Tile::new([seg(0, 2), seg(1, 4), seg(3, 5), seg(6, 7)]),
+            game: Game::new(vec![Player{alive: true, id: 1, pos: PlayerPos::new(0,0, 0)}])
         }
     }
 }
@@ -35,7 +42,6 @@ impl TemplateApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         // This is also where you can customized the look at feel of egui using
         // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
-
         // Load previous app state (if any).
         // Note that you must enable the `persistence` feature for this to work.
         if let Some(storage) = cc.storage {
@@ -48,39 +54,26 @@ impl TemplateApp {
 
 impl eframe::App for TemplateApp {
     /// Called each time the UI needs repainting, which may be many times per second.
-    /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
-        let Self { label, value, tile } = self;
+        let Self { label, value, tile, game } = self;
 
         egui::TopBottomPanel::top("top_panel")
             .resizable(true)
             .min_height(32.0)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.vertical_centered(|ui| {
-                        ui.heading("Expandable Upper Panel 🐉");
+                    ui.vertical(|ui| {
+                        ui.heading("🐉🐉[server: local - room #1 - room host: alyosha] 🐉🐉");
+                        ui.heading("🐉🐉 [turn #:1 - tiles left: 0 - ] 🐉🐉");
+                        ui.heading("[Automat] [Pig] [Rooster] [Dragon]");
                     });
                 });
-            });
-
-        egui::SidePanel::right("right_panel")
-            .resizable(false)
-            .default_width(250.0)
-            .width_range(80.0..=250.0)
-            .show(ctx, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.heading("Right Panel");
-                });
-                egui::ScrollArea::vertical().show(ui, |ui| {});
             });
 
         egui::TopBottomPanel::bottom("bottom_panel")
             .resizable(false)
             .min_height(0.0)
             .show(ctx, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.heading("Bottom Panel");
-                });
                 ui.horizontal_centered(|ui| {
                     ui.add_space(20.);
                     ui.add(TileButton::new(tile));
@@ -89,20 +82,19 @@ impl eframe::App for TemplateApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical_centered(|ui| {
-                ui.heading("Central Panel");
-            });
-
-            ui.vertical_centered(|ui| {
                 let cell = CellCoord {row:2, col: 3};
-                let tile = Tile::new([seg(0, 2), seg(1, 4), seg(3, 5), seg(6, 7)]);
-
+                let tile = Tile::new(
+                    [seg(0, 7), seg(5, 4), seg(3, 2), seg(6, 1)]);
                 ui.add(BoardRenderer::new(
                     &mut vec![Move {tile, cell, player_id: 1}]
                 ));
             });
         });
     }
-    /// Called by the frame work to save state before shutdown.
+
+
+
+    /// Called by the framework to save state before shutdown.
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, eframe::APP_KEY, self);
     }
