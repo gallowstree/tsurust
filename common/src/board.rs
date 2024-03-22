@@ -1,63 +1,63 @@
 use std::cmp::{max, min};
 
 use arrayvec::ArrayVec;
-
+/// Board GRID Constants
 /// 6 rows & 6 cols
 pub const BOARD_LENGTH: usize = 6;
-/// max valid row/col index
-pub const MAX: usize = BOARD_LENGTH - 1;
 /// min valid row/col index
 pub const MIN: usize = 0;
-
+/// max valid row/col index
+pub const MAX: usize = BOARD_LENGTH - 1;
+///
+/// Board TILE structs
+///
+/// Type alias but should be enum: rename to PathExit, ExitIndex or TileExit!
+/// enum { NE, NW, EN, ES, WN, WS, SW, SE } but with current order/num values
 pub type TileEndpoint = usize;
-
-pub type PlayerID = usize;
-
-///  We represent a `Tile` as a collection of four `Segment`s, which are just pairs of entry points connected by each segment.
+///  We represent a `Tile` as a collection of four `Segment`s.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Tile {
     pub segments: [Segment; 4],
 }
-
+/// which are just pairs of entry points connected by each segment.
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub struct Segment {
     pub a: TileEndpoint,
     pub b: TileEndpoint,
 }
-
-/// Game data about a player
-pub struct Player {
-    pub id: PlayerID,
-    pub pos: PlayerPos,
-    pub alive: bool,
-}
-
 /// A position inside the board's grid
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct CellCoord {
     pub row: usize,
     pub col: usize,
 }
-
+/// Players and Pawns data
+pub type PlayerID = usize;
+pub struct Player {
+    pub id: PlayerID,
+    pub pos: PlayerPos,
+    pub alive: bool,
+}
 /// The position of a `Player`. Made of the cell coordinates and the current entry point id.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct PlayerPos {
     pub cell: CellCoord,
     pub endpoint: TileEndpoint,
 }
-
-/// Represents a Player's move: which tile was placed where
+/// Game State
+/// Move: Modify board state.
+/// Represents a Player's move: which tile was placed where.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Move {
     pub tile: Tile,
     pub cell: CellCoord,
     pub player_id: PlayerID,
 }
-
-/// Board state: all the moves that have been played and operations to calculate their results
+/// Board state history: all the moves that have been played
+/// Defines functions to calculate the effects of moves on the board's state
 pub struct Board {
     //setup: Vec<Player> something reflecting initial conditions?
-    history: Vec<Move>,
+    pub history: Vec<Move>,
 }
 
 impl Tile {

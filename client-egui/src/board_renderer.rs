@@ -39,7 +39,7 @@ fn tiles(ui: &mut Ui, history: &Vec<Move> ,rect: Rect) {
     Frame::canvas(ui.style()).show(ui, |ui| {
         let painter = ui.painter();
         let rect = rect;
-        let size = Rect::from_center_size(rect.center(), Vec2::new(440., 444.));
+        let size = Rect::from_center_size(rect.center(), Vec2::new(110., 110.));
 
         let tiles = history
             .iter()
@@ -55,4 +55,6 @@ fn tiles(ui: &mut Ui, history: &Vec<Move> ,rect: Rect) {
 fn background(ui: &mut Ui, rect: Rect) {
     ui.painter().rect_filled(rect, 0.6, Color32::BLACK);
     ui.painter().rect_stroke(rect, 0.5, Stroke::new(2.0, PINK));
+
+    //rate::backgr_render::draw_yin_yang(ui, 12.10);
 }

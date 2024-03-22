@@ -4,10 +4,10 @@ use crate::board::*;
 use crate::deck::Deck;
 
 pub struct Game {
+    pub deck: Deck,
+    pub board: Board,
     players: Vec<Player>,
     hands: HashMap<PlayerID, Vec<Tile>>,
-    deck: Deck,
-    board: Board,
     dragon: Option<PlayerID>,
 }
 
@@ -20,9 +20,7 @@ impl Game {
         }
 
         Game {
-            players,
-            hands,
-            deck,
+            players, hands, deck,
             board: Board::new(),
             dragon: None,
         }
@@ -31,16 +29,16 @@ impl Game {
     pub fn perform_move(&mut self, mov: Move) {
         // to-do: check player is current player
         // to-do: introduce TurnResult type or similar, design that api
-        self.deduct_tile_from_hand(mov)
-            .expect("this returns validation err l8r");
+        // self.deduct_tile_from_hand(mov)
+        //     .expect("this returns validation err l8r");
 
         self.board.place_tile(mov);
 
-        self.update_players();
+        //self.update_players();
 
-        self.fill_hands();
+        //self.fill_hands();
 
-        self.complete_turn(mov.player_id);
+        //self.complete_turn(mov.player_id);
     }
 
     fn deduct_tile_from_hand(&mut self, mov: Move) -> Result<(), &'static str> {
