@@ -6,7 +6,7 @@ use crate::deck::Deck;
 pub struct Game {
     pub deck: Deck,
     pub board: Board,
-    players: Vec<Player>,
+    pub players: Vec<Player>,
     hands: HashMap<PlayerID, Vec<Tile>>,
     dragon: Option<PlayerID>,
 }

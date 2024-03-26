@@ -26,7 +26,8 @@ impl Default for TemplateApp {
         random_tiles.iter()
             .enumerate()
             .for_each(|(i, tile)| {
-                let coord = CellCoord {row: i, col: i+1};
+                let (row, col) = (i/6, i % 6);
+                let coord = CellCoord {row, col};
                 let tile = tile.clone();
                 game.perform_move(Move {tile, cell: coord ,player_id: 1})
             });
@@ -82,7 +83,7 @@ impl eframe::App for TemplateApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical_centered(|ui| {
-                ui.add(BoardRenderer::new(&mut self.game.board.history));
+                ui.add(BoardRenderer::new(&mut self.game.board.history, &mut self.game.players));
             });
         });
     }
