@@ -1,6 +1,6 @@
 use eframe::egui;
 use eframe::epaint::Color32;
-use egui::Visuals;
+use egui::{ScrollArea, Visuals};
 
 use tsurust_common::board::*;
 use tsurust_common::game::Game;
@@ -13,30 +13,22 @@ use crate::tile_button::TileButton;
 pub struct TemplateApp {
     label: String,
     #[serde(skip)]
-    tile: Tile,
-    #[serde(skip)]
     game: tsurust_common::game::Game,
+    current_player: PlayerID
 }
 
 impl Default for TemplateApp {
     fn default() -> Self {
-        let mut game = Game::new(vec![Player{alive: true, id: 1, pos: PlayerPos::new(0, 0, 0)}]);
-        let random_tiles = game.deck.take_up_to(36);
+        let current_player = 1;
+        let mut game = Game::new(vec![Player{alive: true, id: current_player, pos: PlayerPos::new(0, 0, 7)}]);
+        let mut random_tiles = game.deck.take_up_to(36);
 
-        random_tiles.iter()
-            .enumerate()
-            .for_each(|(i, tile)| {
-                let (row, col) = (i/6, i % 6);
-                let coord = CellCoord {row, col};
-                let tile = tile.clone();
-                game.perform_move(Move {tile, cell: coord ,player_id: 1})
-            });
-
+        let t = game.hands.get_mut(&current_player).expect("hand").append(&mut random_tiles);
 
         Self {
             label: "Hello Year of the Dragon of Wood - Hello Tsurust!".to_owned(),
-            tile: Tile::new([seg(0, 2), seg(1, 4), seg(3, 5), seg(6, 7)]),
-            game
+            game,
+            current_player
         }
     }
 }
@@ -44,8 +36,6 @@ impl Default for TemplateApp {
 impl TemplateApp {
     /// Called once before the first frame.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-
-
         if let Some(storage) = cc.storage {
             return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
         }
@@ -56,13 +46,13 @@ impl TemplateApp {
 impl eframe::App for TemplateApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
-        let Self { label, tile, game } = self;
+        let Self { label, game , current_player} = self;
 
         egui::TopBottomPanel::top("top_panel")
             .resizable(true)
             .min_height(32.0)
             .show(ctx, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
+                ScrollArea::vertical().show(ui, |ui| {
                     ui.vertical(|ui| {
                         ui.heading("🐉🐉[server: local - room 01 - room host: alyosha] 🐉🐉");
                         ui.heading("🐉🐉 [turn 1 (alyosha) - tiles left: 0 - ] 🐉🐉");
@@ -71,19 +61,24 @@ impl eframe::App for TemplateApp {
                 });
             });
 
-        egui::TopBottomPanel::bottom("bottom_panel")
-            .resizable(false)
-            .min_height(0.0)
-            .show(ctx, |ui| {
-                ui.horizontal_centered(|ui| {
-                    ui.add_space(20.);
-                    ui.add(TileButton::new(tile));
-                });
-            });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.vertical_centered(|ui| {
-                ui.add(BoardRenderer::new(&mut self.game.board.history, &mut self.game.players));
+            ui.horizontal(|ui| {
+
+                ui.horizontal_centered(|ui| {
+                    ui.add(BoardRenderer::new(&mut game.board.history, &mut game.players));
+                });
+                ui.vertical_centered(|ui| {
+                    ScrollArea::vertical()
+                        .show(ui, |ui| {
+                            let hand = game.hands.get_mut(&self.current_player).expect("tile");
+
+                            for tile in hand {
+                                ui.add_space(10.);
+                                ui.add(TileButton::new(tile));
+                            }
+                        });
+                });
             });
         });
     }

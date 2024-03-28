@@ -7,7 +7,7 @@ pub struct Game {
     pub deck: Deck,
     pub board: Board,
     pub players: Vec<Player>,
-    hands: HashMap<PlayerID, Vec<Tile>>,
+    pub hands: HashMap<PlayerID, Vec<Tile>>,
     dragon: Option<PlayerID>,
 }
 
@@ -54,7 +54,7 @@ impl Game {
             player.alive = !new_pos.on_edge();
 
             if !player.alive {
-                //self.deck.
+                self.deck.put(self.hands.get_mut(&player.id).expect("hand"));
             }
         }
     }

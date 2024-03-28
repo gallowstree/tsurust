@@ -1,12 +1,17 @@
+use std::ops::{Add, Mul};
 use eframe::egui::{vec2, Frame, Rect, Sense, Widget, Response, Ui};
-use eframe::emath::Vec2;
+use eframe::emath::{RectTransform, Vec2};
 use eframe::epaint::{Color32, Stroke};
 use egui::Pos2;
 use tsurust_common::board::*;
 
 use crate::rendering::{paint_tile, PINK};
 
-const TILE_SIZE: Vec2 = Vec2::new(110., 110.);
+const TILE_LENGTH: f32 = 125.0;
+
+const TILE_SIZE: Vec2 = Vec2::new(TILE_LENGTH, TILE_LENGTH);
+const PLAYER_RADIUS: f32 = TILE_LENGTH / 8.;
+
 pub struct BoardRenderer<'a> {
     history: &'a mut Vec<Move>, //to-do, alias this type, do these folks need to be mutable?
     players: &'a mut Vec<Player>
@@ -21,10 +26,9 @@ impl <'a> BoardRenderer<'a> {
 impl Widget for BoardRenderer<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
         let (rows, cols) = (6.,6.);
-        let tile_length: f32 = 110.0;
 
         let (board_rect, response) = ui.allocate_at_least(
-            vec2(rows * tile_length, cols * tile_length),
+            vec2(rows * TILE_LENGTH, cols * TILE_LENGTH),
             Sense::click().union(Sense::hover())
         );
         
@@ -36,7 +40,12 @@ impl Widget for BoardRenderer<'_> {
 
         for player in self.players {
             let cell_rect = rect_at_coord(player.pos.cell, board_rect);
-            // cell_rect - TILE_SIZE * Vec2::new(0.5, 0.5);
+            let offset = path_index_position(player.pos.endpoint).add(Vec2::new(1., 1.));
+            let transform = RectTransform::from_to(board_rect, cell_rect);
+
+            let center = transform.transform_rect(cell_rect).min + offset.mul(cell_rect.min.to_vec2() - Vec2::new(PLAYER_RADIUS, PLAYER_RADIUS));
+
+            ui.painter().circle_filled(center, PLAYER_RADIUS, Color32::WHITE);
         }
 
         response
@@ -60,9 +69,38 @@ fn tiles(ui: &mut Ui, history: &Vec<Move>, board_rect: Rect) {
 
 }
 
+fn path_index_position(i: TileEndpoint) -> Vec2 {
+    let (x,y) = match i {
+        0 => (1./3., 1.),
+        1 => (2./3., 1.),
+        2 => (1., 2./3.),
+        3 => (1., 1./3.),
+        4 => (2./3., 0.),
+        5 => (1./3., 0.),
+        6 => (0., 1./3.),
+        7 => (0., 2./3.),
+        _ => panic!("non existent path index {}", i)
+    };
+    Vec2::new(x,y)
+}
+
 fn background(ui: &mut Ui, rect: Rect) {
     ui.painter().rect_filled(rect, 0.6, Color32::BLACK);
     ui.painter().rect_stroke(rect, 0.5, Stroke::new(4.0, PINK));
+
+    for x in 0..= 6 {
+        let x = x as f32 * TILE_SIZE.x;
+        let start = Pos2::new(x , 0.) + rect.min.to_vec2();
+        let end = Pos2::new(x, TILE_SIZE.x * 6.) + rect.min.to_vec2();
+
+        ui.painter().line_segment([start, end], Stroke::new(0.2, Color32::LIGHT_YELLOW));
+
+        let y = x;
+        let start = Pos2::new(0. , y) + rect.min.to_vec2();
+        let end = Pos2::new(TILE_SIZE.x * 6., y) + rect.min.to_vec2();
+        ui.painter().line_segment([start, end], Stroke::new(0.2, Color32::LIGHT_YELLOW));
+
+    }
 
     //crate::backgr_render::draw_yin_yang(ui, 120.);
 }

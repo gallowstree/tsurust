@@ -18,8 +18,8 @@ impl Deck {
         self.tiles.split_off(new_len)
     }
 
-    pub fn put(&mut self, tiles: &Vec<Tile>) {
-        // self.tiles.append(&tiles)
+    pub fn put(&mut self, tiles: &mut Vec<Tile>) {
+        self.tiles.append(tiles)
     }
 
     pub fn new() -> Deck {
