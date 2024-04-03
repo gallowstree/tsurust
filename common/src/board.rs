@@ -129,6 +129,12 @@ impl Board {
         }
     }
 
+    pub fn from_history(history: Vec<Move>) -> Board {
+        Board {
+            history,
+        }
+    }
+
     /// Get the `Tile` occupying the specified cell, if there is one.
     pub fn get_tile_at(&self, pos: CellCoord) -> Option<&Tile> {
         self.history

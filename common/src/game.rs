@@ -19,9 +19,19 @@ impl Game {
             hands.insert(player.id, deck.take_up_to(3));
         }
 
+        let cell = players[0].pos.cell;
+        let player_id = players[0].id;
+
+        let mut random_tiles = deck.take_up_to(3);
+
+        let history = random_tiles.iter_mut()
+            .map(|&mut tile| { Move { tile, cell, player_id } })
+            .collect();
+        let board = Board::from_history(history);
+
+
         Game {
-            players, hands, deck,
-            board: Board::new(),
+            players, hands, deck, board,
             dragon: None,
         }
     }

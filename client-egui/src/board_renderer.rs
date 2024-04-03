@@ -10,7 +10,7 @@ use crate::rendering::{paint_tile, PINK};
 const TILE_LENGTH: f32 = 125.0;
 
 const TILE_SIZE: Vec2 = Vec2::new(TILE_LENGTH, TILE_LENGTH);
-const PLAYER_RADIUS: f32 = TILE_LENGTH / 8.;
+const PLAYER_RADIUS: f32 = TILE_LENGTH / 7.;
 
 pub struct BoardRenderer<'a> {
     history: &'a mut Vec<Move>, //to-do, alias this type, do these folks need to be mutable?
@@ -43,9 +43,9 @@ impl Widget for BoardRenderer<'_> {
             let offset = path_index_position(player.pos.endpoint).add(Vec2::new(1., 1.));
             let transform = RectTransform::from_to(board_rect, cell_rect);
 
-            let center = transform.transform_rect(cell_rect).min + offset.mul(cell_rect.min.to_vec2() - Vec2::new(PLAYER_RADIUS, PLAYER_RADIUS));
-
-            ui.painter().circle_filled(center, PLAYER_RADIUS, Color32::WHITE);
+            let center = transform.transform_rect(cell_rect).min + offset.mul(cell_rect.min.to_vec2() - Vec2::new(PLAYER_RADIUS*0.5, PLAYER_RADIUS));
+            ui.painter().circle(center, PLAYER_RADIUS, Color32::WHITE, Stroke::default());
+            ui.painter().circle_filled(center, PLAYER_RADIUS*0.8, Color32::DARK_GREEN);
         }
 
         response

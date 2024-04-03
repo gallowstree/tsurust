@@ -68,17 +68,21 @@ impl eframe::App for TemplateApp {
                 ui.horizontal_centered(|ui| {
                     ui.add(BoardRenderer::new(&mut game.board.history, &mut game.players));
                 });
-                ui.vertical_centered(|ui| {
-                    ScrollArea::vertical()
-                        .show(ui, |ui| {
-                            let hand = game.hands.get_mut(&self.current_player).expect("tile");
+            });
+        });
 
-                            for tile in hand {
-                                ui.add_space(10.);
-                                ui.add(TileButton::new(tile));
-                            }
-                        });
-                });
+
+        egui::SidePanel::right("right_panel").show(ctx, |ui| {
+            ui.vertical_centered(|ui| {
+                ScrollArea::vertical()
+                    .show(ui, |ui| {
+                        let hand = game.hands.get_mut(&self.current_player).expect("tile");
+
+                        for tile in hand {
+                            ui.add_space(10.);
+                            ui.add(TileButton::new(tile));
+                        }
+                    });
             });
         });
     }
