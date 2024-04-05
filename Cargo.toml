@@ -2,7 +2,5 @@
 
 members = [
     "client-egui",
-    "server",
     "common",
-    "common-client"
 ]
