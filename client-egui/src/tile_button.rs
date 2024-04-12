@@ -25,6 +25,8 @@ impl<'a> Widget for TileButton<'a> {
                     *self.tile = self.tile.rotated(false)
                 } else if pos.x > 2. {
                     *self.tile = self.tile.rotated(true)
+                } else {
+                    println!("aaaa");
                 }
             }
         }

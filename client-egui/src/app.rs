@@ -5,6 +5,7 @@ use egui::{ScrollArea, Visuals};
 use tsurust_common::board::*;
 use tsurust_common::game::Game;
 use crate::board_renderer::BoardRenderer;
+use crate::hand_renderer::HandRenderer;
 use crate::tile_button::TileButton;
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -73,17 +74,7 @@ impl eframe::App for TemplateApp {
 
 
         egui::SidePanel::right("right_panel").show(ctx, |ui| {
-            ui.vertical_centered(|ui| {
-                ScrollArea::vertical()
-                    .show(ui, |ui| {
-                        let hand = game.hands.get_mut(&self.current_player).expect("tile");
-
-                        for tile in hand {
-                            ui.add_space(10.);
-                            ui.add(TileButton::new(tile));
-                        }
-                    });
-            });
+            ui.add(HandRenderer::new(&mut vec![]));
         });
     }
 

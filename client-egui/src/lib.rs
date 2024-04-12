@@ -5,6 +5,7 @@ mod rendering;
 mod tile_button;
 mod board_renderer;
 mod backgr_render;
+mod hand_renderer;
 
 pub use app::TemplateApp;
 
