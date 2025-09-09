@@ -7,8 +7,7 @@ use tsurust_common::board::*;
 
 use crate::rendering::{paint_tile, PINK};
 
-const TILE_LENGTH: f32 = 125.0;
-
+const TILE_LENGTH: f32 = 120.0;
 const TILE_SIZE: Vec2 = Vec2::new(TILE_LENGTH, TILE_LENGTH);
 const PLAYER_RADIUS: f32 = TILE_LENGTH / 7.;
 
@@ -26,12 +25,11 @@ impl <'a> BoardRenderer<'a> {
 impl Widget for BoardRenderer<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
         let (rows, cols) = (6.,6.);
-
         let (board_rect, response) = ui.allocate_at_least(
             vec2(rows * TILE_LENGTH, cols * TILE_LENGTH),
             Sense::click().union(Sense::hover())
         );
-        
+
         background(ui, board_rect);
 
         ui.vertical_centered(|ui| {
@@ -53,7 +51,7 @@ impl Widget for BoardRenderer<'_> {
 }
 
 fn rect_at_coord(cell_coord: CellCoord, board_rect: Rect) -> Rect {
-    let pos = Pos2::new(cell_coord.col as f32 * 110., cell_coord.row as f32 * 110.) + board_rect.min.to_vec2();
+    let pos = Pos2::new(cell_coord.col as f32 * TILE_LENGTH, cell_coord.row as f32 * TILE_LENGTH) + board_rect.min.to_vec2();
     Rect::from_min_size(pos, TILE_SIZE)
 }
 

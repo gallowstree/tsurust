@@ -1,6 +1,6 @@
 use eframe::egui;
 use eframe::epaint::Color32;
-use egui::{ScrollArea, Visuals};
+use egui::{Context, ScrollArea, Visuals};
 
 use tsurust_common::board::*;
 use tsurust_common::game::Game;
@@ -42,13 +42,8 @@ impl TemplateApp {
         }
         Default::default()
     }
-}
 
-impl eframe::App for TemplateApp {
-    /// Called each time the UI needs repainting, which may be many times per second.
-    fn update(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
-        let Self { label, game , current_player} = self;
-
+    fn render_ui(ctx: &Context, game: &mut Game) {
         egui::TopBottomPanel::top("top_panel")
             .resizable(true)
             .min_height(32.0)
@@ -62,20 +57,28 @@ impl eframe::App for TemplateApp {
                 });
             });
 
-
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
-
-                ui.horizontal_centered(|ui| {
-                    ui.add(BoardRenderer::new(&mut game.board.history, &mut game.players));
-                });
+                ui.add_space(20.);
+                ui.add(BoardRenderer::new(&mut game.board.history, &mut game.players));
             });
         });
 
-
         egui::SidePanel::right("right_panel").show(ctx, |ui| {
-            ui.add(HandRenderer::new(&mut vec![]));
+            let hand = game.curr_player_hand().clone();
+            ui.add(HandRenderer::new(hand));
         });
+    }
+}
+
+
+
+impl eframe::App for TemplateApp {
+    /// Called each time the UI needs repainting, which may be many times per second.
+    fn update(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
+        let Self { label, game , current_player} = self;
+
+        Self::render_ui(ctx, game);
     }
 
     /// Called by the framework to save state before shutdown.

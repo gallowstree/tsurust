@@ -15,25 +15,21 @@ impl Game {
     pub fn new(players: Vec<Player>) -> Game {
         let mut deck = Deck::new();
         let mut hands = HashMap::new();
+        let board = Board::new();
+
         for mut player in &players {
             hands.insert(player.id, deck.take_up_to(3));
         }
-
-        let cell = players[0].pos.cell;
-        let player_id = players[0].id;
-
-        let mut random_tiles = deck.take_up_to(3);
-
-        let history = random_tiles.iter_mut()
-            .map(|&mut tile| { Move { tile, cell, player_id } })
-            .collect();
-        let board = Board::from_history(history);
-
 
         Game {
             players, hands, deck, board,
             dragon: None,
         }
+    }
+
+    pub fn curr_player_hand(&self) -> Vec<Tile> {
+        let curr_player: PlayerID = self.players[0].id;
+        self.hands[&curr_player].clone()
     }
 
     pub fn perform_move(&mut self, mov: Move) {

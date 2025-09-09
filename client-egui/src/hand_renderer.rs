@@ -3,17 +3,17 @@ use tsurust_common::board::*;
 use crate::tile_button::TileButton;
 
 
-pub struct HandRenderer<'a> {
-    tiles: &'a mut Vec<Tile>,
+pub struct HandRenderer {
+    tiles: Vec<Tile>,
 }
 
-impl<'a> HandRenderer<'a> {
-    pub fn new(tiles: &'a mut Vec<Tile>) -> Self {
+impl HandRenderer {
+    pub fn new(tiles: Vec<Tile>) -> Self {
         Self { tiles }
     }
 }
 
-impl<'a> Widget for HandRenderer<'a> {
+impl Widget for HandRenderer {
     fn ui(self, ui: &mut eframe::egui::Ui) -> eframe::egui::Response {
         ui.vertical_centered(|ui| {
             ScrollArea::vertical()
