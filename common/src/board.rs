@@ -36,7 +36,7 @@ pub struct Segment {
     pub b: TileEndpoint,
 }
 /// A position inside the board's grid
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct CellCoord {
     pub row: usize,
     pub col: usize,
@@ -47,6 +47,18 @@ pub struct Player {
     pub id: PlayerID,
     pub pos: PlayerPos,
     pub alive: bool,
+    pub color: (u8, u8, u8),  // RGB color tuple
+}
+
+impl Player {
+    pub fn new(id: PlayerID, pos: PlayerPos) -> Self {
+        Self {
+            id,
+            pos,
+            alive: true,
+            color: crate::colors::get_player_color(id),
+        }
+    }
 }
 /// The position of a `Player`. Made of the cell coordinates and the current entry point id.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -176,7 +188,7 @@ impl Board {
     }
 
     /// Returns the immediate next position of a player starting at the given position and following the path of the given `Tile`
-    fn traverse_tile(tile: &Tile, from: PlayerPos) -> PlayerPos {
+    pub fn traverse_tile(tile: &Tile, from: PlayerPos) -> PlayerPos {
         let tile_exit = tile
             .segments
             .iter()

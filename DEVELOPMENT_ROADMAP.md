@@ -235,6 +235,30 @@
 - `client-egui/src/app.rs:37` - Handle unused variable `t` from append operation
 - `common/src/board.rs:14` - Convert TileEndpoint from usize to enum
 
+## Alternative Trail Rendering Approach
+
+### Tile-Based Player Path Mapping
+Instead of maintaining separate Trail structs with calculated path points, consider rendering player trails directly during tile rendering by maintaining a mapping of which players traverse which paths in each tile.
+
+**Core Concept**: During tile rendering in `BoardRenderer`, maintain a map structure:
+```rust
+tile_position -> Vec<(PlayerID, TileEndpoint)>
+```
+
+**Benefits**:
+- **Accurate Paths**: Trails automatically match tile segments exactly since they use the same rendering primitives
+- **No Coordinate Conversion**: Eliminates complex normalized coordinate system and screen coordinate transformations
+- **Simpler Logic**: No need to calculate intermediate points or handle 3-segment path structures separately
+- **Real-time Accuracy**: Trail rendering guaranteed to match tile rendering since they're the same operation
+
+**Implementation Strategy**:
+1. Add `player_paths: HashMap<CellCoord, Vec<(PlayerID, TileEndpoint)>>` to BoardRenderer
+2. Calculate player paths by iterating through board history and player movements
+3. Modify `paint_tile()` in `client-egui/src/rendering.rs` to accept player color information
+4. Render tile segments with appropriate player colors instead of default white
+
+This treats trails as colored overlays on the existing tile path rendering system rather than separate geometric calculations.
+
 ## Notes
 
 - Project builds successfully with warnings

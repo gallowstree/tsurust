@@ -8,6 +8,7 @@ pub struct Game {
     pub board: Board,
     pub players: Vec<Player>,
     pub hands: HashMap<PlayerID, Vec<Tile>>,
+    pub tile_trails: HashMap<CellCoord, HashMap<TileEndpoint, PlayerID>>, // tile -> segment -> player
     dragon: Option<PlayerID>,
 }
 
@@ -23,6 +24,7 @@ impl Game {
 
         Game {
             players, hands, deck, board,
+            tile_trails: HashMap::new(),
             dragon: None,
         }
     }
@@ -45,6 +47,9 @@ impl Game {
 
         // Validate player has the tile in hand
         self.deduct_tile_from_hand(mov)?;
+
+        // Update tile-trail mapping
+        self.update_tile_trails(&mov);
 
         // Place the tile on the board
         self.board.place_tile(mov);
@@ -94,6 +99,29 @@ impl Game {
             }
         }
     }
+    fn update_tile_trails(&mut self, mov: &Move) {
+        // Find which players are at this cell and will be affected by the move
+        for player in &self.players {
+            if player.pos.cell == mov.cell {
+                // Find which segment this player will use
+                let segment = mov.tile.segments
+                    .iter()
+                    .find(|&seg| seg.a == player.pos.endpoint || seg.b == player.pos.endpoint);
+
+                if let Some(segment) = segment {
+                    // Use min(from, to) convention for segment key (endpoints 0-3)
+                    let segment_key = std::cmp::min(segment.a, segment.b);
+
+                    // Record that this player used this segment
+                    self.tile_trails
+                        .entry(mov.cell)
+                        .or_insert_with(HashMap::new)
+                        .insert(segment_key, player.id);
+                }
+            }
+        }
+    }
+
     fn complete_turn(&self, for_player: PlayerID) {}
 }
 

@@ -30,7 +30,7 @@ pub struct TemplateApp {
 impl Default for TemplateApp {
     fn default() -> Self {
         let current_player = 1;
-        let mut game = Game::new(vec![Player{alive: true, id: current_player, pos: PlayerPos::new(0, 0, 7)}]);
+        let mut game = Game::new(vec![Player::new(current_player, PlayerPos::new(0, 0, 7))]);
         let mut random_tiles = game.deck.take_up_to(36);
 
         let t = game.hands.get_mut(&current_player).expect("hand").append(&mut random_tiles);
@@ -73,7 +73,7 @@ impl TemplateApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.add_space(20.);
-                ui.add(BoardRenderer::new(&mut game.board.history, &mut game.players));
+                ui.add(BoardRenderer::new(&game.board.history, &game.players, &game.tile_trails));
             });
         });
 
