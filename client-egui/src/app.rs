@@ -1,12 +1,17 @@
 use eframe::egui;
-use eframe::epaint::Color32;
-use egui::{Context, ScrollArea, Visuals};
+use egui::{Context, ScrollArea};
+use std::sync::mpsc;
 
-use tsurust_common::board::*;
-use tsurust_common::game::Game;
 use crate::board_renderer::BoardRenderer;
 use crate::hand_renderer::HandRenderer;
-use crate::tile_button::TileButton;
+use tsurust_common::board::*;
+use tsurust_common::game::Game;
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    TilePlaced(usize),                // tile index - place at current player position
+    TileRotated(usize, bool),         // tile index, clockwise
+}
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -15,7 +20,11 @@ pub struct TemplateApp {
     label: String,
     #[serde(skip)]
     game: tsurust_common::game::Game,
-    current_player: PlayerID
+    current_player: PlayerID,
+    #[serde(skip)]
+    sender: Option<mpsc::Sender<Message>>,
+    #[serde(skip)]
+    receiver: Option<mpsc::Receiver<Message>>,
 }
 
 impl Default for TemplateApp {
@@ -26,10 +35,14 @@ impl Default for TemplateApp {
 
         let t = game.hands.get_mut(&current_player).expect("hand").append(&mut random_tiles);
 
+        let (sender, receiver) = mpsc::channel();
+
         Self {
             label: "Hello Year of the Dragon of Wood - Hello Tsurust!".to_owned(),
             game,
-            current_player
+            current_player,
+            sender: Some(sender),
+            receiver: Some(receiver),
         }
     }
 }
@@ -43,15 +56,15 @@ impl TemplateApp {
         Default::default()
     }
 
-    fn render_ui(ctx: &Context, game: &mut Game) {
+    fn render_ui(ctx: &Context, game: &mut Game, sender: &mpsc::Sender<Message>) {
         egui::TopBottomPanel::top("top_panel")
             .resizable(true)
             .min_height(32.0)
             .show(ctx, |ui| {
                 ScrollArea::vertical().show(ui, |ui| {
                     ui.vertical(|ui| {
-                        ui.heading("🐉🐉[server: local - room 01 - room host: alyosha] 🐉🐉");
-                        ui.heading("🐉🐉 [turn 1 (alyosha) - tiles left: 0 - ] 🐉🐉");
+                        ui.heading("[server: local - room 01 - room host: alyosha] ");
+                        ui.heading(" [turn 1 (alyosha) - tiles left: 0 - ] ");
                         ui.heading("(alyosha) [Automat] [Pig] [Rooster] [Dragon]");
                     });
                 });
@@ -66,7 +79,7 @@ impl TemplateApp {
 
         egui::SidePanel::right("right_panel").show(ctx, |ui| {
             let hand = game.curr_player_hand().clone();
-            ui.add(HandRenderer::new(hand));
+            ui.add(HandRenderer::new(hand, sender.clone()));
         });
     }
 }
@@ -76,9 +89,52 @@ impl TemplateApp {
 impl eframe::App for TemplateApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
-        let Self { label, game , current_player} = self;
+        let Self { label: _, game, current_player, sender, receiver } = self;
 
-        Self::render_ui(ctx, game);
+        // Process received messages
+        if let Some(rx) = receiver {
+            while let Ok(message) = rx.try_recv() {
+                match message {
+                    Message::TileRotated(tile_index, clockwise) => {
+                        let hand = game.hands.get_mut(current_player).expect("current player should always have a hand");
+                        hand[tile_index] = hand[tile_index].rotated(clockwise);
+                    }
+                    Message::TilePlaced(tile_index) => {
+                        let player_cell = game.players.iter()
+                            .find(|p| p.id == *current_player && p.alive)
+                            .expect("current player should exist and be alive")
+                            .pos.cell;
+
+                        let hand = game.hands.get(current_player)
+                            .expect("current player should always have a hand");
+
+                        let tile = hand[tile_index];
+
+                        let mov = Move {
+                            tile,
+                            cell: player_cell,
+                            player_id: *current_player,
+                        };
+
+                        match game.perform_move(mov) {
+                            Ok(()) => {
+                                println!("Tile placed successfully at {:?}!", player_cell);
+                                println!("  Tile: {:?}", tile);
+                                println!("  Player {} new position: {:?}", *current_player,
+                                    game.players.iter().find(|p| p.id == *current_player)
+                                        .expect("current player should exist").pos);
+                            }
+                            Err(error) => println!("Failed to place tile: {}", error),
+                        }
+                    }
+                }
+            }
+        }
+
+        // Render UI with sender
+        if let Some(tx) = sender {
+            Self::render_ui(ctx, game, tx);
+        }
     }
 
     /// Called by the framework to save state before shutdown.

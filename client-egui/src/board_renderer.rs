@@ -1,6 +1,5 @@
-use std::ops::{Add, Mul};
 use eframe::egui::{vec2, Frame, Rect, Sense, Widget, Response, Ui};
-use eframe::emath::{RectTransform, Vec2};
+use eframe::emath::Vec2;
 use eframe::epaint::{Color32, Stroke};
 use egui::Pos2;
 use tsurust_common::board::*;
@@ -13,7 +12,7 @@ const PLAYER_RADIUS: f32 = TILE_LENGTH / 7.;
 
 pub struct BoardRenderer<'a> {
     history: &'a mut Vec<Move>, //to-do, alias this type, do these folks need to be mutable?
-    players: &'a mut Vec<Player>
+    players: &'a mut Vec<Player>,
 }
 
 impl <'a> BoardRenderer<'a> {
@@ -38,13 +37,18 @@ impl Widget for BoardRenderer<'_> {
 
         for player in self.players {
             let cell_rect = rect_at_coord(player.pos.cell, board_rect);
-            let offset = path_index_position(player.pos.endpoint).add(Vec2::new(1., 1.));
-            let transform = RectTransform::from_to(board_rect, cell_rect);
+            let endpoint_offset = path_index_position(player.pos.endpoint);
 
-            let center = transform.transform_rect(cell_rect).min + offset.mul(cell_rect.min.to_vec2() - Vec2::new(PLAYER_RADIUS*0.5, PLAYER_RADIUS));
-            ui.painter().circle(center, PLAYER_RADIUS, Color32::WHITE, Stroke::default());
-            ui.painter().circle_filled(center, PLAYER_RADIUS*0.8, Color32::DARK_GREEN);
+            // Calculate player position within the cell
+            let player_pos = cell_rect.min + Vec2::new(
+                endpoint_offset.x * cell_rect.width(),
+                endpoint_offset.y * cell_rect.height()
+            );
+
+            ui.painter().circle(player_pos, PLAYER_RADIUS, Color32::WHITE, Stroke::default());
+            ui.painter().circle_filled(player_pos, PLAYER_RADIUS*0.8, Color32::DARK_GREEN);
         }
+
 
         response
     }
