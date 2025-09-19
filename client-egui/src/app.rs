@@ -5,7 +5,7 @@ use std::sync::mpsc;
 use crate::board_renderer::BoardRenderer;
 use crate::hand_renderer::HandRenderer;
 use tsurust_common::board::*;
-use tsurust_common::game::Game;
+use tsurust_common::game::{Game, TurnResult};
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -20,7 +20,6 @@ pub struct TemplateApp {
     label: String,
     #[serde(skip)]
     game: tsurust_common::game::Game,
-    current_player: PlayerID,
     #[serde(skip)]
     sender: Option<mpsc::Sender<Message>>,
     #[serde(skip)]
@@ -29,18 +28,24 @@ pub struct TemplateApp {
 
 impl Default for TemplateApp {
     fn default() -> Self {
-        let current_player = 1;
-        let mut game = Game::new(vec![Player::new(current_player, PlayerPos::new(0, 0, 7))]);
-        let mut random_tiles = game.deck.take_up_to(36);
+        // Create 4 players starting at different board edges (only edge endpoints are valid)
+        let players = vec![
+            Player::new(1, PlayerPos::new(0, 2, 4)),  // Player 1: top edge (row=0), endpoint 4 or 5
+            Player::new(2, PlayerPos::new(2, 5, 2)),  // Player 2: right edge (col=5), endpoint 2 or 3
+            Player::new(3, PlayerPos::new(5, 3, 0)),  // Player 3: bottom edge (row=5), endpoint 0 or 1
+            Player::new(4, PlayerPos::new(3, 0, 6)),  // Player 4: left edge (col=0), endpoint 6 or 7
+        ];
 
-        let t = game.hands.get_mut(&current_player).expect("hand").append(&mut random_tiles);
+        let game = Game::new(players);
+
+        // Each player starts with 3 tiles (normal hand size)
+        // Don't add extra tiles - Game::new already gives each player 3 tiles
 
         let (sender, receiver) = mpsc::channel();
 
         Self {
             label: "Hello Year of the Dragon of Wood - Hello Tsurust!".to_owned(),
             game,
-            current_player,
             sender: Some(sender),
             receiver: Some(receiver),
         }
@@ -89,23 +94,23 @@ impl TemplateApp {
 impl eframe::App for TemplateApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
-        let Self { label: _, game, current_player, sender, receiver } = self;
+        let Self { label: _, game, sender, receiver } = self;
 
         // Process received messages
         if let Some(rx) = receiver {
             while let Ok(message) = rx.try_recv() {
                 match message {
                     Message::TileRotated(tile_index, clockwise) => {
-                        let hand = game.hands.get_mut(current_player).expect("current player should always have a hand");
+                        let hand = game.hands.get_mut(&game.current_player_id).expect("current player should always have a hand");
                         hand[tile_index] = hand[tile_index].rotated(clockwise);
                     }
                     Message::TilePlaced(tile_index) => {
                         let player_cell = game.players.iter()
-                            .find(|p| p.id == *current_player && p.alive)
+                            .find(|p| p.id == game.current_player_id && p.alive)
                             .expect("current player should exist and be alive")
                             .pos.cell;
 
-                        let hand = game.hands.get(current_player)
+                        let hand = game.hands.get(&game.current_player_id)
                             .expect("current player should always have a hand");
 
                         let tile = hand[tile_index];
@@ -113,16 +118,40 @@ impl eframe::App for TemplateApp {
                         let mov = Move {
                             tile,
                             cell: player_cell,
-                            player_id: *current_player,
+                            player_id: game.current_player_id,
                         };
 
                         match game.perform_move(mov) {
-                            Ok(()) => {
+                            Ok(turn_result) => {
                                 println!("Tile placed successfully at {:?}!", player_cell);
                                 println!("  Tile: {:?}", tile);
-                                println!("  Player {} new position: {:?}", *current_player,
-                                    game.players.iter().find(|p| p.id == *current_player)
-                                        .expect("current player should exist").pos);
+
+                                match &turn_result {
+                                    TurnResult::TurnAdvanced { turn_number, next_player, eliminated } => {
+                                        println!("Turn {} completed. Next player: {}", turn_number, next_player);
+                                        if !eliminated.is_empty() {
+                                            println!("  Players eliminated: {:?}", eliminated);
+                                        }
+                                    }
+                                    TurnResult::PlayerWins { turn_number, winner, eliminated } => {
+                                        println!("GAME OVER! Player {} wins on turn {}!", winner, turn_number);
+                                        if !eliminated.is_empty() {
+                                            println!("  Final eliminations: {:?}", eliminated);
+                                        }
+                                    }
+                                    TurnResult::Extinction { turn_number, eliminated } => {
+                                        println!("EXTINCTION! All players eliminated on turn {}!", turn_number);
+                                        println!("  Final eliminations: {:?}", eliminated);
+                                    }
+                                }
+
+                                println!("  All player positions after move:");
+                                for player in &game.players {
+                                    println!("    Player {} ({}): {:?}",
+                                        player.id,
+                                        if player.alive { "alive" } else { "eliminated" },
+                                        player.pos);
+                                }
                             }
                             Err(error) => println!("Failed to place tile: {}", error),
                         }

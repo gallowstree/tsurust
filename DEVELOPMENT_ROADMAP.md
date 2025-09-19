@@ -213,19 +213,29 @@
    - Spectator mode with game history
    - Custom game variants and rule modifications
 
-## Immediate Next Steps
+## Immediate Next Steps - Revised (Post Trail System)
 
-### Week 1 Priority:
-1. **Expand Message enum** with `TileSelected`, `TilePlaced`, `TileRotated`
-2. **Modify TileButton** to send tile index on center click
-3. **Add board click handling** in BoardRenderer
-4. **Implement basic tile placement** in `perform_move()`
+### ✅ Completed:
+- **Trail Rendering System**: Implemented tile-based trail rendering with perfect path accuracy
+- **Player Colors**: Added distinct colors for each player
+- **Message System**: `TilePlaced` and `TileRotated` messages already exist and work
+
+### Current Priority - Multi-Player Game:
+1. **✅ Add Multiple Players** - Initialize 4 players at valid edge endpoints
+2. **Turn Management System** - Track current player, enforce turn order
+3. **Player Elimination Logic** - Detect edge collisions, remove eliminated players
+4. **Game End Conditions** - Win condition when only one player remains
+5. **UI Improvements** - Show current player, game status, remaining players
+
+### Future Features:
+- **Lobby/Room System**: Players select their spawn position during lobby phase (only edge endpoints allowed)
 
 ### Success Metrics:
-- [ ] Can select tile from hand (visual feedback)
-- [ ] Can place selected tile on empty board cell
-- [ ] Turn advances to next player after placement
-- [ ] Basic game loop functions without crashes
+- [x] Multiple players visible on board with different colors
+- [ ] Turn advances between players after tile placement
+- [ ] Players are eliminated when reaching board edges
+- [ ] Game declares winner when one player remains
+- [ ] Trail overlaps show correctly for multiple players
 
 ## Technical Debt Log
 

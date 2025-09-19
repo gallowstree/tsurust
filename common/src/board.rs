@@ -48,6 +48,7 @@ pub struct Player {
     pub pos: PlayerPos,
     pub alive: bool,
     pub color: (u8, u8, u8),  // RGB color tuple
+    pub has_moved: bool,  // Track if player has moved from starting position
 }
 
 impl Player {
@@ -57,6 +58,7 @@ impl Player {
             pos,
             alive: true,
             color: crate::colors::get_player_color(id),
+            has_moved: false,
         }
     }
 }
