@@ -22,6 +22,10 @@ impl Deck {
         self.tiles.append(tiles)
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.tiles.is_empty()
+    }
+
     pub fn new() -> Deck {
         let mut tiles = vec![
             Tile::new([seg(0, 1), seg(2, 3), seg(4, 5), seg(6, 7)]),

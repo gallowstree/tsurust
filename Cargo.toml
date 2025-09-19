@@ -4,3 +4,4 @@ members = [
     "client-egui",
     "common",
 ]
+resolver = "2"

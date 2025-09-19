@@ -1,87 +1,102 @@
-use std::ops::{Add, Mul};
 use eframe::egui::{vec2, Frame, Rect, Sense, Widget, Response, Ui};
-use eframe::emath::{RectTransform, Vec2};
+use eframe::emath::Vec2;
 use eframe::epaint::{Color32, Stroke};
 use egui::Pos2;
 use tsurust_common::board::*;
+use std::collections::HashMap;
 
-use crate::rendering::{paint_tile, PINK};
+use crate::rendering::{paint_tile_with_trails, PINK};
 
-const TILE_LENGTH: f32 = 125.0;
-
+const TILE_LENGTH: f32 = 120.0;
 const TILE_SIZE: Vec2 = Vec2::new(TILE_LENGTH, TILE_LENGTH);
 const PLAYER_RADIUS: f32 = TILE_LENGTH / 7.;
 
 pub struct BoardRenderer<'a> {
-    history: &'a mut Vec<Move>, //to-do, alias this type, do these folks need to be mutable?
-    players: &'a mut Vec<Player>
+    history: &'a Vec<Move>,
+    players: &'a Vec<Player>,
+    tile_trails: &'a HashMap<CellCoord, HashMap<TileEndpoint, PlayerID>>,
 }
 
 impl <'a> BoardRenderer<'a> {
-    pub(crate) fn new(history: &'a mut Vec<Move>, players: &'a mut Vec<Player>) -> Self {
-        Self { history, players }
+    pub(crate) fn new(history: &'a Vec<Move>, players: &'a Vec<Player>, tile_trails: &'a HashMap<CellCoord, HashMap<TileEndpoint, PlayerID>>) -> Self {
+        Self { history, players, tile_trails }
     }
+
 }
 
 impl Widget for BoardRenderer<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
         let (rows, cols) = (6.,6.);
-
         let (board_rect, response) = ui.allocate_at_least(
             vec2(rows * TILE_LENGTH, cols * TILE_LENGTH),
             Sense::click().union(Sense::hover())
         );
-        
+
         background(ui, board_rect);
 
         ui.vertical_centered(|ui| {
-            tiles(ui, self.history, board_rect);
+            render_board_tiles(ui, self.history, self.tile_trails, self.players, board_rect);
         });
 
-        for player in self.players {
-            let cell_rect = rect_at_coord(player.pos.cell, board_rect);
-            let offset = path_index_position(player.pos.endpoint).add(Vec2::new(1., 1.));
-            let transform = RectTransform::from_to(board_rect, cell_rect);
+        for player in self.players.iter() {
+            let player_color = Color32::from_rgb(player.color.0, player.color.1, player.color.2);
 
-            let center = transform.transform_rect(cell_rect).min + offset.mul(cell_rect.min.to_vec2() - Vec2::new(PLAYER_RADIUS*0.5, PLAYER_RADIUS));
-            ui.painter().circle(center, PLAYER_RADIUS, Color32::WHITE, Stroke::default());
-            ui.painter().circle_filled(center, PLAYER_RADIUS*0.8, Color32::DARK_GREEN);
+            // Render current player position
+            let cell_rect = rect_at_coord(player.pos.cell, board_rect);
+            let endpoint_offset = path_index_position(player.pos.endpoint);
+
+            let player_pos = cell_rect.min + Vec2::new(
+                endpoint_offset.x * cell_rect.width(),
+                endpoint_offset.y * cell_rect.height()
+            );
+
+            ui.painter().circle(player_pos, PLAYER_RADIUS, Color32::WHITE, Stroke::default());
+            ui.painter().circle_filled(player_pos, PLAYER_RADIUS*0.8, player_color);
         }
+
 
         response
     }
 }
 
 fn rect_at_coord(cell_coord: CellCoord, board_rect: Rect) -> Rect {
-    let pos = Pos2::new(cell_coord.col as f32 * 110., cell_coord.row as f32 * 110.) + board_rect.min.to_vec2();
+    let pos = Pos2::new(cell_coord.col as f32 * TILE_LENGTH, cell_coord.row as f32 * TILE_LENGTH) + board_rect.min.to_vec2();
     Rect::from_min_size(pos, TILE_SIZE)
 }
 
-fn tiles(ui: &mut Ui, history: &Vec<Move>, board_rect: Rect) {
+fn render_board_tiles(
+    ui: &mut Ui,
+    history: &Vec<Move>,
+    tile_trails: &HashMap<CellCoord, HashMap<TileEndpoint, PlayerID>>,
+    players: &Vec<Player>,
+    board_rect: Rect
+) {
     Frame::canvas(ui.style()).show(ui, |ui| {
         let painter = ui.painter();
 
         for mov in history {
             let rect = rect_at_coord(mov.cell, board_rect);
-            paint_tile(&mov.tile, rect, painter);
+
+            // Get player paths for this tile
+            let mut player_paths = HashMap::new();
+            if let Some(segment_players) = tile_trails.get(&mov.cell) {
+                for (&segment_key, &player_id) in segment_players {
+                    // Find player color
+                    if let Some(player) = players.iter().find(|p| p.id == player_id) {
+                        let player_color = Color32::from_rgb(player.color.0, player.color.1, player.color.2);
+                        player_paths.insert(segment_key, (player_id, player_color));
+                    }
+                }
+            }
+
+            paint_tile_with_trails(&mov.tile, rect, painter, &player_paths);
         }
     });
-
 }
 
 fn path_index_position(i: TileEndpoint) -> Vec2 {
-    let (x,y) = match i {
-        0 => (1./3., 1.),
-        1 => (2./3., 1.),
-        2 => (1., 2./3.),
-        3 => (1., 1./3.),
-        4 => (2./3., 0.),
-        5 => (1./3., 0.),
-        6 => (0., 1./3.),
-        7 => (0., 2./3.),
-        _ => panic!("non existent path index {}", i)
-    };
-    Vec2::new(x,y)
+    let (x, y) = tsurust_common::trail::endpoint_position(i);
+    Vec2::new(x, y)
 }
 
 fn background(ui: &mut Ui, rect: Rect) {

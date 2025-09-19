@@ -15,9 +15,19 @@ pub const MAX: usize = BOARD_LENGTH - 1;
 /// enum { NE, NW, EN, ES, WN, WS, SW, SE } but with current order/num values
 pub type TileEndpoint = usize;
 ///  We represent a `Tile` as a collection of four `Segment`s.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub struct Tile {
     pub segments: [Segment; 4],
+}
+
+impl std::fmt::Debug for Tile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let segments: Vec<String> = self.segments
+            .iter()
+            .map(|seg| format!("{}-{}", seg.a, seg.b))
+            .collect();
+        write!(f, "Tile({})", segments.join(", "))
+    }
 }
 /// which are just pairs of entry points connected by each segment.
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord)]
@@ -26,7 +36,7 @@ pub struct Segment {
     pub b: TileEndpoint,
 }
 /// A position inside the board's grid
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct CellCoord {
     pub row: usize,
     pub col: usize,
@@ -37,6 +47,20 @@ pub struct Player {
     pub id: PlayerID,
     pub pos: PlayerPos,
     pub alive: bool,
+    pub color: (u8, u8, u8),  // RGB color tuple
+    pub has_moved: bool,  // Track if player has moved from starting position
+}
+
+impl Player {
+    pub fn new(id: PlayerID, pos: PlayerPos) -> Self {
+        Self {
+            id,
+            pos,
+            alive: true,
+            color: crate::colors::get_player_color(id),
+            has_moved: false,
+        }
+    }
 }
 /// The position of a `Player`. Made of the cell coordinates and the current entry point id.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -154,13 +178,19 @@ impl Board {
             None => starting_point, // There is no tile to follow its path, so we're done
             Some(tile) => {
                 let next_pos = Board::traverse_tile(tile, starting_point);
+
+                // If the player reached the board edge, stop traversing to prevent infinite recursion
+                if next_pos.on_edge() {
+                    return next_pos;
+                }
+
                 self.traverse_from(next_pos)
             }
         }
     }
 
     /// Returns the immediate next position of a player starting at the given position and following the path of the given `Tile`
-    fn traverse_tile(tile: &Tile, from: PlayerPos) -> PlayerPos {
+    pub fn traverse_tile(tile: &Tile, from: PlayerPos) -> PlayerPos {
         let tile_exit = tile
             .segments
             .iter()
@@ -177,6 +207,7 @@ impl Board {
 
         match (tile_exit, from.cell.row, from.cell.col) {
             // player reached the end of the board, don't increment row/col
+            // claude: can we rewrite this as (0 | 1,  MAX, col), etc?
             (0 | 1, row, col) if row == MAX => PlayerPos::new(row, col, tile_exit),
             (2 | 3, row, col) if col == MAX => PlayerPos::new(row, col, tile_exit),
             (4 | 5, row, col) if row == MIN => PlayerPos::new(row, col, tile_exit),
@@ -218,6 +249,8 @@ mod tests {
         assert_eq!(Board::traverse_tile(&tile, from), PlayerPos::new(5, 5, 0));
         let from = PlayerPos::new(5, 5, 1);
         assert_eq!(Board::traverse_tile(&tile, from), PlayerPos::new(5, 5, 2));
+
+
     }
 
     #[test]
@@ -247,6 +280,121 @@ mod tests {
         assert_eq!(Board::neighboring_entry(0), 5);
         assert_eq!(Board::neighboring_entry(3), 6);
         assert_eq!(Board::neighboring_entry(2), 7);
+    }
+
+    #[test]
+    fn test_traverse_from_chained_tiles() {
+        let mut board = Board::new();
+
+        // Place a tile at (0,0) that sends player from entry 1 to exit 2 (moving right to next cell)
+        let tile1 = Tile::new([seg(1, 2), seg(0, 3), seg(4, 5), seg(6, 7)]);
+        board.place_tile(Move { tile: tile1, cell: CellCoord { row: 0, col: 0 }, player_id: 1 });
+
+        // Place a tile at (0,1) that receives player at entry 7 (from tile1's exit 2)
+        // and sends them to exit 3 (moving right again to next cell)
+        let tile2 = Tile::new([seg(7, 3), seg(0, 1), seg(4, 5), seg(6, 2)]);
+        board.place_tile(Move { tile: tile2, cell: CellCoord { row: 0, col: 1 }, player_id: 1 });
+
+        // Start player at (0,0) entry point 1
+        let start_pos = PlayerPos::new(0, 0, 1);
+
+        // Should traverse through both tiles and end up at (0,2) entry point 6
+        // (0,0,1) -> (0,0,2) -> move to (0,1,7) -> (0,1,3) -> move to (0,2,6)
+        let final_pos = board.traverse_from(start_pos);
+
+        assert_eq!(final_pos, PlayerPos::new(0, 2, 6));
+    }
+
+    #[test]
+    fn test_traverse_from_single_tile_no_infinite_loop() {
+        let mut board = Board::new();
+
+        // Place a tile at (0,0) that connects entry 1 to exit 3
+        let tile = Tile::new([seg(1, 3), seg(0, 2), seg(4, 5), seg(6, 7)]);
+        board.place_tile(Move { tile, cell: CellCoord { row: 0, col: 0 }, player_id: 1 });
+
+        // Start player at (0,0) entry point 1
+        let start_pos = PlayerPos::new(0, 0, 1);
+
+        // Should move within tile from entry 1 to exit 3, then move to neighboring cell (0,1)
+        // Since (0,1) has no tile, should stop at the entry point that corresponds to exit 3
+        let final_pos = board.traverse_from(start_pos);
+
+        // According to neighboring_entry mapping, exit 3 -> entry 6
+        assert_eq!(final_pos, PlayerPos::new(0, 1, 6));
+    }
+
+    #[test]
+    fn test_traverse_from_circular_path() {
+        let mut board = Board::new();
+
+        // Create a 2x2 square of tiles that form a circular path
+        // Tile at (0,0): entry 2 -> exit 3 (right)
+        let tile1 = Tile::new([seg(2, 3), seg(0, 1), seg(4, 5), seg(6, 7)]);
+        board.place_tile(Move { tile: tile1, cell: CellCoord { row: 0, col: 0 }, player_id: 1 });
+
+        // Tile at (0,1): entry 6 -> exit 0 (down)
+        let tile2 = Tile::new([seg(6, 0), seg(1, 2), seg(3, 4), seg(5, 7)]);
+        board.place_tile(Move { tile: tile2, cell: CellCoord { row: 0, col: 1 }, player_id: 1 });
+
+        // Tile at (1,1): entry 4 -> exit 7 (left)
+        let tile3 = Tile::new([seg(4, 7), seg(0, 1), seg(2, 3), seg(5, 6)]);
+        board.place_tile(Move { tile: tile3, cell: CellCoord { row: 1, col: 1 }, player_id: 1 });
+
+        // Tile at (1,0): entry 1 -> exit 2 (up) - completes the circle
+        let tile4 = Tile::new([seg(1, 2), seg(0, 3), seg(4, 5), seg(6, 7)]);
+        board.place_tile(Move { tile: tile4, cell: CellCoord { row: 1, col: 0 }, player_id: 1 });
+
+        // Start player at (0,0) entry point 2 - this should create infinite loop
+        let start_pos = PlayerPos::new(0, 0, 2);
+
+        // This should detect the circular path and not overflow
+        let final_pos = board.traverse_from(start_pos);
+
+        // For now, just test that it doesn't crash - we'll figure out expected behavior later
+        println!("Final position: {:?}", final_pos);
+    }
+
+    #[test]
+    fn test_traverse_from_player_starting_position() {
+        let mut board = Board::new();
+
+        // Player starts at (0, 0, 7) - same as in the game initialization
+        let player_pos = PlayerPos::new(0, 0, 7);
+
+        // Place a tile at the same position where player is standing
+        // This tile connects endpoint 7 to some other endpoint
+        let tile = Tile::new([seg(7, 1), seg(0, 2), seg(3, 4), seg(5, 6)]);
+        board.place_tile(Move { tile, cell: CellCoord { row: 0, col: 0 }, player_id: 1 });
+
+        // Now traverse from the player's position - this simulates what happens in update_players()
+        let final_pos = board.traverse_from(player_pos);
+
+        println!("Player moved from {:?} to {:?}", player_pos, final_pos);
+
+        // Should not cause stack overflow
+        assert_ne!(final_pos, player_pos); // Player should move somewhere
+    }
+
+    #[test]
+    fn test_traverse_from_board_edge_no_overflow() {
+        let mut board = Board::new();
+
+        // Place a tile at (0,5) that sends player off the right edge of the board
+        // Entry 2 -> Exit 3 (exit 3 points right, which would be off the board)
+        let tile = Tile::new([seg(2, 3), seg(0, 1), seg(4, 5), seg(6, 7)]);
+        board.place_tile(Move { tile, cell: CellCoord { row: 0, col: 5 }, player_id: 1 });
+
+        // Player starts at the right edge cell, facing right (endpoint 2)
+        let start_pos = PlayerPos::new(0, 5, 2);
+
+        // This should NOT cause stack overflow - should stop at the edge
+        let final_pos = board.traverse_from(start_pos);
+
+        // Player should end up at the edge position
+        assert!(final_pos.on_edge());
+        assert_eq!(final_pos.cell, CellCoord { row: 0, col: 5 });
+        assert_eq!(final_pos.endpoint, 3); // The exit endpoint
     }
 
     #[test]

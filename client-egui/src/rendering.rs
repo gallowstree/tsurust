@@ -1,7 +1,8 @@
 use eframe::egui::{
     emath::RectTransform, pos2, Align2, Color32, FontId, Painter, Pos2, Rect, Stroke,
 };
-use tsurust_common::board::{Board, Segment, Tile, TileEndpoint};
+use tsurust_common::board::{Board, Segment, Tile, TileEndpoint, PlayerID};
+use std::collections::HashMap;
 
 pub const TRANSPARENT_WHITE: Color32 = Color32::from_rgba_premultiplied(255, 255, 255, 191);
 pub const TRANSPARENT_GOLD: Color32 = Color32::from_rgba_premultiplied(255, 215, 0, 191);
@@ -9,12 +10,37 @@ pub const PINK: Color32 = Color32::from_rgba_premultiplied(200, 50, 125, 44);
 pub fn paint_board(board: &Board) {}
 
 pub fn paint_tile(tile: &Tile, rect: Rect, painter: &Painter) {
+    paint_tile_with_trails(tile, rect, painter, &HashMap::new());
+}
+
+pub fn paint_tile_with_trails(
+    tile: &Tile,
+    rect: Rect,
+    painter: &Painter,
+    player_paths: &HashMap<TileEndpoint, (PlayerID, Color32)>
+) {
     let to_screen = tile_to_screen_transform(rect);
-    let stroke = Stroke::new(2., TRANSPARENT_WHITE);
 
     tile.segments
         .iter()
         .for_each(|&Segment { a: from, b: to }| {
+            // Use min(from, to) as convention - only look up trails for endpoints 0-3
+            let segment_key = std::cmp::min(from, to);
+
+            let segment_color = if let Some((_, player_color)) = player_paths.get(&segment_key) {
+                // Make player trail semi-transparent but visible
+                Color32::from_rgba_premultiplied(
+                    player_color.r(),
+                    player_color.g(),
+                    player_color.b(),
+                    180 // Semi-transparent but more opaque than current trail
+                )
+            } else {
+                TRANSPARENT_WHITE // Default tile color
+            };
+
+            let stroke = Stroke::new(2., segment_color);
+
             let start_chunk = segment_tail(from);
             let end_chunk = segment_tail(to);
             let middle_chunk = [start_chunk[1], end_chunk[1]];

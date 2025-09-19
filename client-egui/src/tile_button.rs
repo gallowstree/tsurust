@@ -1,32 +1,47 @@
 use eframe::egui::{vec2, Frame, Rect, Sense, Widget};
+use std::sync::mpsc;
 
 use tsurust_common::board::*;
+use crate::app::Message;
 
 use crate::rendering::{paint_tile, paint_tile_button_hoverlay, tile_to_screen_transform};
 
-pub struct TileButton<'a> {
-    tile: &'a mut Tile,
+pub struct TileButton {
+    tile: Tile,
+    index: usize,
+    sender: mpsc::Sender<Message>,
 }
-impl<'a> TileButton<'a> {
-    pub fn new(tile: &'a mut Tile) -> Self {
-        Self { tile }
+
+impl TileButton {
+    pub fn new(tile: Tile, index: usize, sender: mpsc::Sender<Message>) -> Self {
+        Self { tile, index, sender }
     }
 }
-impl<'a> Widget for TileButton<'a> {
-    fn ui(self, ui: &mut eframe::egui::Ui) -> eframe::egui::Response {
+
+impl Widget for TileButton {
+    fn ui(mut self, ui: &mut eframe::egui::Ui) -> eframe::egui::Response {
         let (rect, response) =
-            ui.allocate_exact_size(vec2(120.0, 120.0), Sense::click().union(Sense::hover()));
+            ui.allocate_exact_size(vec2(140.0, 140.0), Sense::click().union(Sense::hover()));
 
         let to_screen = tile_to_screen_transform(rect);
         if response.clicked() {
             if let Some(pos) = response.interact_pointer_pos() {
                 let pos = to_screen.inverse().transform_pos(pos);
                 if pos.x < 1. {
-                    *self.tile = self.tile.rotated(false)
+                    // Left side clicked - rotate counterclockwise
+                    if let Err(e) = self.sender.send(Message::TileRotated(self.index, false)) {
+                        eprintln!("Failed to send TileRotated message: {}", e);
+                    }
                 } else if pos.x > 2. {
-                    *self.tile = self.tile.rotated(true)
+                    // Right side clicked - rotate clockwise
+                    if let Err(e) = self.sender.send(Message::TileRotated(self.index, true)) {
+                        eprintln!("Failed to send TileRotated message: {}", e);
+                    }
                 } else {
-                    println!("aaaa");
+                    // Center clicked - place tile at current player position
+                    if let Err(e) = self.sender.send(Message::TilePlaced(self.index)) {
+                        eprintln!("Failed to send TilePlaced message: {}", e);
+                    }
                 }
             }
         }
@@ -41,8 +56,8 @@ impl<'a> Widget for TileButton<'a> {
                 }
 
                 paint_tile(
-                    self.tile,
-                    Rect::from_center_size(rect.center(), vec2(119., 119.)),
+                    &self.tile,
+                    Rect::from_center_size(rect.center(), vec2(139., 139.)),
                     painter,
                 );
             });

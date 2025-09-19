@@ -13,5 +13,7 @@
 ///  └ 0 ──── 1 ┘
 /// Todo: rename references to "endpoint" to say "entry" or "entry point"
 pub mod board;
+pub mod colors;
 mod deck;
 pub mod game;
+pub mod trail;
