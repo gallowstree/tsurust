@@ -4,7 +4,7 @@ use tsurust_common::board::PlayerPos;
 #[test]
 fn test_full_lobby_to_game_flow() {
     // Test complete flow from empty lobby to game start
-    let mut lobby = Lobby::new(LobbyId(42), "Integration Test".to_string());
+    let mut lobby = Lobby::new("TEST".to_string(), "Integration Test".to_string());
 
     // Add players
     for i in 1..=4 {
@@ -54,7 +54,7 @@ fn test_full_lobby_to_game_flow() {
 
 #[test]
 fn test_lobby_state_transitions() {
-    let mut lobby = Lobby::new(LobbyId(1), "State Test".to_string());
+    let mut lobby = Lobby::new("TEST".to_string(), "State Test".to_string());
 
     // Initial state
     assert!(!lobby.started);
@@ -97,7 +97,7 @@ fn test_lobby_state_transitions() {
 
 #[test]
 fn test_error_handling_workflow() {
-    let mut lobby = Lobby::new(LobbyId(1), "Error Test".to_string());
+    let mut lobby = Lobby::new("TEST".to_string(), "Error Test".to_string());
     lobby.max_players = 2;
 
     // Test lobby full

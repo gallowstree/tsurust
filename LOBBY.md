@@ -1,535 +1,494 @@
 # Lobby System Design
 
-# News
-## On app Launched
-Options:
-- Create lobby
-  - input: name, player name
-  - generate lobby ID: 4 case-insensitive alphanumeric characters
-  - as the creator of the lobby, autojoin that lobby.
-  - show lobby ID and name
-- Join lobby
-  - input: lobbyId, player name
-  - confirm lobby name before joining
-- Sample game
-
-## Server Logic
-- A room: allows players to keep playing among themselves in between games. It manages Lobby -> Game -> Result -> Lobby.
-
-## Client-Server comms
-Might need to introduce ws even if we are using tarpc. (client can't listen freely for server messages)
-
 ## Overview
 
 A simple pre-game lobby system that allows players to join, select spawn positions, and start the game. Core game logic remains separate from rendering.
 
-## Core Data Structures
+**Implementation Status**: Basic lobby system implemented in `common/src/lobby.rs` with comprehensive tests. UI integration completed in `client-egui/src/app.rs` with MainMenu, Lobby, and Game states.
 
+## Server Logic (Future)
+- A room: allows players to keep playing among themselves in between games. It manages Lobby -> Game -> Result -> Lobby.
+
+## Client-Server comms (Future)
+Might need to introduce ws even if we are using tarpc. (client can't listen freely for server messages).
+Or maybe just a tcp socket, maybe it can be wrapped in a tarpc transport or sum.
+
+## On App Launched
+
+When the app launches, present users with three options: **Create Lobby**, **Join Lobby**, or **Sample Game**. This requires extending the current MainMenu state and adding lobby ID generation and validation.
+
+### Core Components
+
+#### 1. Lobby ID System
 ```rust
 // In common/src/lobby.rs
-#[derive(Debug, Clone, PartialEq)]
-pub struct LobbyId(pub u64);
+pub type LobbyId = String;  // 4 case-insensitive alphanumeric characters
 
-#[derive(Debug, Clone)]
-pub struct Lobby {
-    pub id: LobbyId,
-    pub name: String,
-    pub players: HashMap<PlayerID, LobbyPlayer>,
-    pub started: bool,
-    pub max_players: usize, // Default: 8, minimum: 2
+pub fn next_lobby_id() -> LobbyId {
+    use rand::Rng;
+    const CHARSET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Excludes I, O, 0, 1 for clarity
+    let mut rng = rand::thread_rng();
+    (0..4)
+        .map(|_| CHARSET[rng.gen_range(0..CHARSET.len())] as char)
+        .collect::<String>()
 }
 
-#[derive(Debug, Clone)]
-pub struct LobbyPlayer {
-    pub id: PlayerID,
-    pub name: String,
-    pub color: (u8, u8, u8),
-    pub spawn_position: Option<PlayerPos>, // Must be board edge, ready when Some(_)
+pub fn normalize_lobby_id(id: &str) -> Option<LobbyId> {
+    let normalized = id.trim().to_uppercase();
+    if normalized.len() == 4 && normalized.chars().all(|c| c.is_alphanumeric()) {
+        Some(normalized)
+    } else {
+        None
+    }
 }
 ```
 
-## Events
-
+#### 2. Extended Lobby Structure
 ```rust
-// In common/src/lobby.rs
-#[derive(Debug, Clone)]
-pub enum LobbyEvent {
-    PlayerJoined {
-        player_id: PlayerID,
-        player_name: String,
-    },
-    PawnPlaced {
-        player_id: PlayerID,
-        position: PlayerPos, // Must be valid board edge position
-    },
-    StartGame,
-}
-```
-
-## Core Logic Implementation
-
-```rust
+// Add to existing Lobby struct in common/src/lobby.rs
 impl Lobby {
-    pub fn new(id: LobbyId, name: String) -> Self {
-        Self {
-            id,
+    pub fn new_with_creator(name: String, creator_name: String) -> (Self, PlayerID) {
+        let lobby_id = next_lobby_id();
+        let mut lobby = Self {
+            id: lobby_id,
             name,
             players: HashMap::new(),
             started: false,
             max_players: 8,
-        }
+        };
+
+        // Auto-join creator as first player
+        let creator_id = 1;
+        lobby.handle_event(LobbyEvent::PlayerJoined {
+            player_id: creator_id,
+            player_name: creator_name,
+        }).expect("Creator should always be able to join empty lobby");
+
+        (lobby, creator_id)
     }
-
-    pub fn handle_event(&mut self, event: LobbyEvent) -> Result<(), LobbyError> {
-        match event {
-            LobbyEvent::PlayerJoined { player_id, player_name } => {
-                if self.players.len() >= self.max_players {
-                    return Err(LobbyError::LobbyFull);
-                }
-
-                let color = self.assign_next_color()?;
-                let lobby_player = LobbyPlayer {
-                    id: player_id,
-                    name: player_name,
-                    color,
-                    spawn_position: None,
-                };
-
-                self.players.insert(player_id, lobby_player);
-                Ok(())
-            }
-
-            LobbyEvent::PawnPlaced { player_id, position } => {
-                if !self.is_valid_edge_position(&position) {
-                    return Err(LobbyError::InvalidSpawnPosition);
-                }
-
-                if self.is_position_taken(&position, player_id) {
-                    return Err(LobbyError::PositionTaken);
-                }
-
-                if let Some(player) = self.players.get_mut(&player_id) {
-                    player.spawn_position = Some(position);
-                    Ok(())
-                } else {
-                    Err(LobbyError::PlayerNotFound)
-                }
-            }
-
-            LobbyEvent::StartGame => {
-                if !self.can_start() {
-                    return Err(LobbyError::NotReadyToStart);
-                }
-
-                self.started = true;
-                Ok(())
-            }
-        }
-    }
-
-    pub fn can_start(&self) -> bool {
-        self.players.len() >= 2 &&
-        self.players.values().all(|p| p.spawn_position.is_some())
-    }
-
-    pub fn to_game(&self) -> Result<Game, LobbyError> {
-        if !self.started {
-            return Err(LobbyError::GameNotStarted);
-        }
-
-        let players: Vec<Player> = self.players
-            .values()
-            .filter_map(|lobby_player| {
-                lobby_player.spawn_position.map(|pos| {
-                    Player::new(lobby_player.id, pos, lobby_player.color)
-                })
-            })
-            .collect();
-
-        if players.len() < 2 {
-            return Err(LobbyError::NotEnoughPlayers);
-        }
-
-        Ok(Game::new(players))
-    }
-
-    fn is_valid_edge_position(&self, pos: &PlayerPos) -> bool {
-        let CellCoord { row, col } = pos.cell;
-        // Valid board edge positions only
-        (row == 0 || row == 5 || col == 0 || col == 5) &&
-        row <= 5 && col <= 5
-    }
-
-    fn is_position_taken(&self, pos: &PlayerPos, requesting_player: PlayerID) -> bool {
-        self.players.values().any(|p|
-            p.id != requesting_player &&
-            p.spawn_position == Some(*pos)
-        )
-    }
-
-    fn assign_next_color(&self) -> Result<(u8, u8, u8), LobbyError> {
-        // Solarized color scheme
-        const COLORS: &[(u8, u8, u8)] = &[
-            (220, 50, 47),   // Red
-            (133, 153, 0),   // Green
-            (38, 139, 210),  // Blue
-            (181, 137, 0),   // Yellow
-            (211, 54, 130),  // Magenta
-            (42, 161, 152),  // Cyan
-            (203, 75, 22),   // Orange
-            (108, 113, 196), // Violet
-        ];
-
-        let used_colors: HashSet<_> = self.players.values()
-            .map(|p| p.color)
-            .collect();
-
-        COLORS.iter()
-            .find(|color| !used_colors.contains(color))
-            .copied()
-            .ok_or(LobbyError::NoAvailableColors)
-    }
-
-}
-
-#[derive(Debug, Clone)]
-pub enum LobbyError {
-    LobbyFull,
-    PlayerNotFound,
-    InvalidSpawnPosition,
-    PositionTaken,
-    NotReadyToStart,
-    GameNotStarted,
-    NotEnoughPlayers,
-    NoAvailableColors,
 }
 ```
 
-## UI Integration Pattern
-
+#### 3. UI State Machine
 ```rust
-// In client-egui/src/lobby_ui.rs (hypothetical)
-pub enum LobbyMessage {
-    JoinLobby(String), // player name
-    SelectSpawnPosition(PlayerPos),
-    StartGame,
-    LeaveLobby,
-}
-
-// Main app would have:
+// In client-egui/src/app.rs
+#[derive(Debug)]
 pub enum AppState {
+    MainMenu,
+    CreateLobbyForm {
+        lobby_name: String,
+        player_name: String,
+    },
+    JoinLobbyForm {
+        lobby_id: String,
+        player_name: String,
+    },
     Lobby(Lobby),
     Game(Game),
 }
+
+pub enum Message {
+    // ... existing messages ...
+
+    // Main menu actions
+    ShowCreateLobbyForm,
+    ShowJoinLobbyForm,
+    ShowSampleGame,
+
+    // Create lobby flow
+    CreateAndJoinLobby(String, String), // (lobby_name, player_name)
+
+    // Join lobby flow
+    JoinLobby(String, String), // (lobby_id, player_name)
+
+    // ... existing messages ...
+}
 ```
 
-## Simplifications Applied
+#### 4. UI Implementation
+```rust
+// In client-egui/src/app.rs
+impl TemplateApp {
+    fn render_main_menu(ui: &mut egui::Ui, sender: &mpsc::Sender<Message>) {
+        ui.vertical_centered(|ui| {
+            ui.heading("Tsuro");
+            ui.add_space(40.0);
 
-1. **No Network Layer**: Pure local state management, easy to extend to multiplayer later
-2. **Fixed Color Assignment**: Automatic color assignment eliminates player choice complexity
-3. **Simple Ready State**: Player becomes ready automatically when they place pawn (spawn_position.is_some())
-4. **Direct Position Selection**: Click-to-place on board edges, no dropdown menus
-5. **Minimal Validation**: Only essential checks (edge positions, no conflicts)
-6. **Boolean State**: Simple started/not-started instead of complex state machine
-7. **No Player Removal**: Removed PlayerLeft event for initial simplicity
+            if ui.button("Create Lobby").clicked() {
+                sender.send(Message::ShowCreateLobbyForm).expect("Send failed");
+            }
+            ui.add_space(10.0);
 
-## Integration with Existing Code
+            if ui.button("Join Lobby").clicked() {
+                sender.send(Message::ShowJoinLobbyForm).expect("Send failed");
+            }
+            ui.add_space(10.0);
 
-1. **Player Creation**: Extend `Player::new()` to accept color parameter
-2. **Game Initialization**: Replace hardcoded player creation with `Lobby::to_game()`
-3. **Message System**: Add `LobbyMessage` variants to existing message enum
-4. **App State**: Wrap existing game state in `AppState` enum
+            if ui.button("Sample Game").clicked() {
+                sender.send(Message::ShowSampleGame).expect("Send failed");
+            }
+        });
+    }
 
-## Key Benefits
+    fn render_create_lobby_form(
+        ui: &mut egui::Ui,
+        lobby_name: &mut String,
+        player_name: &mut String,
+        sender: &mpsc::Sender<Message>
+    ) {
+        ui.vertical_centered(|ui| {
+            ui.heading("Create Lobby");
+            ui.add_space(20.0);
+
+            ui.horizontal(|ui| {
+                ui.label("Lobby Name:");
+                ui.text_edit_singleline(lobby_name);
+            });
+            ui.add_space(10.0);
+
+            ui.horizontal(|ui| {
+                ui.label("Your Name:");
+                ui.text_edit_singleline(player_name);
+            });
+            ui.add_space(20.0);
+
+            let can_create = !lobby_name.trim().is_empty() && !player_name.trim().is_empty();
+
+            ui.horizontal(|ui| {
+                if ui.add_enabled(can_create, egui::Button::new("Create & Join")).clicked() {
+                    sender.send(Message::CreateAndJoinLobby(
+                        lobby_name.clone(),
+                        player_name.clone()
+                    )).expect("Send failed");
+                }
+
+                if ui.button("Back").clicked() {
+                    sender.send(Message::BackToMainMenu).expect("Send failed");
+                }
+            });
+        });
+    }
+
+    fn render_join_lobby_form(
+        ui: &mut egui::Ui,
+        lobby_id: &mut String,
+        player_name: &mut String,
+        sender: &mpsc::Sender<Message>
+    ) {
+        ui.vertical_centered(|ui| {
+            ui.heading("Join Lobby");
+            ui.add_space(20.0);
+
+            ui.horizontal(|ui| {
+                ui.label("Lobby ID:");
+                ui.text_edit_singleline(lobby_id);
+            });
+            ui.label("(4-character code)");
+            ui.add_space(10.0);
+
+            ui.horizontal(|ui| {
+                ui.label("Your Name:");
+                ui.text_edit_singleline(player_name);
+            });
+            ui.add_space(10.0);
+
+            let can_join = lobby_id.trim().len() == 4 && !player_name.trim().is_empty();
+
+            ui.horizontal(|ui| {
+                if ui.add_enabled(can_join, egui::Button::new("Join")).clicked() {
+                    sender.send(Message::JoinLobby(
+                        lobby_id.clone(),
+                        player_name.clone()
+                    )).expect("Send failed");
+                }
+
+                if ui.button("Back").clicked() {
+                    sender.send(Message::BackToMainMenu).expect("Send failed");
+                }
+            });
+        });
+    }
+}
+```
+
+#### 5. Message Handling
+```rust
+// In client-egui/src/app.rs update() method
+while let Ok(msg) = receiver.try_recv() {
+    match msg {
+        Message::ShowCreateLobbyForm => {
+            *app_state = AppState::CreateLobbyForm {
+                lobby_name: String::new(),
+                player_name: String::new(),
+            };
+        }
+
+        Message::ShowJoinLobbyForm => {
+            *app_state = AppState::JoinLobbyForm {
+                lobby_id: String::new(),
+                player_name: String::new(),
+            };
+        }
+
+        Message::CreateAndJoinLobby(lobby_name, player_name) => {
+            let (lobby, player_id) = Lobby::new_with_creator(lobby_name, player_name);
+            *current_player_id = player_id;
+            *app_state = AppState::Lobby(lobby);
+        }
+
+        Message::JoinLobby(lobby_id, player_name) => {
+            // Normalize and validate lobby ID
+            if let Some(normalized_id) = normalize_lobby_id(&lobby_id) {
+                // In real implementation, would query server and join existing lobby
+                // For now, create a new lobby as placeholder
+                let (lobby, player_id) = Lobby::new_with_creator(
+                    format!("Lobby {}", normalized_id),
+                    player_name
+                );
+                *current_player_id = player_id;
+                *app_state = AppState::Lobby(lobby);
+            }
+            // TODO: Handle invalid lobby ID error
+        }
+
+        // ... existing message handlers ...
+    }
+}
+```
+
+### Implementation Steps
+
+1. **Add dependency**: Add `rand` crate to `common/Cargo.toml` for lobby ID generation
+2. **Extend lobby module**: Add `next_lobby_id()`, `normalize_lobby_id()`, and `new_with_creator()`
+3. **Update AppState**: Add `CreateLobbyForm` and `JoinLobbyForm` states
+4. **Add UI render functions**: Implement `render_create_lobby_form()` and `render_join_lobby_form()`
+5. **Update message handlers**: Handle `CreateAndJoinLobby` and `JoinLobby` messages
+6. **Display lobby info**: Show lobby ID and name in the existing lobby UI
+
+### Key Benefits
+
+- **Clear user flow**: Three distinct paths from launch (Create/Join/Sample)
+- **Auto-join creator**: Simplifies UX by auto-joining after creation
+- **Simple validation**: Lobby ID normalized and validated inline
+- **Extensible**: Easy to add server lookup for join flow later
+
+### Notes for Future Server Integration
+
+When adding client-server communication:
+- `CreateAndJoinLobby` would call server to create lobby and return real ID
+- `JoinLobby` would query server for lobby details and join existing lobby
+- Add error handling for network failures and lobby-not-found cases
+
+## Key Implementation Notes
 
 - **Separation of Concerns**: Lobby logic completely separate from game logic and rendering
 - **Simple State Management**: Clear state transitions and validation
 - **Extensible**: Easy to add features like player names, custom colors, room browser
-- **Minimal Changes**: Integrates with existing architecture without major refactoring
 - **Board Edge Enforcement**: Automatic validation ensures only valid spawn positions
 
-## Test Coverage Proposal
+## Test Plan for "On App Launched" Implementation
 
-### Unit Tests for Lobby Logic
+### Unit Tests (common/src/lobby.rs)
 
+#### 1. Lobby ID Generation and Validation
 ```rust
 #[cfg(test)]
-mod tests {
+mod lobby_id_tests {
     use super::*;
 
     #[test]
-    fn test_new_lobby() {
-        let lobby = Lobby::new(LobbyId(1), "Test Room".to_string());
-        assert_eq!(lobby.id, LobbyId(1));
-        assert_eq!(lobby.name, "Test Room");
-        assert_eq!(lobby.players.len(), 0);
-        assert!(!lobby.started);
-        assert!(!lobby.can_start());
+    fn test_next_lobby_id_format() {
+        let id = next_lobby_id();
+        assert_eq!(id.len(), 4);
+        assert!(id.chars().all(|c| c.is_ascii_alphanumeric()));
+        assert!(id.chars().all(|c| c.is_uppercase()));
     }
 
     #[test]
-    fn test_player_joining() {
-        let mut lobby = Lobby::new(LobbyId(1), "Test".to_string());
-
-        let result = lobby.handle_event(LobbyEvent::PlayerJoined {
-            player_id: 1,
-            player_name: "Alice".to_string(),
-        });
-
-        assert!(result.is_ok());
-        assert_eq!(lobby.players.len(), 1);
-        assert_eq!(lobby.players[&1].name, "Alice");
-        assert_eq!(lobby.players[&1].color, (220, 50, 47)); // First solarized color
-        assert!(lobby.players[&1].spawn_position.is_none());
+    fn test_normalize_lobby_id_valid() {
+        assert_eq!(normalize_lobby_id("abcd"), Some("ABCD".to_string()));
+        assert_eq!(normalize_lobby_id("  AB12  "), Some("AB12".to_string()));
+        assert_eq!(normalize_lobby_id("xyz9"), Some("XYZ9".to_string()));
     }
 
     #[test]
-    fn test_lobby_full() {
-        let mut lobby = Lobby::new(LobbyId(1), "Test".to_string());
-        lobby.max_players = 2;
-
-        // Fill lobby
-        lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 1, player_name: "Alice".to_string() }).unwrap();
-        lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 2, player_name: "Bob".to_string() }).unwrap();
-
-        // Third player should fail
-        let result = lobby.handle_event(LobbyEvent::PlayerJoined {
-            player_id: 3,
-            player_name: "Charlie".to_string(),
-        });
-
-        assert!(matches!(result, Err(LobbyError::LobbyFull)));
-    }
-
-    #[test]
-    fn test_pawn_placement_valid() {
-        let mut lobby = Lobby::new(LobbyId(1), "Test".to_string());
-        lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 1, player_name: "Alice".to_string() }).unwrap();
-
-        let edge_pos = PlayerPos::new(0, 2, 4); // Top edge
-        let result = lobby.handle_event(LobbyEvent::PawnPlaced {
-            player_id: 1,
-            position: edge_pos,
-        });
-
-        assert!(result.is_ok());
-        assert_eq!(lobby.players[&1].spawn_position, Some(edge_pos));
-    }
-
-    #[test]
-    fn test_pawn_placement_invalid_position() {
-        let mut lobby = Lobby::new(LobbyId(1), "Test".to_string());
-        lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 1, player_name: "Alice".to_string() }).unwrap();
-
-        let center_pos = PlayerPos::new(2, 2, 0); // Center of board - invalid
-        let result = lobby.handle_event(LobbyEvent::PawnPlaced {
-            player_id: 1,
-            position: center_pos,
-        });
-
-        assert!(matches!(result, Err(LobbyError::InvalidSpawnPosition)));
-    }
-
-    #[test]
-    fn test_pawn_placement_position_taken() {
-        let mut lobby = Lobby::new(LobbyId(1), "Test".to_string());
-        lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 1, player_name: "Alice".to_string() }).unwrap();
-        lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 2, player_name: "Bob".to_string() }).unwrap();
-
-        let edge_pos = PlayerPos::new(0, 2, 4);
-
-        // First player places pawn
-        lobby.handle_event(LobbyEvent::PawnPlaced { player_id: 1, position: edge_pos }).unwrap();
-
-        // Second player tries same position
-        let result = lobby.handle_event(LobbyEvent::PawnPlaced { player_id: 2, position: edge_pos });
-
-        assert!(matches!(result, Err(LobbyError::PositionTaken)));
-    }
-
-    #[test]
-    fn test_can_start_conditions() {
-        let mut lobby = Lobby::new(LobbyId(1), "Test".to_string());
-
-        // Empty lobby cannot start
-        assert!(!lobby.can_start());
-
-        // Single player cannot start
-        lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 1, player_name: "Alice".to_string() }).unwrap();
-        assert!(!lobby.can_start());
-
-        // Two players without positions cannot start
-        lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 2, player_name: "Bob".to_string() }).unwrap();
-        assert!(!lobby.can_start());
-
-        // One player with position cannot start
-        lobby.handle_event(LobbyEvent::PawnPlaced { player_id: 1, position: PlayerPos::new(0, 2, 4) }).unwrap();
-        assert!(!lobby.can_start());
-
-        // Both players with positions can start
-        lobby.handle_event(LobbyEvent::PawnPlaced { player_id: 2, position: PlayerPos::new(5, 3, 0) }).unwrap();
-        assert!(lobby.can_start());
-    }
-
-    #[test]
-    fn test_start_game() {
-        let mut lobby = setup_ready_lobby();
-
-        let result = lobby.handle_event(LobbyEvent::StartGame);
-        assert!(result.is_ok());
-        assert!(lobby.started);
-    }
-
-    #[test]
-    fn test_start_game_not_ready() {
-        let mut lobby = Lobby::new(LobbyId(1), "Test".to_string());
-        lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 1, player_name: "Alice".to_string() }).unwrap();
-
-        let result = lobby.handle_event(LobbyEvent::StartGame);
-        assert!(matches!(result, Err(LobbyError::NotReadyToStart)));
-    }
-
-    #[test]
-    fn test_to_game_conversion() {
-        let mut lobby = setup_ready_lobby();
-        lobby.handle_event(LobbyEvent::StartGame).unwrap();
-
-        let game_result = lobby.to_game();
-        assert!(game_result.is_ok());
-
-        let game = game_result.unwrap();
-        assert_eq!(game.players.len(), 2);
-        assert_eq!(game.players[0].color, (220, 50, 47)); // Solarized red
-        assert_eq!(game.players[1].color, (133, 153, 0)); // Solarized green
-    }
-
-    #[test]
-    fn test_color_assignment_sequence() {
-        let mut lobby = Lobby::new(LobbyId(1), "Test".to_string());
-
-        // Test first 3 colors are assigned in order
-        for i in 1..=3 {
-            lobby.handle_event(LobbyEvent::PlayerJoined {
-                player_id: i,
-                player_name: format!("Player{}", i),
-            }).unwrap();
-        }
-
-        assert_eq!(lobby.players[&1].color, (220, 50, 47));   // Red
-        assert_eq!(lobby.players[&2].color, (133, 153, 0));   // Green
-        assert_eq!(lobby.players[&3].color, (38, 139, 210));  // Blue
-    }
-
-    #[test]
-    fn test_edge_position_validation() {
-        let lobby = Lobby::new(LobbyId(1), "Test".to_string());
-
-        // Valid edge positions
-        assert!(lobby.is_valid_edge_position(&PlayerPos::new(0, 2, 4))); // Top edge
-        assert!(lobby.is_valid_edge_position(&PlayerPos::new(5, 3, 0))); // Bottom edge
-        assert!(lobby.is_valid_edge_position(&PlayerPos::new(2, 0, 6))); // Left edge
-        assert!(lobby.is_valid_edge_position(&PlayerPos::new(3, 5, 2))); // Right edge
-
-        // Invalid center positions
-        assert!(!lobby.is_valid_edge_position(&PlayerPos::new(2, 2, 0)));
-        assert!(!lobby.is_valid_edge_position(&PlayerPos::new(3, 3, 4)));
-
-        // Invalid out-of-bounds positions
-        assert!(!lobby.is_valid_edge_position(&PlayerPos::new(6, 2, 0)));
-        assert!(!lobby.is_valid_edge_position(&PlayerPos::new(2, 6, 0)));
-    }
-
-    // Helper function for tests that need a ready lobby
-    fn setup_ready_lobby() -> Lobby {
-        let mut lobby = Lobby::new(LobbyId(1), "Test".to_string());
-        lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 1, player_name: "Alice".to_string() }).unwrap();
-        lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 2, player_name: "Bob".to_string() }).unwrap();
-        lobby.handle_event(LobbyEvent::PawnPlaced { player_id: 1, position: PlayerPos::new(0, 2, 4) }).unwrap();
-        lobby.handle_event(LobbyEvent::PawnPlaced { player_id: 2, position: PlayerPos::new(5, 3, 0) }).unwrap();
-        lobby
+    fn test_normalize_lobby_id_invalid() {
+        assert_eq!(normalize_lobby_id("abc"), None);  // Too short
+        assert_eq!(normalize_lobby_id("abcde"), None);  // Too long
+        assert_eq!(normalize_lobby_id("ab-d"), None);  // Invalid character
+        assert_eq!(normalize_lobby_id(""), None);  // Empty
+        assert_eq!(normalize_lobby_id("   "), None);  // Whitespace only
     }
 }
 ```
 
-### Integration Tests
+#### 2. Lobby Creation with Auto-Join
+```rust
+#[test]
+fn test_new_with_creator() {
+    let (lobby, creator_id) = Lobby::new_with_creator(
+        "Test Room".to_string(),
+        "Alice".to_string()
+    );
+
+    // Verify lobby properties
+    assert_eq!(lobby.name, "Test Room");
+    assert_eq!(lobby.id.len(), 4);
+    assert_eq!(lobby.players.len(), 1);
+    assert!(!lobby.started);
+
+    // Verify creator is auto-joined
+    assert_eq!(creator_id, 1);
+    let creator = &lobby.players[&creator_id];
+    assert_eq!(creator.name, "Alice");
+    assert_eq!(creator.id, creator_id);
+    assert!(creator.spawn_position.is_none());
+}
+
+#[test]
+fn test_new_with_creator_assigns_first_color() {
+    let (lobby, creator_id) = Lobby::new_with_creator(
+        "Test".to_string(),
+        "Bob".to_string()
+    );
+
+    let creator = &lobby.players[&creator_id];
+    assert_eq!(creator.color, (220, 50, 47)); // First Solarized color (red)
+}
+```
+
+### Integration Test (common/tests/lobby_launch_flow.rs)
+
+This single integration test covers the entire launch flow, eliminating the need for many unit tests:
 
 ```rust
-// In tests/lobby_integration.rs
+use tsurust_common::lobby::*;
+use tsurust_common::board::*;
+
 #[test]
-fn test_full_lobby_to_game_flow() {
-    // Test complete flow from empty lobby to game start
-    let mut lobby = Lobby::new(LobbyId(42), "Integration Test".to_string());
+fn test_complete_create_and_join_flow() {
+    // === Create Lobby Flow ===
 
-    // Add players
-    for i in 1..=4 {
-        lobby.handle_event(LobbyEvent::PlayerJoined {
-            player_id: i,
-            player_name: format!("Player{}", i),
-        }).unwrap();
-    }
+    // Creator creates lobby and auto-joins
+    let (mut lobby1, creator_id) = Lobby::new_with_creator(
+        "Game Room".to_string(),
+        "Alice".to_string()
+    );
 
-    // Place pawns on different edges
-    let positions = [
-        PlayerPos::new(0, 1, 4), // Top edge
-        PlayerPos::new(2, 5, 2), // Right edge
-        PlayerPos::new(5, 3, 0), // Bottom edge
-        PlayerPos::new(3, 0, 6), // Left edge
-    ];
+    // Verify lobby created with proper ID
+    assert_eq!(lobby1.id.len(), 4);
+    assert_eq!(lobby1.name, "Game Room");
+    assert_eq!(lobby1.players.len(), 1);
 
-    for (i, &pos) in positions.iter().enumerate() {
-        lobby.handle_event(LobbyEvent::PawnPlaced {
-            player_id: (i + 1) as u32,
-            position: pos,
-        }).unwrap();
-    }
+    // Verify creator auto-joined
+    assert_eq!(creator_id, 1);
+    assert_eq!(lobby1.players[&creator_id].name, "Alice");
+    assert_eq!(lobby1.players[&creator_id].color, (220, 50, 47)); // Red
 
-    // Start game
-    assert!(lobby.can_start());
-    lobby.handle_event(LobbyEvent::StartGame).unwrap();
+    // Creator places pawn
+    lobby1.handle_event(LobbyEvent::PawnPlaced {
+        player_id: creator_id,
+        position: PlayerPos::new(0, 2, 4),
+    }).expect("Creator should be able to place pawn");
+
+    assert_eq!(
+        lobby1.players[&creator_id].spawn_position,
+        Some(PlayerPos::new(0, 2, 4))
+    );
+
+    // === Join Lobby Flow ===
+
+    // Simulate second player joining (via normalized lobby ID)
+    let lobby_id = lobby1.id.clone();
+    let normalized = normalize_lobby_id(&lobby_id.to_lowercase())
+        .expect("Generated ID should be valid");
+    assert_eq!(normalized, lobby_id);
+
+    // Second player joins
+    lobby1.handle_event(LobbyEvent::PlayerJoined {
+        player_id: 2,
+        player_name: "Bob".to_string(),
+    }).expect("Second player should be able to join");
+
+    assert_eq!(lobby1.players.len(), 2);
+    assert_eq!(lobby1.players[&2].name, "Bob");
+    assert_eq!(lobby1.players[&2].color, (133, 153, 0)); // Green
+
+    // Second player places pawn
+    lobby1.handle_event(LobbyEvent::PawnPlaced {
+        player_id: 2,
+        position: PlayerPos::new(5, 3, 0),
+    }).expect("Second player should be able to place pawn");
+
+    // === Start Game ===
+
+    // Lobby should be ready to start
+    assert!(lobby1.can_start());
+
+    lobby1.handle_event(LobbyEvent::StartGame)
+        .expect("Lobby should be able to start");
+    assert!(lobby1.started);
 
     // Convert to game
-    let game = lobby.to_game().unwrap();
-    assert_eq!(game.players.len(), 4);
+    let game = lobby1.to_game().expect("Should convert to game");
 
-    // Verify each player has correct position and solarized color
-    for (i, player) in game.players.iter().enumerate() {
-        assert_eq!(player.pos, positions[i]);
-        // Colors should be assigned from solarized palette
-        assert!(is_solarized_color(player.color));
-    }
+    // Verify game state
+    assert_eq!(game.players.len(), 2);
+    assert_eq!(game.players[0].name, "Alice");
+    assert_eq!(game.players[0].pos, PlayerPos::new(0, 2, 4));
+    assert_eq!(game.players[0].color, (220, 50, 47));
+    assert_eq!(game.players[1].name, "Bob");
+    assert_eq!(game.players[1].pos, PlayerPos::new(5, 3, 0));
+    assert_eq!(game.players[1].color, (133, 153, 0));
 }
 
-fn is_solarized_color(color: (u8, u8, u8)) -> bool {
-    const SOLARIZED_COLORS: &[(u8, u8, u8)] = &[
-        (220, 50, 47), (133, 153, 0), (38, 139, 210), (181, 137, 0),
-        (211, 54, 130), (42, 161, 152), (203, 75, 22), (108, 113, 196),
-    ];
-    SOLARIZED_COLORS.contains(&color)
-}
-```
+#[test]
+fn test_lobby_id_normalization_edge_cases() {
+    // Test various input formats
+    assert_eq!(normalize_lobby_id("abcd"), Some("ABCD".to_string()));
+    assert_eq!(normalize_lobby_id("ABCD"), Some("ABCD".to_string()));
+    assert_eq!(normalize_lobby_id("  abcd  "), Some("ABCD".to_string()));
+    assert_eq!(normalize_lobby_id("1234"), Some("1234".to_string()));
+    assert_eq!(normalize_lobby_id("a1b2"), Some("A1B2".to_string()));
 
-### Property-Based Tests (Optional)
-
-For more robust testing, consider using `proptest` for property-based testing:
-
-```rust
-// Test that valid edge positions are always accepted
-proptest! {
-    #[test]
-    fn prop_valid_edge_positions_accepted(
-        row in 0u8..=5,
-        col in 0u8..=5,
-        endpoint in 0u8..=7
-    ) {
-        let lobby = Lobby::new(LobbyId(1), "Test".to_string());
-        let pos = PlayerPos::new(row, col, endpoint);
-
-        // Only test actual edge positions
-        if row == 0 || row == 5 || col == 0 || col == 5 {
-            assert!(lobby.is_valid_edge_position(&pos));
-        }
-    }
+    // Invalid cases
+    assert_eq!(normalize_lobby_id("abc"), None);
+    assert_eq!(normalize_lobby_id("abcde"), None);
+    assert_eq!(normalize_lobby_id("ab cd"), None);
+    assert_eq!(normalize_lobby_id(""), None);
 }
 ```
 
-This design provides a solid foundation for multiplayer while keeping the implementation simple and maintainable.
+### Test Coverage Analysis
+
+**What the integration test covers (eliminating need for unit tests):**
+
+1. ✅ `new_with_creator()` functionality
+2. ✅ Auto-join creator with correct ID
+3. ✅ Creator gets first color assigned
+4. ✅ Lobby ID generation (4 characters)
+5. ✅ Lobby ID normalization (case-insensitive)
+6. ✅ Second player joining
+7. ✅ Color assignment sequence
+8. ✅ Pawn placement for multiple players
+9. ✅ `can_start()` validation
+10. ✅ Game start flow
+11. ✅ `to_game()` conversion with player data
+
+**Unit tests still needed (not covered by integration test):**
+
+1. ✅ `next_lobby_id()` format validation
+2. ✅ `normalize_lobby_id()` edge cases (various invalid inputs)
+
+### Implementation Plan
+
+1. **Add `rand` dependency** to `common/Cargo.toml`
+2. **Implement lobby ID functions** in `common/src/lobby.rs`:
+   - `next_lobby_id()`
+   - `normalize_lobby_id()`
+3. **Implement `new_with_creator()`** method
+4. **Add unit tests** for lobby ID functions (2 tests)
+5. **Add integration test** for complete flow (1 comprehensive test)
+6. **Verify all tests pass** before moving to UI implementation
+
+This approach gives comprehensive coverage with only 3-4 test functions instead of 10+ separate unit tests, while maintaining confidence in correctness.

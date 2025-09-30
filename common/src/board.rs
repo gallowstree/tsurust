@@ -46,6 +46,7 @@ pub type PlayerID = usize;
 #[derive(Debug)]
 pub struct Player {
     pub id: PlayerID,
+    pub name: String,
     pub pos: PlayerPos,
     pub alive: bool,
     pub color: (u8, u8, u8),  // RGB color tuple
@@ -56,9 +57,21 @@ impl Player {
     pub fn new(id: PlayerID, pos: PlayerPos) -> Self {
         Self {
             id,
+            name: format!("Player {}", id),
             pos,
             alive: true,
             color: crate::colors::get_player_color(id),
+            has_moved: false,
+        }
+    }
+
+    pub fn new_with_name(id: PlayerID, name: String, pos: PlayerPos, color: (u8, u8, u8)) -> Self {
+        Self {
+            id,
+            name,
+            pos,
+            alive: true,
+            color,
             has_moved: false,
         }
     }

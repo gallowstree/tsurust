@@ -5,26 +5,44 @@ use std::sync::mpsc;
 use crate::board_renderer::BoardRenderer;
 use crate::hand_renderer::HandRenderer;
 use crate::player_card::PlayerCard;
+use crate::components::LobbyBoard;
 use tsurust_common::board::*;
 use tsurust_common::game::{Game, TurnResult};
-use tsurust_common::lobby::{Lobby, LobbyId, LobbyEvent, LobbyPlayer};
+use tsurust_common::lobby::{Lobby, LobbyEvent};
 
 #[derive(Debug, Clone)]
 pub enum Message {
     TilePlaced(usize),                // tile index - place at current player position
     TileRotated(usize, bool),         // tile index, clockwise
     RestartGame,                      // restart the game
-    StartLobby,                       // start a new lobby
+    StartLobby,                       // start a new lobby (old, for compatibility)
     StartSampleGame,                  // start sample game (current behavior)
     JoinLobby(String),               // join lobby with player name
     PlacePawn(PlayerPos),            // place pawn at position in lobby
     StartGameFromLobby,              // start game from lobby
+    ShowCreateLobbyForm,             // show create lobby form
+    ShowJoinLobbyForm,               // show join lobby form
+    CreateAndJoinLobby(String, String), // (lobby_name, player_name)
+    JoinLobbyWithId(String, String), // (lobby_id, player_name)
+    BackToMainMenu,                  // return to main menu
+    DebugAddPlayer,                  // debug: simulate player joining
+    DebugPlacePawn(PlayerID),        // debug: place pawn for specific player
+    DebugCyclePlayer(bool),          // debug: cycle active player (true = next, false = prev)
 }
 
 #[derive(Debug)]
 pub enum AppState {
     MainMenu,
+    CreateLobbyForm {
+        lobby_name: String,
+        player_name: String,
+    },
+    JoinLobbyForm {
+        lobby_id: String,
+        player_name: String,
+    },
     Lobby(Lobby),
+    LobbyPlacingFor(Lobby, PlayerID),  // Placing pawn for specific player
     Game(Game),
 }
 
@@ -69,7 +87,16 @@ impl TemplateApp {
     fn render_ui(ctx: &Context, app_state: &mut AppState, current_player_id: PlayerID, sender: &mpsc::Sender<Message>) {
         match app_state {
             AppState::MainMenu => Self::render_main_menu(ctx, sender),
+            AppState::CreateLobbyForm { lobby_name, player_name } => {
+                Self::render_create_lobby_form(ctx, lobby_name, player_name, sender)
+            }
+            AppState::JoinLobbyForm { lobby_id, player_name } => {
+                Self::render_join_lobby_form(ctx, lobby_id, player_name, sender)
+            }
             AppState::Lobby(lobby) => Self::render_lobby_ui(ctx, lobby, current_player_id, sender),
+            AppState::LobbyPlacingFor(lobby, placing_for_id) => {
+                Self::render_lobby_placing_ui(ctx, lobby, *placing_for_id, sender)
+            }
             AppState::Game(game) => Self::render_game_ui(ctx, game, sender),
         }
     }
@@ -83,19 +110,120 @@ impl TemplateApp {
                 ui.label("Year of the Dragon of Wood");
                 ui.add_space(50.0);
 
-                if ui.button("🏠 Start from Lobby").clicked() {
-                    if let Err(e) = sender.send(Message::StartLobby) {
-                        eprintln!("Failed to send StartLobby message: {}", e);
-                    }
+                if ui.button("➕ Create Lobby").clicked() {
+                    sender.send(Message::ShowCreateLobbyForm).expect("Failed to send message");
                 }
 
                 ui.add_space(10.0);
 
-                if ui.button("🎮 Start Sample Game").clicked() {
-                    if let Err(e) = sender.send(Message::StartSampleGame) {
-                        eprintln!("Failed to send StartSampleGame message: {}", e);
-                    }
+                if ui.button("🔗 Join Lobby").clicked() {
+                    sender.send(Message::ShowJoinLobbyForm).expect("Failed to send message");
                 }
+
+                ui.add_space(10.0);
+
+                if ui.button("🎮 Sample Game").clicked() {
+                    sender.send(Message::StartSampleGame).expect("Failed to send message");
+                }
+            });
+        });
+    }
+
+    fn render_create_lobby_form(ctx: &Context, lobby_name: &mut String, player_name: &mut String, sender: &mpsc::Sender<Message>) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.vertical_centered(|ui| {
+                ui.add_space(100.0);
+                ui.heading("Create Lobby");
+                ui.add_space(40.0);
+
+                ui.horizontal(|ui| {
+                    ui.label("Lobby Name:");
+                    let lobby_name_response = ui.text_edit_singleline(lobby_name);
+                    // Auto-focus on first render
+                    if lobby_name.is_empty() && player_name.is_empty() {
+                        lobby_name_response.request_focus();
+                    }
+                });
+                ui.add_space(10.0);
+
+                ui.horizontal(|ui| {
+                    ui.label("Your Name:");
+                    ui.text_edit_singleline(player_name);
+                });
+                ui.add_space(30.0);
+
+                let can_create = !lobby_name.trim().is_empty() && !player_name.trim().is_empty();
+
+                // Submit on Enter key
+                if ui.input(|i| i.key_pressed(egui::Key::Enter)) && can_create {
+                    sender.send(Message::CreateAndJoinLobby(
+                        lobby_name.clone(),
+                        player_name.clone()
+                    )).expect("Failed to send message");
+                }
+
+                ui.horizontal(|ui| {
+                    if ui.add_enabled(can_create, egui::Button::new("Create & Join")).clicked() {
+                        sender.send(Message::CreateAndJoinLobby(
+                            lobby_name.clone(),
+                            player_name.clone()
+                        )).expect("Failed to send message");
+                    }
+
+                    if ui.button("Back").clicked() {
+                        sender.send(Message::BackToMainMenu).expect("Failed to send message");
+                    }
+                });
+            });
+        });
+    }
+
+    fn render_join_lobby_form(ctx: &Context, lobby_id: &mut String, player_name: &mut String, sender: &mpsc::Sender<Message>) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.vertical_centered(|ui| {
+                ui.add_space(100.0);
+                ui.heading("Join Lobby");
+                ui.add_space(40.0);
+
+                ui.horizontal(|ui| {
+                    ui.label("Lobby ID:");
+                    let lobby_id_response = ui.text_edit_singleline(lobby_id);
+                    // Auto-focus on first render
+                    if lobby_id.is_empty() && player_name.is_empty() {
+                        lobby_id_response.request_focus();
+                    }
+                });
+                ui.label("(4-character code)");
+                ui.add_space(10.0);
+
+                ui.horizontal(|ui| {
+                    ui.label("Your Name:");
+                    ui.text_edit_singleline(player_name);
+                });
+                ui.add_space(30.0);
+
+                let can_join = lobby_id.trim().len() == 4 && !player_name.trim().is_empty();
+
+                // Submit on Enter key
+                if ui.input(|i| i.key_pressed(egui::Key::Enter)) && can_join {
+                    sender.send(Message::JoinLobbyWithId(
+                        lobby_id.clone(),
+                        player_name.clone()
+                    )).expect("Failed to send message");
+                }
+
+                ui.horizontal(|ui| {
+                    if ui.add_enabled(can_join, egui::Button::new("Join")).clicked() {
+                        sender.send(Message::JoinLobbyWithId(
+                            lobby_id.clone(),
+                            player_name.clone()
+                        )).expect("Failed to send message");
+                    }
+
+                    if ui.button("Back").clicked() {
+                        sender.send(Message::BackToMainMenu).expect("Failed to send message");
+                    }
+                });
             });
         });
     }
@@ -109,7 +237,7 @@ impl TemplateApp {
                     ui.add_space(10.0);
                     ui.heading(format!("Lobby: {}", lobby.name));
                     ui.separator();
-                    ui.label(format!("Room ID: {}", lobby.id.0));
+                    ui.label(format!("Room ID: {}", lobby.id));
                     ui.separator();
                     ui.label(format!("Players: {}/{}", lobby.players.len(), lobby.max_players));
 
@@ -161,7 +289,7 @@ impl TemplateApp {
                         ui.label(&lobby_player.name);
 
                         if lobby_player.spawn_position.is_some() {
-                            ui.label("✓ Ready");
+                            ui.label("✔ Ready");
                         } else {
                             ui.label("⏳ Placing pawn...");
                         }
@@ -179,68 +307,139 @@ impl TemplateApp {
                 if lobby.players.len() < lobby.max_players {
                     ui.label("Waiting for more players to join...");
                 }
+
+                ui.add_space(20.0);
+                ui.separator();
+                ui.heading("Debug Tools");
+                ui.add_space(10.0);
+
+                if ui.button("➕ Add Test Player").clicked() {
+                    sender.send(Message::DebugAddPlayer).expect("Failed to send message");
+                }
+
+                ui.add_space(10.0);
+                ui.label("Place pawn for:");
+                for (player_id, lobby_player) in &lobby.players {
+                    if lobby_player.spawn_position.is_none() {
+                        let player_color = egui::Color32::from_rgb(
+                            lobby_player.color.0,
+                            lobby_player.color.1,
+                            lobby_player.color.2
+                        );
+
+                        ui.horizontal(|ui| {
+                            let circle_center = ui.cursor().min + egui::Vec2::new(8.0, 8.0);
+                            ui.painter().circle_filled(circle_center, 6.0, player_color);
+                            ui.add_space(16.0);
+
+                            if ui.button(&lobby_player.name).clicked() {
+                                sender.send(Message::DebugPlacePawn(*player_id)).expect("Failed to send message");
+                            }
+                        });
+                    }
+                }
             });
         });
     }
 
     fn render_lobby_board(ui: &mut egui::Ui, lobby: &Lobby, current_player_id: PlayerID, sender: &mpsc::Sender<Message>) {
-        let board_size = 300.0;
-        let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(board_size), egui::Sense::click());
+        let board = LobbyBoard::new(lobby, current_player_id);
+        board.render(ui, 300.0, sender);
+    }
 
-        // Draw board grid
-        ui.painter().rect_stroke(rect, 4.0, egui::Stroke::new(2.0, egui::Color32::LIGHT_GRAY));
+    fn render_lobby_placing_ui(ctx: &Context, lobby: &mut Lobby, placing_for_id: PlayerID, sender: &mpsc::Sender<Message>) {
+        let placing_player = lobby.players.get(&placing_for_id);
+        let player_name = placing_player.map(|p| p.name.as_str()).unwrap_or("Unknown");
+        let player_color = placing_player.map(|p| p.color).unwrap_or((128, 128, 128));
 
-        let cell_size = board_size / 6.0;
-        for i in 1..6 {
-            let x = rect.min.x + i as f32 * cell_size;
-            let y = rect.min.y + i as f32 * cell_size;
-            // Vertical lines
-            ui.painter().line_segment(
-                [egui::Pos2::new(x, rect.min.y), egui::Pos2::new(x, rect.max.y)],
-                egui::Stroke::new(1.0, egui::Color32::GRAY)
-            );
-            // Horizontal lines
-            ui.painter().line_segment(
-                [egui::Pos2::new(rect.min.x, y), egui::Pos2::new(rect.max.x, y)],
-                egui::Stroke::new(1.0, egui::Color32::GRAY)
-            );
-        }
+        egui::TopBottomPanel::top("top_panel")
+            .resizable(true)
+            .min_height(32.0)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.add_space(10.0);
+                    ui.heading(format!("Lobby: {}", lobby.name));
+                    ui.separator();
+                    ui.label(format!("Room ID: {}", lobby.id));
+                    ui.separator();
+                    ui.label(format!("Players: {}/{}", lobby.players.len(), lobby.max_players));
+                });
+            });
 
-        // Draw placed pawns
-        for lobby_player in lobby.players.values() {
-            if let Some(pos) = lobby_player.spawn_position {
-                let cell_rect = egui::Rect::from_min_size(
-                    rect.min + egui::Vec2::new(pos.cell.col as f32 * cell_size, pos.cell.row as f32 * cell_size),
-                    egui::Vec2::splat(cell_size)
-                );
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.vertical_centered(|ui| {
+                ui.add_space(20.0);
+                let player_color_ui = egui::Color32::from_rgb(player_color.0, player_color.1, player_color.2);
 
-                let player_color = egui::Color32::from_rgb(
-                    lobby_player.color.0,
-                    lobby_player.color.1,
-                    lobby_player.color.2
-                );
+                ui.horizontal(|ui| {
+                    ui.heading("Placing pawn for:");
+                    let circle_center = ui.cursor().min + egui::Vec2::new(8.0, 12.0);
+                    ui.painter().circle_filled(circle_center, 8.0, player_color_ui);
+                    ui.painter().circle_stroke(circle_center, 8.0, (1.0, egui::Color32::WHITE));
+                    ui.add_space(20.0);
+                    ui.heading(player_name);
+                });
 
-                ui.painter().circle_filled(cell_rect.center(), 8.0, player_color);
-                ui.painter().circle_stroke(cell_rect.center(), 8.0, (2.0, egui::Color32::WHITE));
-            }
-        }
+                ui.label("Click on any board edge to place their pawn");
+                ui.add_space(20.0);
 
-        // Handle clicks for pawn placement
-        if response.clicked() {
-            if let Some(click_pos) = response.interact_pointer_pos() {
-                let relative_pos = click_pos - rect.min;
-                let col = (relative_pos.x / cell_size) as usize;
-                let row = (relative_pos.y / cell_size) as usize;
+                Self::render_lobby_board(ui, lobby, placing_for_id, sender);
+            });
+        });
 
-                // Only allow edge positions
-                if (row == 0 || row == 5 || col == 0 || col == 5) && row < 6 && col < 6 {
-                    let spawn_pos = PlayerPos::new(row, col, 0); // Default endpoint
-                    if let Err(e) = sender.send(Message::PlacePawn(spawn_pos)) {
-                        eprintln!("Failed to send PlacePawn message: {}", e);
-                    }
+        egui::SidePanel::right("right_panel").show(ctx, |ui| {
+            ui.vertical(|ui| {
+                ui.heading("Players");
+                ui.separator();
+
+                for (player_id, lobby_player) in &lobby.players {
+                    ui.horizontal(|ui| {
+                        let player_color = egui::Color32::from_rgb(
+                            lobby_player.color.0,
+                            lobby_player.color.1,
+                            lobby_player.color.2
+                        );
+
+                        let circle_center = ui.cursor().min + egui::Vec2::new(12.0, 12.0);
+                        ui.painter().circle_filled(circle_center, 8.0, player_color);
+                        ui.painter().circle_stroke(circle_center, 8.0, (1.0, egui::Color32::WHITE));
+
+                        ui.add_space(20.0);
+                        ui.label(&lobby_player.name);
+
+                        if lobby_player.spawn_position.is_some() {
+                            ui.label("✔ Ready");
+                        } else if *player_id == placing_for_id {
+                            ui.label("👈 Placing now...");
+                        } else {
+                            ui.label("⏳ Waiting...");
+                        }
+                    });
+                    ui.add_space(5.0);
                 }
-            }
-        }
+
+                ui.add_space(20.0);
+                ui.separator();
+                ui.heading("Switch Player");
+                ui.add_space(10.0);
+
+                ui.horizontal(|ui| {
+                    if ui.button("⬅ Previous").clicked() {
+                        sender.send(Message::DebugCyclePlayer(false)).expect("Failed to send message");
+                    }
+                    if ui.button("Next ➡").clicked() {
+                        sender.send(Message::DebugCyclePlayer(true)).expect("Failed to send message");
+                    }
+                });
+
+                ui.add_space(20.0);
+                ui.separator();
+
+                if ui.button("⬅ Back to Lobby").clicked() {
+                    sender.send(Message::BackToMainMenu).expect("Failed to send message");
+                }
+            });
+        });
     }
 
     fn render_game_ui(ctx: &Context, game: &mut Game, sender: &mpsc::Sender<Message>) {
@@ -253,6 +452,11 @@ impl TemplateApp {
                     if ui.button("🔄 Restart Game").clicked() {
                         if let Err(e) = sender.send(Message::RestartGame) {
                             eprintln!("Failed to send RestartGame message: {}", e);
+                        }
+                    }
+                    if ui.button("⬅ Back to Menu").clicked() {
+                        if let Err(e) = sender.send(Message::BackToMainMenu) {
+                            eprintln!("Failed to send BackToMainMenu message: {}", e);
                         }
                     }
                 });
@@ -346,7 +550,7 @@ impl eframe::App for TemplateApp {
             while let Ok(message) = rx.try_recv() {
                 match message {
                     Message::StartLobby => {
-                        let mut lobby = Lobby::new(LobbyId(1), "Main Room".to_string());
+                        let mut lobby = Lobby::new("MAIN".to_string(), "Main Room".to_string());
                         // Auto-join the lobby as Player 1
                         if let Err(e) = lobby.handle_event(LobbyEvent::PlayerJoined {
                             player_id: *current_player_id,
@@ -366,6 +570,50 @@ impl eframe::App for TemplateApp {
                         let game = Game::new(players);
                         *app_state = AppState::Game(game);
                     }
+                    Message::ShowCreateLobbyForm => {
+                        *app_state = AppState::CreateLobbyForm {
+                            lobby_name: String::new(),
+                            player_name: String::new(),
+                        };
+                    }
+                    Message::ShowJoinLobbyForm => {
+                        *app_state = AppState::JoinLobbyForm {
+                            lobby_id: String::new(),
+                            player_name: String::new(),
+                        };
+                    }
+                    Message::CreateAndJoinLobby(lobby_name, player_name) => {
+                        let (lobby, player_id) = Lobby::new_with_creator(lobby_name, player_name);
+                        *current_player_id = player_id;
+                        *app_state = AppState::Lobby(lobby);
+                    }
+                    Message::JoinLobbyWithId(lobby_id, player_name) => {
+                        use tsurust_common::lobby::normalize_lobby_id;
+                        // Normalize and validate lobby ID
+                        if let Some(normalized_id) = normalize_lobby_id(&lobby_id) {
+                            // In real implementation, would query server and join existing lobby
+                            // For now, create a new lobby as placeholder
+                            let (lobby, player_id) = Lobby::new_with_creator(
+                                format!("Lobby {}", normalized_id),
+                                player_name
+                            );
+                            *current_player_id = player_id;
+                            *app_state = AppState::Lobby(lobby);
+                        }
+                        // TODO: Handle invalid lobby ID error
+                    }
+                    Message::BackToMainMenu => {
+                        match app_state {
+                            AppState::LobbyPlacingFor(lobby, _) => {
+                                // Return to lobby instead of main menu
+                                let lobby_copy = lobby.clone();
+                                *app_state = AppState::Lobby(lobby_copy);
+                            }
+                            _ => {
+                                *app_state = AppState::MainMenu;
+                            }
+                        }
+                    }
                     Message::JoinLobby(player_name) => {
                         if let AppState::Lobby(lobby) = app_state {
                             if let Err(e) = lobby.handle_event(LobbyEvent::PlayerJoined {
@@ -377,13 +625,28 @@ impl eframe::App for TemplateApp {
                         }
                     }
                     Message::PlacePawn(position) => {
-                        if let AppState::Lobby(lobby) = app_state {
-                            if let Err(e) = lobby.handle_event(LobbyEvent::PawnPlaced {
-                                player_id: *current_player_id,
-                                position,
-                            }) {
-                                eprintln!("Failed to place pawn: {:?}", e);
+                        match app_state {
+                            AppState::Lobby(lobby) => {
+                                if let Err(e) = lobby.handle_event(LobbyEvent::PawnPlaced {
+                                    player_id: *current_player_id,
+                                    position,
+                                }) {
+                                    eprintln!("Failed to place pawn: {:?}", e);
+                                }
                             }
+                            AppState::LobbyPlacingFor(lobby, placing_for_id) => {
+                                if let Err(e) = lobby.handle_event(LobbyEvent::PawnPlaced {
+                                    player_id: *placing_for_id,
+                                    position,
+                                }) {
+                                    eprintln!("Failed to place pawn: {:?}", e);
+                                } else {
+                                    // Return to normal lobby view
+                                    let lobby_copy = lobby.clone();
+                                    *app_state = AppState::Lobby(lobby_copy);
+                                }
+                            }
+                            _ => {}
                         }
                     }
                     Message::StartGameFromLobby => {
@@ -399,6 +662,78 @@ impl eframe::App for TemplateApp {
                                         eprintln!("Failed to convert lobby to game: {:?}", e);
                                     }
                                 }
+                            }
+                        }
+                    }
+                    Message::DebugAddPlayer => {
+                        match app_state {
+                            AppState::Lobby(lobby) => {
+                                let next_player_id = lobby.players.keys().max().unwrap_or(&0) + 1;
+                                let player_name = format!("Test Player {}", next_player_id);
+                                if let Err(e) = lobby.handle_event(LobbyEvent::PlayerJoined {
+                                    player_id: next_player_id,
+                                    player_name,
+                                }) {
+                                    eprintln!("Failed to add test player: {:?}", e);
+                                } else {
+                                    // Switch to placing mode for the new player
+                                    let lobby_copy = lobby.clone();
+                                    *app_state = AppState::LobbyPlacingFor(lobby_copy, next_player_id);
+                                }
+                            }
+                            AppState::LobbyPlacingFor(lobby, _) => {
+                                let next_player_id = lobby.players.keys().max().unwrap_or(&0) + 1;
+                                let player_name = format!("Test Player {}", next_player_id);
+                                if let Err(e) = lobby.handle_event(LobbyEvent::PlayerJoined {
+                                    player_id: next_player_id,
+                                    player_name,
+                                }) {
+                                    eprintln!("Failed to add test player: {:?}", e);
+                                } else {
+                                    // Switch to placing mode for the new player
+                                    let lobby_copy = lobby.clone();
+                                    *app_state = AppState::LobbyPlacingFor(lobby_copy, next_player_id);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    Message::DebugPlacePawn(player_id) => {
+                        if let AppState::Lobby(lobby) = app_state {
+                            // Switch to placing mode for this player
+                            let lobby_copy = lobby.clone();
+                            *app_state = AppState::LobbyPlacingFor(lobby_copy, player_id);
+                        }
+                    }
+                    Message::DebugCyclePlayer(next) => {
+                        if let AppState::LobbyPlacingFor(lobby, current_placing_id) = app_state {
+                            // Get all player IDs without spawn positions, sorted
+                            let mut unplaced_players: Vec<PlayerID> = lobby.players.iter()
+                                .filter(|(_, p)| p.spawn_position.is_none())
+                                .map(|(id, _)| *id)
+                                .collect();
+                            unplaced_players.sort();
+
+                            if !unplaced_players.is_empty() {
+                                // Find current index
+                                let current_idx = unplaced_players.iter()
+                                    .position(|id| id == current_placing_id)
+                                    .unwrap_or(0);
+
+                                // Calculate new index
+                                let new_idx = if next {
+                                    (current_idx + 1) % unplaced_players.len()
+                                } else {
+                                    if current_idx == 0 {
+                                        unplaced_players.len() - 1
+                                    } else {
+                                        current_idx - 1
+                                    }
+                                };
+
+                                let new_player_id = unplaced_players[new_idx];
+                                let lobby_copy = lobby.clone();
+                                *app_state = AppState::LobbyPlacingFor(lobby_copy, new_player_id);
                             }
                         }
                     }

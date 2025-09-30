@@ -2,8 +2,29 @@ use std::collections::{HashMap, HashSet};
 use crate::board::{Player, PlayerPos, PlayerID, CellCoord};
 use crate::game::Game;
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct LobbyId(pub u64);
+pub type LobbyId = String;
+
+/// Generate a new 4-character alphanumeric lobby ID.
+/// Uses characters that are easy to distinguish (excludes I, O, 0, 1).
+pub fn next_lobby_id() -> LobbyId {
+    use rand::Rng;
+    const CHARSET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let mut rng = rand::thread_rng();
+    (0..4)
+        .map(|_| CHARSET[rng.gen_range(0..CHARSET.len())] as char)
+        .collect::<String>()
+}
+
+/// Normalize a lobby ID to uppercase and validate format.
+/// Returns None if the ID is invalid (wrong length or contains invalid characters).
+pub fn normalize_lobby_id(id: &str) -> Option<LobbyId> {
+    let normalized = id.trim().to_uppercase();
+    if normalized.len() == 4 && normalized.chars().all(|c| c.is_ascii_alphanumeric()) {
+        Some(normalized)
+    } else {
+        None
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Lobby {
@@ -44,6 +65,28 @@ impl Lobby {
             started: false,
             max_players: 8,
         }
+    }
+
+    /// Create a new lobby with a generated ID and auto-join the creator.
+    /// Returns the lobby and the creator's player ID.
+    pub fn new_with_creator(name: String, creator_name: String) -> (Self, PlayerID) {
+        let lobby_id = next_lobby_id();
+        let mut lobby = Self {
+            id: lobby_id,
+            name,
+            players: HashMap::new(),
+            started: false,
+            max_players: 8,
+        };
+
+        // Auto-join creator as first player
+        let creator_id = 1;
+        lobby.handle_event(LobbyEvent::PlayerJoined {
+            player_id: creator_id,
+            player_name: creator_name,
+        }).expect("Creator should always be able to join empty lobby");
+
+        (lobby, creator_id)
     }
 
     pub fn handle_event(&mut self, event: LobbyEvent) -> Result<(), LobbyError> {
@@ -107,7 +150,12 @@ impl Lobby {
             .values()
             .filter_map(|lobby_player| {
                 lobby_player.spawn_position.map(|pos| {
-                    Player::new(lobby_player.id, pos)
+                    Player::new_with_name(
+                        lobby_player.id,
+                        lobby_player.name.clone(),
+                        pos,
+                        lobby_player.color
+                    )
                 })
             })
             .collect();
@@ -175,8 +223,8 @@ mod tests {
 
     #[test]
     fn test_new_lobby() {
-        let lobby = Lobby::new(LobbyId(1), "Test Room".to_string());
-        assert_eq!(lobby.id, LobbyId(1));
+        let lobby = Lobby::new("TEST".to_string(), "Test Room".to_string());
+        assert_eq!(lobby.id, "TEST");
         assert_eq!(lobby.name, "Test Room");
         assert_eq!(lobby.players.len(), 0);
         assert!(!lobby.started);
@@ -185,7 +233,7 @@ mod tests {
 
     #[test]
     fn test_player_joining() {
-        let mut lobby = Lobby::new(LobbyId(1), "Test".to_string());
+        let mut lobby = Lobby::new("TEST".to_string(), "Test".to_string());
 
         let result = lobby.handle_event(LobbyEvent::PlayerJoined {
             player_id: 1,
@@ -202,7 +250,7 @@ mod tests {
 
     #[test]
     fn test_lobby_full() {
-        let mut lobby = Lobby::new(LobbyId(1), "Test".to_string());
+        let mut lobby = Lobby::new("TEST".to_string(), "Test".to_string());
         lobby.max_players = 2;
 
         // Fill lobby
@@ -220,7 +268,7 @@ mod tests {
 
     #[test]
     fn test_pawn_placement_valid() {
-        let mut lobby = Lobby::new(LobbyId(1), "Test".to_string());
+        let mut lobby = Lobby::new("TEST".to_string(), "Test".to_string());
         lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 1, player_name: "Alice".to_string() }).unwrap();
 
         let edge_pos = PlayerPos::new(0, 2, 4); // Top edge
@@ -235,7 +283,7 @@ mod tests {
 
     #[test]
     fn test_pawn_placement_invalid_position() {
-        let mut lobby = Lobby::new(LobbyId(1), "Test".to_string());
+        let mut lobby = Lobby::new("TEST".to_string(), "Test".to_string());
         lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 1, player_name: "Alice".to_string() }).unwrap();
 
         let center_pos = PlayerPos::new(2, 2, 0); // Center of board - invalid
@@ -249,7 +297,7 @@ mod tests {
 
     #[test]
     fn test_pawn_placement_position_taken() {
-        let mut lobby = Lobby::new(LobbyId(1), "Test".to_string());
+        let mut lobby = Lobby::new("TEST".to_string(), "Test".to_string());
         lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 1, player_name: "Alice".to_string() }).unwrap();
         lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 2, player_name: "Bob".to_string() }).unwrap();
 
@@ -266,7 +314,7 @@ mod tests {
 
     #[test]
     fn test_can_start_conditions() {
-        let mut lobby = Lobby::new(LobbyId(1), "Test".to_string());
+        let mut lobby = Lobby::new("TEST".to_string(), "Test".to_string());
 
         // Empty lobby cannot start
         assert!(!lobby.can_start());
@@ -299,7 +347,7 @@ mod tests {
 
     #[test]
     fn test_start_game_not_ready() {
-        let mut lobby = Lobby::new(LobbyId(1), "Test".to_string());
+        let mut lobby = Lobby::new("TEST".to_string(), "Test".to_string());
         lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 1, player_name: "Alice".to_string() }).unwrap();
 
         let result = lobby.handle_event(LobbyEvent::StartGame);
@@ -325,7 +373,7 @@ mod tests {
 
     #[test]
     fn test_color_assignment_sequence() {
-        let mut lobby = Lobby::new(LobbyId(1), "Test".to_string());
+        let mut lobby = Lobby::new("TEST".to_string(), "Test".to_string());
 
         // Test first 3 colors are assigned and different
         for i in 1..=3 {
@@ -347,7 +395,7 @@ mod tests {
 
     #[test]
     fn test_edge_position_validation() {
-        let lobby = Lobby::new(LobbyId(1), "Test".to_string());
+        let lobby = Lobby::new("TEST".to_string(), "Test".to_string());
 
         // Valid edge positions
         assert!(lobby.is_valid_edge_position(&PlayerPos::new(0, 2, 4))); // Top edge
@@ -366,7 +414,7 @@ mod tests {
 
     #[test]
     fn test_player_not_found_error() {
-        let mut lobby = Lobby::new(LobbyId(1), "Test".to_string());
+        let mut lobby = Lobby::new("TEST".to_string(), "Test".to_string());
 
         let result = lobby.handle_event(LobbyEvent::PawnPlaced {
             player_id: 999, // Non-existent player
@@ -387,7 +435,7 @@ mod tests {
 
     #[test]
     fn test_no_available_colors() {
-        let mut lobby = Lobby::new(LobbyId(1), "Test".to_string());
+        let mut lobby = Lobby::new("TEST".to_string(), "Test".to_string());
         lobby.max_players = 10; // More than available colors
 
         // Add 8 players (all available colors)
@@ -409,12 +457,73 @@ mod tests {
 
     // Helper function for tests that need a ready lobby
     fn setup_ready_lobby() -> Lobby {
-        let mut lobby = Lobby::new(LobbyId(1), "Test".to_string());
+        let mut lobby = Lobby::new("TEST".to_string(), "Test".to_string());
         lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 1, player_name: "Alice".to_string() }).unwrap();
         lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 2, player_name: "Bob".to_string() }).unwrap();
         lobby.handle_event(LobbyEvent::PawnPlaced { player_id: 1, position: PlayerPos::new(0, 2, 4) }).unwrap();
         lobby.handle_event(LobbyEvent::PawnPlaced { player_id: 2, position: PlayerPos::new(5, 3, 0) }).unwrap();
         lobby
+    }
+}
+
+#[cfg(test)]
+mod lobby_id_tests {
+    use super::*;
+
+    #[test]
+    fn test_next_lobby_id_format() {
+        let id = next_lobby_id();
+        assert_eq!(id.len(), 4);
+        assert!(id.chars().all(|c| c.is_ascii_alphanumeric()));
+        assert!(id.chars().all(|c| c.is_uppercase() || c.is_ascii_digit()));
+    }
+
+    #[test]
+    fn test_normalize_lobby_id_valid() {
+        assert_eq!(normalize_lobby_id("abcd"), Some("ABCD".to_string()));
+        assert_eq!(normalize_lobby_id("  AB12  "), Some("AB12".to_string()));
+        assert_eq!(normalize_lobby_id("xyz9"), Some("XYZ9".to_string()));
+    }
+
+    #[test]
+    fn test_normalize_lobby_id_invalid() {
+        assert_eq!(normalize_lobby_id("abc"), None);  // Too short
+        assert_eq!(normalize_lobby_id("abcde"), None);  // Too long
+        assert_eq!(normalize_lobby_id("ab-d"), None);  // Invalid character
+        assert_eq!(normalize_lobby_id(""), None);  // Empty
+        assert_eq!(normalize_lobby_id("   "), None);  // Whitespace only
+    }
+
+    #[test]
+    fn test_new_with_creator() {
+        let (lobby, creator_id) = Lobby::new_with_creator(
+            "Test Room".to_string(),
+            "Alice".to_string()
+        );
+
+        // Verify lobby properties
+        assert_eq!(lobby.name, "Test Room");
+        assert_eq!(lobby.id.len(), 4);
+        assert_eq!(lobby.players.len(), 1);
+        assert!(!lobby.started);
+
+        // Verify creator is auto-joined
+        assert_eq!(creator_id, 1);
+        let creator = &lobby.players[&creator_id];
+        assert_eq!(creator.name, "Alice");
+        assert_eq!(creator.id, creator_id);
+        assert!(creator.spawn_position.is_none());
+    }
+
+    #[test]
+    fn test_new_with_creator_assigns_first_color() {
+        let (lobby, creator_id) = Lobby::new_with_creator(
+            "Test".to_string(),
+            "Bob".to_string()
+        );
+
+        let creator = &lobby.players[&creator_id];
+        assert_eq!(creator.color, (220, 50, 47)); // First Solarized color (red)
     }
 }
 
@@ -430,7 +539,7 @@ mod proptests {
             col in 0usize..=7,
             endpoint in 0usize..=7
         ) {
-            let lobby = Lobby::new(LobbyId(1), "Test".to_string());
+            let lobby = Lobby::new("TEST".to_string(), "Test".to_string());
             let pos = PlayerPos::new(row, col, endpoint);
 
             let is_valid_edge = (row == 0 || row == 5 || col == 0 || col == 5) && row <= 5 && col <= 5;
@@ -446,15 +555,14 @@ mod proptests {
         }
 
         #[test]
-        fn prop_lobby_id_consistency(id in 0u64..1000000u64) {
-            let lobby_id = LobbyId(id);
-            let lobby = Lobby::new(lobby_id.clone(), "Test".to_string());
-            prop_assert_eq!(lobby.id, lobby_id);
+        fn prop_lobby_id_consistency(id in "\\PC{4}") {
+            let lobby = Lobby::new(id.clone(), "Test".to_string());
+            prop_assert_eq!(lobby.id, id);
         }
 
         #[test]
         fn prop_player_name_handling(name in "\\PC{1,50}") {
-            let mut lobby = Lobby::new(LobbyId(1), "Test".to_string());
+            let mut lobby = Lobby::new("TEST".to_string(), "Test".to_string());
 
             let result = lobby.handle_event(LobbyEvent::PlayerJoined {
                 player_id: 1,
@@ -467,7 +575,7 @@ mod proptests {
 
         #[test]
         fn prop_max_players_limit(max_players in 2usize..8) { // Limit to 8 due to color constraint
-            let mut lobby = Lobby::new(LobbyId(1), "Test".to_string());
+            let mut lobby = Lobby::new("TEST".to_string(), "Test".to_string());
             lobby.max_players = max_players;
 
             // Add players up to the limit
