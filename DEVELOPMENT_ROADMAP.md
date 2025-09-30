@@ -1,5 +1,10 @@
 # Development Roadmap & Architecture Review
 
+# News
+- Maybe we shall try returning a player's path while calculating the final pos
+  - Maybe even we can use mspc to signal next to UI? May be overkill.
+
+
 ## Current Architecture Assessment
 
 ### ✅ Strengths
