@@ -1,9 +1,9 @@
-use eframe::egui::{vec2, Frame, Rect, Sense, Widget, Response, Ui};
+use eframe::egui::{vec2, Frame, Rect, Response, Sense, Ui, Widget};
 use eframe::emath::Vec2;
 use eframe::epaint::{Color32, Stroke};
 use egui::Pos2;
-use tsurust_common::board::*;
 use std::collections::HashMap;
+use tsurust_common::board::*;
 
 use crate::rendering::{paint_tile_with_trails, PINK};
 

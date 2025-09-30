@@ -1,7 +1,5 @@
-use eframe::epaint::Shape::Path;
-use egui::{CentralPanel, Color32, Frame, pos2, Shape, Stroke, Ui};
 use egui::epaint::PathShape;
-use serde::de::Unexpected::Str;
+use egui::{pos2, Color32, Frame, Shape, Stroke, Ui};
 
 pub(crate) fn draw_yin_yang(ui: &mut Ui, radius: f32) {
     let background_color = Color32::from_white_alpha(200);

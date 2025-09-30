@@ -1,8 +1,8 @@
 use eframe::egui::{vec2, Frame, Rect, Sense, Widget};
 use std::sync::mpsc;
 
-use tsurust_common::board::*;
 use crate::app::Message;
+use tsurust_common::board::*;
 
 use crate::rendering::{paint_tile, paint_tile_button_hoverlay, paint_tile_button_hoverlay_with_highlight, tile_to_screen_transform};
 

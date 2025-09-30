@@ -1,5 +1,5 @@
 use eframe::egui;
-use egui::{Context, ScrollArea};
+use egui::Context;
 use std::sync::mpsc;
 
 use crate::board_renderer::BoardRenderer;

@@ -131,16 +131,5 @@
 ## Technical Debt Log
 
 - `common/src/lib.rs:14` - Rename TileEndpoint references to "entry point"
-- Multiple files - Remove unused imports (warnings in cargo build)
-- `client-egui/src/app.rs:37` - Handle unused variable `t` from append operation
 - `common/src/board.rs:14` - Convert TileEndpoint from usize to enum
 - Trail system - Current tile-based approach should be replaced with TRAILS.md design
-
-
-## Notes
-
-- Project builds successfully with warnings
-- 7 tests currently pass in common crate
-- UI framework (egui) is working well
-- Message passing architecture is sound but underutilized
-- Focus on game logic completion before adding new features

@@ -229,7 +229,7 @@ fn alive_players(players: &mut Vec<Player>) -> Vec<&mut Player> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::board::{CellCoord, PlayerPos, TileEndpoint};
+    use crate::board::{CellCoord, PlayerPos};
 
     fn create_straight_tile() -> Tile {
         // Create a tile with straight connections: 0-1, 2-3, 4-5, 6-7
