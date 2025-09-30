@@ -4,7 +4,7 @@ use std::sync::mpsc;
 use tsurust_common::board::*;
 use crate::app::Message;
 
-use crate::rendering::{paint_tile, paint_tile_button_hoverlay, tile_to_screen_transform};
+use crate::rendering::{paint_tile, paint_tile_button_hoverlay, paint_tile_button_hoverlay_left, paint_tile_button_hoverlay_right, paint_tile_button_hoverlay_center, tile_to_screen_transform};
 
 pub struct TileButton {
     tile: Tile,
@@ -52,7 +52,21 @@ impl Widget for TileButton {
                 let rect = response.rect;
 
                 if response.hovered() {
-                    paint_tile_button_hoverlay(rect, painter);
+                    if let Some(pos) = response.hover_pos() {
+                        let pos = to_screen.inverse().transform_pos(pos);
+                        if pos.x < 1. {
+                            // Hovering over left rotation area - highlight left rotate button
+                            paint_tile_button_hoverlay_left(rect, painter);
+                        } else if pos.x > 2. {
+                            // Hovering over right rotation area - highlight right rotate button
+                            paint_tile_button_hoverlay_right(rect, painter);
+                        } else {
+                            // Hovering over center placement area - show normal hover
+                            paint_tile_button_hoverlay_center(rect, painter);
+                        }
+                    } else {
+                        paint_tile_button_hoverlay(rect, painter);
+                    }
                 }
 
                 paint_tile(

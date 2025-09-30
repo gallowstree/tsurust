@@ -17,7 +17,7 @@ pub struct Game {
     pub hands: HashMap<PlayerID, Vec<Tile>>,
     pub tile_trails: HashMap<CellCoord, Vec<(PlayerID, TileEndpoint)>>, // tile -> list of (player, segment) pairs
     pub current_player_id: PlayerID,
-    dragon: Option<PlayerID>,
+    pub dragon: Option<PlayerID>,
 }
 
 impl Game {

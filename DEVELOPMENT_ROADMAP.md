@@ -9,126 +9,107 @@
 - **Interactive tile handling**: TileButton supports rotation (left/right click to rotate tiles)
 - **Custom rendering**: Hand-drawn primitives work well for the game's aesthetic
 
-### ⚠️ Critical Issues Requiring Immediate Attention
+### ✅ Recently Completed Major Systems
 
-#### **HIGH PRIORITY**
+1. **Complete Game Loop Implementation** (`common/src/game.rs:47-79`)
+   - ✅ Full `perform_move()` with validation, tile placement, and player movement
+   - ✅ Turn management with proper player validation
+   - ✅ Hand refilling logic implemented
+   - ✅ Player elimination and win condition detection
 
-1. **Incomplete Game Loop** (`common/src/game.rs:35-48`)
-   - `perform_move()` is mostly commented out
-   - No player validation or turn management
-   - Missing hand refilling logic
-   - **Impact**: Game is not actually playable
+2. **Full Tile Placement System**
+   - ✅ `Message::TilePlaced` and `Message::TileRotated` implemented
+   - ✅ Center-click to place tile at current player position
+   - ✅ Left/right click to rotate tiles in hand
+   - ✅ Complete UI flow from hand selection to board placement
 
-2. **No Tile Placement Mechanism**
-   - TileButton only sends generic `Message::Clicked`
-   - No way to communicate which tile was selected
-   - No mechanism to place tiles from hand onto board
-   - **Impact**: Core gameplay mechanic is missing
+3. **Player Movement and Trail System**
+   - ✅ `update_players_and_trails()` with path traversal
+   - ✅ `fill_hands()` maintains 3 tiles per player
+   - ✅ `complete_turn()` advances turns and handles game end
+   - ✅ Trail rendering system showing player paths
 
-3. **Player Movement System Incomplete**
-   - `update_players()`, `fill_hands()`, `complete_turn()` are empty stubs
-   - No path traversal after tile placement
-   - **Impact**: Players don't move, game doesn't progress
+### 🎯 Current Status: FUNCTIONAL GAME
+
+### ⚠️ Remaining Issues
 
 #### **MEDIUM PRIORITY**
 
-4. **Limited Message System**
-   - Only `Message::Clicked` exists
-   - Need messages for tile selection, placement, rotation
-   - **Impact**: UI can't communicate detailed actions
+1. **Trail System Architecture Decision**
+   - Current: Tile-based trail tracking with player/endpoint mapping
+   - Proposed: Full trail data structure (see TRAILS.md)
+   - **Impact**: Better animation, collision detection, and extensibility
 
-5. **Type Safety Issues**
+2. **Type Safety Improvements**
    - `TileEndpoint` is `usize` but should be enum (noted in comments)
-   - Missing validation and error types
-   - **Impact**: Runtime errors, unclear intent
+   - Some hardcoded error messages remain
+   - **Impact**: Better developer experience and type safety
 
-6. **Error Handling**
-   - Hardcoded error messages ("fuck the client" in deduct_tile_from_hand)
-   - Missing proper validation
-   - **Impact**: Poor developer experience, unclear failures
+3. **UI Polish**
+   - No visual indication of current player turn
+   - No game status display (turns, eliminated players)
+   - Limited feedback for invalid moves
 
-## Prioritized Development Roadmap
+## Current Development Priorities
 
-### **Phase 1: Core Game Loop** (1-2 weeks)
-**Goal**: Make the game actually playable with basic tile placement
+### **Phase 1: Trail System Implementation** (1-2 weeks)
+**Goal**: Implement the improved trail-based architecture from TRAILS.md
 
 #### Tasks:
-1. **Expand Message Types**
+1. **Define Trail Data Structures**
    ```rust
-   pub enum Message {
-       TileSelected(usize),  // index in hand
-       TilePlaced(Tile, CellCoord),
-       TileRotated(usize, bool), // index, clockwise
+   pub struct TrailSegment {
+       pub board_pos: (usize, usize),
+       pub entry_point: u8,
+       pub exit_point: u8,
+   }
+
+   pub struct Trail {
+       pub segments: Vec<TrailSegment>,
+       pub start_pos: PlayerPosition,
+       pub end_pos: PlayerPosition,
+       pub completed: bool,
    }
    ```
 
-2. **Complete `perform_move()` Function**
-   - Add player turn validation
-   - Implement tile deduction from hand
-   - Add basic move validation (valid placement)
-   - Ensure tile is actually placed on board
+2. **Update `traverse_from` to Return Trail**
+   - Replace current `HashSet<(usize, usize)>` return with `Trail`
+   - Maintain backward compatibility with wrapper function
+   - Add trail intersection detection methods
 
-3. **Implement Tile Placement UI Flow**
-   - TileButton sends `TileSelected` on center click
-   - Add board click handling for placement
-   - Connect hand selection to board placement
+3. **Implement Trail-Based Rendering**
+   - Add `world_coordinates()` method to convert trails to screen coordinates
+   - Update `BoardRenderer` to use trail data for path rendering
+   - Add smooth animation support using trail data
 
-4. **Add Basic Turn Management**
-   - Track current player
-   - Enforce turn order
-   - Prevent invalid moves
-
-**Acceptance Criteria**: Player can select tile from hand, place it on board, and turn advances
+**Acceptance Criteria**: Trails rendered with better accuracy, foundation for animations
 
 ---
 
-### **Phase 2: Player Movement** (1 week)
-**Goal**: Players move along paths after tile placement
+### **Phase 2: UI Enhancements** (1 week)
+**Goal**: Improve game status visibility and user experience
 
 #### Tasks:
-1. **Complete `update_players()` Method**
-   - Implement path traversal logic using placed tiles
-   - Update player positions after each move
-   - Handle edge detection for elimination
+1. **Add Game Status Display**
+   - Show current player turn with color indicator
+   - Display eliminated players and turn count
+   - Add game over screen with winner announcement
 
-2. **Implement `fill_hands()` Method**
-   - Maintain 3 tiles per player
-   - Handle deck depletion
-   - Return eliminated player tiles to deck
+2. **Improve Visual Feedback**
+   - Highlight valid placement positions
+   - Show error messages for invalid moves
+   - Add hover effects and selection indicators
 
-3. **Add Player Elimination Logic**
-   - Detect when players reach board edge
-   - Remove eliminated players from active play
-   - Return their tiles to deck
+3. **Player Setup Improvements**
+   - Allow players to select starting positions during setup
+   - Validate starting positions are on board edges
+   - Add player name customization
 
-**Acceptance Criteria**: Players move correctly along tile paths and are eliminated at edges
-
----
-
-### **Phase 3: Complete Game Flow** (1 week)
-**Goal**: Full game with win/lose conditions and proper state management
-
-#### Tasks:
-1. **Game State Management**
-   - Add game phases (setup, playing, ended)
-   - Implement win conditions (last player standing)
-   - Add game over detection
-
-2. **Complete Turn Cycling**
-   - Handle player elimination in turn order
-   - Skip eliminated players
-   - End game when only one player remains
-
-3. **Enhanced Validation**
-   - Prevent placing tiles on occupied cells
-   - Validate tile placement legality
-   - Add proper error reporting
-
-**Acceptance Criteria**: Complete games can be played from start to finish with proper winner determination
+**Acceptance Criteria**: Clear game state communication, better user experience
 
 ---
 
-### **Phase 4: Multiplayer Server** (2-3 weeks)
+### **Phase 3: Multiplayer Server** (2-3 weeks)
 **Goal**: Add networked multiplayer support using tarpc RPC framework
 
 #### Architecture Overview:
@@ -192,7 +173,7 @@
 
 ---
 
-### **Phase 5: Polish & Advanced Features** (Ongoing)
+### **Phase 4: Polish & Advanced Features** (Ongoing)
 **Goal**: Code quality, type safety, and enhanced features
 
 #### Tasks:
@@ -213,61 +194,64 @@
    - Spectator mode with game history
    - Custom game variants and rule modifications
 
-## Immediate Next Steps - Revised (Post Trail System)
+## Current Game Status Assessment
 
-### ✅ Completed:
-- **Trail Rendering System**: Implemented tile-based trail rendering with perfect path accuracy
-- **Player Colors**: Added distinct colors for each player
-- **Message System**: `TilePlaced` and `TileRotated` messages already exist and work
+### ✅ Fully Implemented Core Game:
+- **Complete Game Loop**: Full tile placement, player movement, turn management
+- **Player Management**: 4 players, elimination logic, win conditions
+- **Trail Rendering**: Visual player paths with distinct colors
+- **UI Integration**: TileButton rotation/placement, message system
+- **Game Logic**: Deck management, hand refilling, edge detection
 
-### Current Priority - Multi-Player Game:
-1. **✅ Add Multiple Players** - Initialize 4 players at valid edge endpoints
-2. **Turn Management System** - Track current player, enforce turn order
-3. **Player Elimination Logic** - Detect edge collisions, remove eliminated players
-4. **Game End Conditions** - Win condition when only one player remains
-5. **UI Improvements** - Show current player, game status, remaining players
-
-### Future Features:
-- **Lobby/Room System**: Players select their spawn position during lobby phase (only edge endpoints allowed)
+### 🎯 Current State: PLAYABLE TSURO GAME
+The game is now functionally complete and playable from start to finish.
 
 ### Success Metrics:
 - [x] Multiple players visible on board with different colors
-- [ ] Turn advances between players after tile placement
-- [ ] Players are eliminated when reaching board edges
-- [ ] Game declares winner when one player remains
-- [ ] Trail overlaps show correctly for multiple players
+- [x] Turn advances between players after tile placement
+- [x] Players are eliminated when reaching board edges
+- [x] Game declares winner when one player remains
+- [x] Trail overlaps show correctly for multiple players
+- [x] Complete game can be played from start to finish
+
+### Next Iteration Focus:
+1. **Trail System Redesign** - Implement TRAILS.md proposal for better architecture
+2. **UI Polish** - Game status display, better visual feedback
+3. **Code Quality** - Type safety improvements, error handling
 
 ## Technical Debt Log
 
-- `common/src/game.rs:53` - Replace "fuck the client" with proper error type
 - `common/src/lib.rs:14` - Rename TileEndpoint references to "entry point"
 - Multiple files - Remove unused imports (warnings in cargo build)
 - `client-egui/src/app.rs:37` - Handle unused variable `t` from append operation
 - `common/src/board.rs:14` - Convert TileEndpoint from usize to enum
+- Trail system - Current tile-based approach should be replaced with TRAILS.md design
 
-## Alternative Trail Rendering Approach
+## Trail System Evolution
 
-### Tile-Based Player Path Mapping
-Instead of maintaining separate Trail structs with calculated path points, consider rendering player trails directly during tile rendering by maintaining a mapping of which players traverse which paths in each tile.
+### Current Implementation: Tile-Based Player Path Mapping ✅
+**Status**: Currently implemented and working
 
-**Core Concept**: During tile rendering in `BoardRenderer`, maintain a map structure:
+**Approach**: Maintain a mapping during tile rendering:
 ```rust
 tile_position -> Vec<(PlayerID, TileEndpoint)>
 ```
 
-**Benefits**:
-- **Accurate Paths**: Trails automatically match tile segments exactly since they use the same rendering primitives
-- **No Coordinate Conversion**: Eliminates complex normalized coordinate system and screen coordinate transformations
-- **Simpler Logic**: No need to calculate intermediate points or handle 3-segment path structures separately
-- **Real-time Accuracy**: Trail rendering guaranteed to match tile rendering since they're the same operation
+**Benefits Achieved**:
+- ✅ Accurate Paths: Trails match tile segments exactly
+- ✅ Real-time Accuracy: Trail rendering uses same primitives as tiles
+- ✅ Multiple Player Support: Shows overlapping trails correctly
 
-**Implementation Strategy**:
-1. Add `player_paths: HashMap<CellCoord, Vec<(PlayerID, TileEndpoint)>>` to BoardRenderer
-2. Calculate player paths by iterating through board history and player movements
-3. Modify `paint_tile()` in `client-egui/src/rendering.rs` to accept player color information
-4. Render tile segments with appropriate player colors instead of default white
+### Next Evolution: Full Trail Data Structure (TRAILS.md)
+**Status**: Proposed improvement for better extensibility
 
-This treats trails as colored overlays on the existing tile path rendering system rather than separate geometric calculations.
+**Key Improvements**:
+- Better animation support with interpolated positions
+- Trail intersection and collision detection
+- Cleaner separation of topological vs. visual concerns
+- Foundation for advanced features (replay, AI analysis)
+
+**Migration Strategy**: Implement alongside current system, then gradually migrate
 
 ## Notes
 
