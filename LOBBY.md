@@ -1,5 +1,24 @@
 # Lobby System Design
 
+# News
+## On app Launched
+Options:
+- Create lobby
+  - input: name, player name
+  - generate lobby ID: 4 case-insensitive alphanumeric characters
+  - as the creator of the lobby, autojoin that lobby.
+  - show lobby ID and name
+- Join lobby
+  - input: lobbyId, player name
+  - confirm lobby name before joining
+- Sample game
+
+## Server Logic
+- A room: allows players to keep playing among themselves in between games. It manages Lobby -> Game -> Result -> Lobby.
+
+## Client-Server comms
+Might need to introduce ws even if we are using tarpc. (client can't listen freely for server messages)
+
 ## Overview
 
 A simple pre-game lobby system that allows players to join, select spawn positions, and start the game. Core game logic remains separate from rendering.
