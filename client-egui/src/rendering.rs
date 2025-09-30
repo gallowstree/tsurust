@@ -87,17 +87,26 @@ pub fn paint_tile_button_hoverlay(rect: Rect, painter: &Painter) {
     );
 }
 
-pub fn paint_tile_button_hoverlay_left(rect: Rect, painter: &Painter) {
+pub fn paint_tile_button_hoverlay_with_highlight(rect: Rect, painter: &Painter, highlight: Option<bool>) {
     let to_screen = tile_to_screen_transform(rect);
     let font_size = rect.size().x / 7.;
-
     let radius = font_size * 0.86;
+
+    let rotate_cw_pos = to_screen.transform_pos(pos2(3., 1.5));
     let rotate_ccw_pos = to_screen.transform_pos(pos2(0., 1.5));
 
-    // Highlight left rotation button
-    painter.circle_filled(rotate_ccw_pos, radius * 1.2, Color32::from_rgba_unmultiplied(255, 255, 0, 100));
-    painter.circle_filled(rotate_ccw_pos, radius, Color32::BLACK);
+    // Show border only when tile would be placed (center area, no highlight)
+    if highlight.is_none() {
+        painter.rect_stroke(rect, 0.5, Stroke::new(2.0, TRANSPARENT_GOLD));
+    }
 
+    // Always show both rotation buttons
+    // Left button (counterclockwise)
+    if highlight == Some(false) {
+        // Highlight left button
+        painter.circle_filled(rotate_ccw_pos, radius * 1.2, Color32::from_rgba_unmultiplied(255, 255, 0, 100));
+    }
+    painter.circle_filled(rotate_ccw_pos, radius, Color32::BLACK);
     painter.text(
         rotate_ccw_pos,
         Align2::CENTER_CENTER,
@@ -105,19 +114,13 @@ pub fn paint_tile_button_hoverlay_left(rect: Rect, painter: &Painter) {
         FontId::monospace(font_size),
         TRANSPARENT_WHITE,
     );
-}
 
-pub fn paint_tile_button_hoverlay_right(rect: Rect, painter: &Painter) {
-    let to_screen = tile_to_screen_transform(rect);
-    let font_size = rect.size().x / 7.;
-
-    let radius = font_size * 0.86;
-    let rotate_cw_pos = to_screen.transform_pos(pos2(3., 1.5));
-
-    // Highlight right rotation button
-    painter.circle_filled(rotate_cw_pos, radius * 1.2, Color32::from_rgba_unmultiplied(255, 255, 0, 100));
+    // Right button (clockwise)
+    if highlight == Some(true) {
+        // Highlight right button
+        painter.circle_filled(rotate_cw_pos, radius * 1.2, Color32::from_rgba_unmultiplied(255, 255, 0, 100));
+    }
     painter.circle_filled(rotate_cw_pos, radius, Color32::BLACK);
-
     painter.text(
         rotate_cw_pos,
         Align2::CENTER_CENTER,
@@ -125,11 +128,6 @@ pub fn paint_tile_button_hoverlay_right(rect: Rect, painter: &Painter) {
         FontId::monospace(font_size),
         TRANSPARENT_WHITE,
     );
-}
-
-pub fn paint_tile_button_hoverlay_center(rect: Rect, painter: &Painter) {
-    // Show normal hover indication for center placement area
-    painter.rect_stroke(rect, 0.5, Stroke::new(2.0, TRANSPARENT_GOLD));
 }
 
 pub fn tile_to_screen_transform(rect: Rect) -> RectTransform {

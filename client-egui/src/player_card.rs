@@ -1,5 +1,5 @@
 use egui::{Color32, Rect, Response, Sense, Ui, Vec2, Widget};
-use tsurust_common::board::{Player, PlayerID};
+use tsurust_common::board::Player;
 
 pub struct PlayerCard<'a> {
     player: &'a Player,
@@ -61,35 +61,38 @@ impl<'a> Widget for PlayerCard<'a> {
             };
             ui.painter().rect_stroke(rect, 4.0, (1.0, border_color));
 
-            // Player color circle (16px diameter)
-            let circle_center = rect.min + Vec2::new(12.0, 20.0);
+            // Player color circle (larger, 24px diameter)
+            let circle_center = rect.min + Vec2::new(16.0, 20.0);
+            let circle_radius = 12.0;
             let player_color = Color32::from_rgb(self.player.color.0, self.player.color.1, self.player.color.2);
 
             if self.player.alive {
-                ui.painter().circle_filled(circle_center, 8.0, player_color);
-                ui.painter().circle_stroke(circle_center, 8.0, (1.0, Color32::WHITE));
+                ui.painter().circle_filled(circle_center, circle_radius, player_color);
+                ui.painter().circle_stroke(circle_center, circle_radius, (1.0, Color32::WHITE));
             } else {
                 // Dead player: gray circle with X
-                ui.painter().circle_filled(circle_center, 8.0, Color32::from_gray(100));
-                ui.painter().circle_stroke(circle_center, 8.0, (1.0, Color32::WHITE));
+                ui.painter().circle_filled(circle_center, circle_radius, Color32::from_gray(100));
+                ui.painter().circle_stroke(circle_center, circle_radius, (1.0, Color32::WHITE));
+                let x_size = circle_radius * 0.6;
                 ui.painter().line_segment(
-                    [circle_center - Vec2::new(4.0, 4.0), circle_center + Vec2::new(4.0, 4.0)],
+                    [circle_center - Vec2::new(x_size, x_size), circle_center + Vec2::new(x_size, x_size)],
                     (4.0, player_color)
                 );
                 ui.painter().line_segment(
-                    [circle_center - Vec2::new(4.0, -4.0), circle_center + Vec2::new(4.0, -4.0)],
+                    [circle_center - Vec2::new(x_size, -x_size), circle_center + Vec2::new(x_size, -x_size)],
                     (4.0, player_color)
                 );
             }
 
             // Player name (color name)
-            let name_pos = rect.min + Vec2::new(28.0, 12.0);
+            let name_pos = rect.min + Vec2::new(32.0, 12.0);
             let name = color_to_name(self.player.color);
-            ui.painter().text(name_pos, egui::Align2::LEFT_TOP, name, egui::FontId::default(), visuals.text_color());
+            let font_id = egui::FontId::proportional(16.0); // Larger font
+            ui.painter().text(name_pos, egui::Align2::LEFT_TOP, name, font_id, visuals.text_color());
 
             // Hand indicator - rectangles for tiles (for alive players and winners)
             if self.player.alive || self.is_winner {
-                let hand_start = rect.min + Vec2::new(28.0, 32.0);
+                let hand_start = rect.min + Vec2::new(32.0, 32.0);
                 let tile_size = Vec2::new(10.0, 10.0); // Square tiles
                 let spacing = 4.0;
 
@@ -114,7 +117,7 @@ impl<'a> Widget for PlayerCard<'a> {
 
                 // Dragon indicator (only for alive players)
                 if self.has_dragon && self.player.alive {
-                    let dragon_pos = rect.min + Vec2::new(28.0, 45.0);
+                    let dragon_pos = rect.min + Vec2::new(32.0, 45.0);
                     ui.painter().text(dragon_pos, egui::Align2::LEFT_TOP, "🐉", egui::FontId::default(), Color32::GOLD);
                 }
             }

@@ -68,15 +68,13 @@ impl TemplateApp {
             .resizable(true)
             .min_height(32.0)
             .show(ctx, |ui| {
-                ScrollArea::vertical().show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.add_space(10.0);
-                        if ui.button("🔄 Restart Game").clicked() {
-                            if let Err(e) = sender.send(Message::RestartGame) {
-                                eprintln!("Failed to send RestartGame message: {}", e);
-                            }
+                ui.horizontal(|ui| {
+                    ui.add_space(10.0);
+                    if ui.button("🔄 Restart Game").clicked() {
+                        if let Err(e) = sender.send(Message::RestartGame) {
+                            eprintln!("Failed to send RestartGame message: {}", e);
                         }
-                    });
+                    }
                 });
             });
 
@@ -160,7 +158,7 @@ impl TemplateApp {
 
 impl eframe::App for TemplateApp {
     /// Called each time the UI needs repainting, which may be many times per second.
-    fn update(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         let Self { label: _, game, sender, receiver } = self;
 
         // Process received messages
