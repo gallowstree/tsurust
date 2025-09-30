@@ -10,6 +10,7 @@ pub enum TurnResult {
     Extinction { turn_number: usize, eliminated: Vec<PlayerID> },
 }
 
+#[derive(Debug)]
 pub struct Game {
     pub deck: Deck,
     pub board: Board,

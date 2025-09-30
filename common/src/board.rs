@@ -43,6 +43,7 @@ pub struct CellCoord {
 }
 /// Players and Pawns data
 pub type PlayerID = usize;
+#[derive(Debug)]
 pub struct Player {
     pub id: PlayerID,
     pub pos: PlayerPos,
@@ -79,6 +80,7 @@ pub struct Move {
 }
 /// Board state history: all the moves that have been played
 /// Defines functions to calculate the effects of moves on the board's state
+#[derive(Debug)]
 pub struct Board {
     //setup: Vec<Player> something reflecting initial conditions?
     pub history: Vec<Move>,
