@@ -14,11 +14,11 @@ const PLAYER_RADIUS: f32 = TILE_LENGTH / 7.;
 pub struct BoardRenderer<'a> {
     history: &'a Vec<Move>,
     players: &'a Vec<Player>,
-    tile_trails: &'a HashMap<CellCoord, HashMap<TileEndpoint, PlayerID>>,
+    tile_trails: &'a HashMap<CellCoord, Vec<(PlayerID, TileEndpoint)>>,
 }
 
 impl <'a> BoardRenderer<'a> {
-    pub(crate) fn new(history: &'a Vec<Move>, players: &'a Vec<Player>, tile_trails: &'a HashMap<CellCoord, HashMap<TileEndpoint, PlayerID>>) -> Self {
+    pub(crate) fn new(history: &'a Vec<Move>, players: &'a Vec<Player>, tile_trails: &'a HashMap<CellCoord, Vec<(PlayerID, TileEndpoint)>>) -> Self {
         Self { history, players, tile_trails }
     }
 
@@ -67,7 +67,7 @@ fn rect_at_coord(cell_coord: CellCoord, board_rect: Rect) -> Rect {
 fn render_board_tiles(
     ui: &mut Ui,
     history: &Vec<Move>,
-    tile_trails: &HashMap<CellCoord, HashMap<TileEndpoint, PlayerID>>,
+    tile_trails: &HashMap<CellCoord, Vec<(PlayerID, TileEndpoint)>>,
     players: &Vec<Player>,
     board_rect: Rect
 ) {
@@ -79,8 +79,8 @@ fn render_board_tiles(
 
             // Get player paths for this tile
             let mut player_paths = HashMap::new();
-            if let Some(segment_players) = tile_trails.get(&mov.cell) {
-                for (&segment_key, &player_id) in segment_players {
+            if let Some(trail_entries) = tile_trails.get(&mov.cell) {
+                for &(player_id, segment_key) in trail_entries {
                     // Find player color
                     if let Some(player) = players.iter().find(|p| p.id == player_id) {
                         let player_color = Color32::from_rgb(player.color.0, player.color.1, player.color.2);
