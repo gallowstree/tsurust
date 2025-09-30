@@ -1,12 +1,13 @@
 use eframe::egui::{
     emath::RectTransform, pos2, Align2, Color32, FontId, Painter, Pos2, Rect, Stroke,
 };
-use tsurust_common::board::{Board, Segment, Tile, TileEndpoint, PlayerID};
 use std::collections::HashMap;
+use tsurust_common::board::{Board, PlayerID, Segment, Tile, TileEndpoint};
 
 pub const TRANSPARENT_WHITE: Color32 = Color32::from_rgba_premultiplied(255, 255, 255, 191);
 pub const TRANSPARENT_GOLD: Color32 = Color32::from_rgba_premultiplied(255, 215, 0, 191);
 pub const PINK: Color32 = Color32::from_rgba_premultiplied(200, 50, 125, 44);
+pub const TILE_BACKGROUND: Color32 = Color32::from_rgba_premultiplied(45, 45, 55, 180); // Dark blue-gray background
 pub fn paint_board(board: &Board) {}
 
 pub fn paint_tile(tile: &Tile, rect: Rect, painter: &Painter) {
@@ -19,6 +20,10 @@ pub fn paint_tile_with_trails(
     painter: &Painter,
     player_paths: &HashMap<TileEndpoint, (PlayerID, Color32)>
 ) {
+    // Draw tile background
+    painter.rect_filled(rect, 4.0, TILE_BACKGROUND);
+    painter.rect_stroke(rect, 4.0, Stroke::new(1.0, Color32::from_gray(80)));
+
     let to_screen = tile_to_screen_transform(rect);
 
     tile.segments
@@ -77,6 +82,49 @@ pub fn paint_tile_button_hoverlay(rect: Rect, painter: &Painter) {
         rotate_ccw_pos,
         Align2::CENTER_CENTER,
         "⟲",
+        FontId::monospace(font_size),
+        TRANSPARENT_WHITE,
+    );
+}
+
+pub fn paint_tile_button_hoverlay_with_highlight(rect: Rect, painter: &Painter, highlight: Option<bool>) {
+    let to_screen = tile_to_screen_transform(rect);
+    let font_size = rect.size().x / 7.;
+    let radius = font_size * 0.86;
+
+    let rotate_cw_pos = to_screen.transform_pos(pos2(3., 1.5));
+    let rotate_ccw_pos = to_screen.transform_pos(pos2(0., 1.5));
+
+    // Show border only when tile would be placed (center area, no highlight)
+    if highlight.is_none() {
+        painter.rect_stroke(rect, 0.5, Stroke::new(2.0, TRANSPARENT_GOLD));
+    }
+
+    // Always show both rotation buttons
+    // Left button (counterclockwise)
+    if highlight == Some(false) {
+        // Highlight left button
+        painter.circle_filled(rotate_ccw_pos, radius * 1.2, Color32::from_rgba_unmultiplied(255, 255, 0, 100));
+    }
+    painter.circle_filled(rotate_ccw_pos, radius, Color32::BLACK);
+    painter.text(
+        rotate_ccw_pos,
+        Align2::CENTER_CENTER,
+        "⟲",
+        FontId::monospace(font_size),
+        TRANSPARENT_WHITE,
+    );
+
+    // Right button (clockwise)
+    if highlight == Some(true) {
+        // Highlight right button
+        painter.circle_filled(rotate_cw_pos, radius * 1.2, Color32::from_rgba_unmultiplied(255, 255, 0, 100));
+    }
+    painter.circle_filled(rotate_cw_pos, radius, Color32::BLACK);
+    painter.text(
+        rotate_cw_pos,
+        Align2::CENTER_CENTER,
+        "⟳",
         FontId::monospace(font_size),
         TRANSPARENT_WHITE,
     );
