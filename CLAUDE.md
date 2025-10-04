@@ -63,6 +63,29 @@ The UI uses mpsc channels for event passing. TileButton components send messages
 - **Testing**: Add tests to `common/` crate for game logic validation
 - **Rendering**: Continue using hand-drawn primitives rather than adding sprite assets
 
+## Documentation Policy ⚠️ IMPORTANT
+
+**DEVELOPMENT_ROADMAP.md is for TODO items only, NOT status updates**
+
+❌ **NEVER add to roadmap**:
+- "✅ COMPLETE" sections
+- "Successfully implemented X" reports
+- Lists of what was done
+- Status updates or progress reports
+- Any checkmarks, completion markers, or achievement lists
+
+✅ **Roadmap should only contain**:
+- Active TODO items that need work
+- Technical debt that needs addressing
+- Future phases and planned work
+
+**Where completed work belongs**:
+- Git commit messages (the ONLY place for "what was done")
+- Code comments (for implementation details)
+- Nowhere else
+
+**Enforcement**: Before modifying DEVELOPMENT_ROADMAP.md, ask yourself: "Am I about to add a status update or completion report?" If yes, STOP and don't add it.
+
 ## Current Status
 
 This is a work-in-progress implementation. The basic UI and data structures are in place, but core game loop functionality needs completion (see DEVELOPMENT_ROADMAP.md for details).

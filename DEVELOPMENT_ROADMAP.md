@@ -128,8 +128,10 @@
    - Custom game variants and rule modifications
 
 
+
 ## Technical Debt Log
 
 - `common/src/lib.rs:14` - Rename TileEndpoint references to "entry point"
 - `common/src/board.rs:14` - Convert TileEndpoint from usize to enum
 - Trail system - Current tile-based approach should be replaced with TRAILS.md design
+- Unicode glyph rendering - Consider runtime detection if more rendering issues occur

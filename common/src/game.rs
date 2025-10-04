@@ -10,6 +10,7 @@ pub enum TurnResult {
     Extinction { turn_number: usize, eliminated: Vec<PlayerID> },
 }
 
+#[derive(Debug)]
 pub struct Game {
     pub deck: Deck,
     pub board: Board,
@@ -278,6 +279,7 @@ mod tests {
         let players = vec![
             Player {
                 id: 1,
+                name: "Player 1".to_string(),
                 pos: PlayerPos { cell: CellCoord { row: 1, col: 1 }, endpoint: 0 },
                 alive: true,
                 has_moved: false,
@@ -315,6 +317,7 @@ mod tests {
         let players = vec![
             Player {
                 id: 1,
+                name: "Player 1".to_string(),
                 pos: PlayerPos { cell: CellCoord { row: 1, col: 1 }, endpoint: 0 },
                 alive: true,
                 has_moved: false,
@@ -322,6 +325,7 @@ mod tests {
             },
             Player {
                 id: 2,
+                name: "Player 2".to_string(),
                 pos: PlayerPos { cell: CellCoord { row: 1, col: 1 }, endpoint: 2 },
                 alive: true,
                 has_moved: false,
@@ -376,6 +380,7 @@ mod tests {
         let players = vec![
             Player {
                 id: 1,
+                name: "Player 1".to_string(),
                 pos: PlayerPos { cell: CellCoord { row: 1, col: 1 }, endpoint: 3 }, // Will move right to (1,2)
                 alive: true,
                 has_moved: false,
@@ -383,6 +388,7 @@ mod tests {
             },
             Player {
                 id: 2,
+                name: "Player 2".to_string(),
                 pos: PlayerPos { cell: CellCoord { row: 2, col: 2 }, endpoint: 0 }, // Will move up to (1,2)
                 alive: true,
                 has_moved: false,
