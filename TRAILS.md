@@ -237,3 +237,86 @@ pub struct Player {
 - Trails should be cached and only recalculated when the board changes
 - For rendering, trail coordinates can be pre-computed and stored
 - Trail intersection calculations should use spatial indexing for large numbers of trails
+
+# Conversation with Claude
+I've read through the TRAILS.md plan. It's a well-structured design for improving the path tracking system. I have a few questions and observations:
+
+Questions:
+
+1. Coordinate system for world_coordinates() - The function signature suggests converting trail segments to screen coordinates. Should this take cell_size and
+   board offset as parameters, or will it rely on some global rendering state?
+2. Trail intersection detection - The intersects_with() method returns segment index pairs, but how do we define "intersection"? Are we checking if trails
+   share the same board cell + entry/exit points, or do we need actual geometric intersection of the rendered paths?
+3. Current implementation compatibility - I see traverse_from currently returns HashSet<(usize, usize)> (visited cells). Should we:
+   - Replace it entirely with the new Trail-returning version?
+   - Keep both and deprecate the old one?
+   - Add a Trail::to_visited_cells() helper?
+4. Storage location - The Trail struct should live in common/src/ but you mention world_coordinates() in the Trail impl, which requires rendering knowledge.
+   Should we:
+   - Keep world_coordinates() in the renderer instead of Trail?
+   - Pass board geometry info as parameters to keep Trail rendering-agnostic?
+
+Clarifications needed:
+
+- Phase 1 priority: Should I start implementing the core Trail structure now, or is there other work that takes precedence?
+- Testing strategy: Should trail intersection logic have unit tests in common/src/game.rs?
+
+The plan looks solid - the separation between topological trail data and visual rendering is clean. Just need to nail down these implementation details before
+starting.
+
+## My Answers
+1. Wouldn't it be enough to define that function in the renderer and just pass the trail?
+2. Let's worry about intersection later.
+3. I think we should replace it entirely - probably we can just return a trail.
+4. I think we should keep world_coordinates() in the renderer.
+
+## My Questions
+Will the game keep the trails of each player and update them with the new segments after each move? Is that what you meant with caching them?
+
+## Design Decisions
+
+### Trail Data Separation (Client vs Server)
+- **Server/Game State**: NO trail data stored in `Player` struct
+- **Client Rendering**: Trails calculated client-side from game state
+- Server only sends authoritative state (board, positions), not rendering hints
+- Client rebuilds trails by replaying move history
+
+### Incremental Trail Updates
+- `traverse_from()` returns ONLY new segments from current move (not full history)
+- Client extends player's current trail with new segments
+- Avoids recalculating entire trail on each move
+
+### Game Replay Support
+**Required data for full game replay:**
+1. Starting positions - where each player spawned (MUST be stored)
+2. Move history - sequence of tile placements (already stored in `board.history`)
+
+**Implementation note:**
+- Add `starting_positions: HashMap<PlayerID, PlayerPos>` to `Game` struct
+- Capture spawn positions from lobby when game starts
+- With starting positions + move history, can reconstruct entire game including all trails
+
+**No need for:**
+- Separate full trail history storage
+- `Player.trail_history` field
+- Trail data in save files/network messages
+
+### Code Organization
+
+**`common/src/` - Game Logic (Server-Compatible)**
+- `Trail` / `TrailSegment` structs - pure topology (board positions, entry/exit points)
+- Trail-based calculations (length, intersections, scoring by trail length)
+- NO rendering knowledge
+- NO visual coordinates
+
+**`client-egui/src/rendering.rs` - Visual Representation**
+- `segment_tail()` - how to draw the 3-line-segment paths
+- `endpoint_position()` - normalized (0-1) coordinates of endpoints within tiles
+- `world_coordinates(trail: &Trail, ...)` - convert Trail topology → screen pixel coordinates
+- All visual/geometric knowledge lives here
+
+**Current State Issues to Fix:**
+- `common/src/trail.rs` currently has rendering logic (`segment_tail`) - MOVE to rendering.rs
+- `common/src/trail.rs` has `Trail` struct with visual points - REPLACE with topological Trail
+- Duplicate `segment_tail()` in both rendering.rs and trail.rs - UNIFY in rendering.rs
+

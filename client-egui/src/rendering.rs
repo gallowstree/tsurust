@@ -139,6 +139,84 @@ pub fn tile_to_screen_transform(rect: Rect) -> RectTransform {
     )
 }
 
+/// Get the normalized position (0.0 to 1.0) of an endpoint within a tile
+pub fn endpoint_position(endpoint: TileEndpoint) -> (f32, f32) {
+    match endpoint {
+        0 => (1./3., 1.),
+        1 => (2./3., 1.),
+        2 => (1., 2./3.),
+        3 => (1., 1./3.),
+        4 => (2./3., 0.),
+        5 => (1./3., 0.),
+        6 => (0., 1./3.),
+        7 => (0., 2./3.),
+        _ => panic!("non existent endpoint {}", endpoint),
+    }
+}
+
+/// Convert a Trail's topological data to world (screen) coordinates for rendering
+/// Returns a vec of (Pos2, Pos2) line segments ready to draw
+pub fn trail_to_world_coords(
+    trail: &tsurust_common::trail::Trail,
+    tile_size: f32,
+    board_offset: Pos2
+) -> Vec<(Pos2, Pos2)> {
+    let mut line_segments = Vec::new();
+
+    for segment in &trail.segments {
+        // Calculate the tile's top-left position
+        let tile_x = board_offset.x + segment.board_pos.1 as f32 * tile_size;
+        let tile_y = board_offset.y + segment.board_pos.0 as f32 * tile_size;
+
+        // Get the 3 line segments for this trail segment (same as tile rendering)
+        let start_chunk = segment_tail_normalized(segment.entry_point);
+        let end_chunk = segment_tail_normalized(segment.exit_point);
+
+        // Convert normalized coordinates to screen coordinates
+        let to_screen = |norm_x: f32, norm_y: f32| -> Pos2 {
+            Pos2::new(
+                tile_x + norm_x * tile_size,
+                tile_y + norm_y * tile_size
+            )
+        };
+
+        // 1. Entry tail: entry point -> inner point
+        line_segments.push((
+            to_screen(start_chunk[0].0, start_chunk[0].1),
+            to_screen(start_chunk[1].0, start_chunk[1].1)
+        ));
+
+        // 2. Middle segment: inner point -> inner point
+        line_segments.push((
+            to_screen(start_chunk[1].0, start_chunk[1].1),
+            to_screen(end_chunk[1].0, end_chunk[1].1)
+        ));
+
+        // 3. Exit tail: inner point -> exit point
+        line_segments.push((
+            to_screen(end_chunk[1].0, end_chunk[1].1),
+            to_screen(end_chunk[0].0, end_chunk[0].1)
+        ));
+    }
+
+    line_segments
+}
+
+/// Get segment tail points in normalized 0-1 coordinates
+fn segment_tail_normalized(endpoint: TileEndpoint) -> [(f32, f32); 2] {
+    match endpoint {
+        0 => [(1./3., 1.), (1./3., 5./6.)],      // Bottom left
+        1 => [(2./3., 1.), (2./3., 5./6.)],      // Bottom right
+        2 => [(1., 2./3.), (5./6., 2./3.)],      // Right top
+        3 => [(1., 1./3.), (5./6., 1./3.)],      // Right bottom
+        4 => [(2./3., 0.), (2./3., 1./6.)],      // Top right
+        5 => [(1./3., 0.), (1./3., 1./6.)],      // Top left
+        6 => [(0., 1./3.), (1./6., 1./3.)],      // Left bottom
+        7 => [(0., 2./3.), (1./6., 2./3.)],      // Left top
+        _ => panic!("non existent endpoint {}", endpoint),
+    }
+}
+
 fn segment_tail(index: TileEndpoint) -> [Pos2; 2] {
     let (a, b) = match index {
         0 => ((1., 3.), (1., 2.5)),
