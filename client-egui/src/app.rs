@@ -1,16 +1,46 @@
 use eframe::egui;
-use egui::{Context, ScrollArea};
+use egui::Context;
 use std::sync::mpsc;
 
-use crate::board_renderer::BoardRenderer;
-use crate::hand_renderer::HandRenderer;
+use crate::screens;
 use tsurust_common::board::*;
 use tsurust_common::game::{Game, TurnResult};
+use tsurust_common::lobby::{Lobby, LobbyEvent};
 
 #[derive(Debug, Clone)]
 pub enum Message {
     TilePlaced(usize),                // tile index - place at current player position
     TileRotated(usize, bool),         // tile index, clockwise
+    RestartGame,                      // restart the game
+    StartLobby,                       // start a new lobby (old, for compatibility)
+    StartSampleGame,                  // start sample game (current behavior)
+    JoinLobby(String),               // join lobby with player name
+    PlacePawn(PlayerPos),            // place pawn at position in lobby
+    StartGameFromLobby,              // start game from lobby
+    ShowCreateLobbyForm,             // show create lobby form
+    ShowJoinLobbyForm,               // show join lobby form
+    CreateAndJoinLobby(String, String), // (lobby_name, player_name)
+    JoinLobbyWithId(String, String), // (lobby_id, player_name)
+    BackToMainMenu,                  // return to main menu
+    DebugAddPlayer,                  // debug: simulate player joining
+    DebugPlacePawn(PlayerID),        // debug: place pawn for specific player
+    DebugCyclePlayer(bool),          // debug: cycle active player (true = next, false = prev)
+}
+
+#[derive(Debug)]
+pub enum AppState {
+    MainMenu,
+    CreateLobbyForm {
+        lobby_name: String,
+        player_name: String,
+    },
+    JoinLobbyForm {
+        lobby_id: String,
+        player_name: String,
+    },
+    Lobby(Lobby),
+    LobbyPlacingFor(Lobby, PlayerID),  // Placing pawn for specific player
+    Game(Game),
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -19,35 +49,25 @@ pub enum Message {
 pub struct TemplateApp {
     label: String,
     #[serde(skip)]
-    game: tsurust_common::game::Game,
+    app_state: AppState,
     #[serde(skip)]
     sender: Option<mpsc::Sender<Message>>,
     #[serde(skip)]
     receiver: Option<mpsc::Receiver<Message>>,
+    #[serde(skip)]
+    current_player_id: PlayerID, // For lobby, tracks this client's player ID
 }
 
 impl Default for TemplateApp {
     fn default() -> Self {
-        // Create 4 players starting at different board edges (only edge endpoints are valid)
-        let players = vec![
-            Player::new(1, PlayerPos::new(0, 2, 4)),  // Player 1: top edge (row=0), endpoint 4 or 5
-            Player::new(2, PlayerPos::new(2, 5, 2)),  // Player 2: right edge (col=5), endpoint 2 or 3
-            Player::new(3, PlayerPos::new(5, 3, 0)),  // Player 3: bottom edge (row=5), endpoint 0 or 1
-            Player::new(4, PlayerPos::new(3, 0, 6)),  // Player 4: left edge (col=0), endpoint 6 or 7
-        ];
-
-        let game = Game::new(players);
-
-        // Each player starts with 3 tiles (normal hand size)
-        // Don't add extra tiles - Game::new already gives each player 3 tiles
-
         let (sender, receiver) = mpsc::channel();
 
         Self {
-            label: "Hello Year of the Dragon of Wood - Hello Tsurust!".to_owned(),
-            game,
+            label: "Tsurust - Year of the Dragon of Wood".to_owned(),
+            app_state: AppState::MainMenu,
             sender: Some(sender),
             receiver: Some(receiver),
+            current_player_id: 1, // Default player ID
         }
     }
 }
@@ -61,99 +81,295 @@ impl TemplateApp {
         Default::default()
     }
 
-    fn render_ui(ctx: &Context, game: &mut Game, sender: &mpsc::Sender<Message>) {
-        egui::TopBottomPanel::top("top_panel")
-            .resizable(true)
-            .min_height(32.0)
-            .show(ctx, |ui| {
-                ScrollArea::vertical().show(ui, |ui| {
-                    ui.vertical(|ui| {
-                        ui.heading("[server: local - room 01 - room host: alyosha] ");
-                        ui.heading(" [turn 1 (alyosha) - tiles left: 0 - ] ");
-                        ui.heading("(alyosha) [Automat] [Pig] [Rooster] [Dragon]");
-                    });
-                });
-            });
-
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.add_space(20.);
-                ui.add(BoardRenderer::new(&game.board.history, &game.players, &game.tile_trails));
-            });
-        });
-
-        egui::SidePanel::right("right_panel").show(ctx, |ui| {
-            let hand = game.curr_player_hand().clone();
-            ui.add(HandRenderer::new(hand, sender.clone()));
-        });
+    fn render_ui(ctx: &Context, app_state: &mut AppState, current_player_id: PlayerID, sender: &mpsc::Sender<Message>) {
+        match app_state {
+            AppState::MainMenu => screens::main_menu::render(ctx, sender),
+            AppState::CreateLobbyForm { lobby_name, player_name } => {
+                screens::lobby_forms::render_create_lobby_form(ctx, lobby_name, player_name, sender)
+            }
+            AppState::JoinLobbyForm { lobby_id, player_name } => {
+                screens::lobby_forms::render_join_lobby_form(ctx, lobby_id, player_name, sender)
+            }
+            AppState::Lobby(lobby) => screens::lobby::render_lobby_ui(ctx, lobby, current_player_id, sender),
+            AppState::LobbyPlacingFor(lobby, placing_for_id) => {
+                screens::lobby::render_lobby_placing_ui(ctx, lobby, *placing_for_id, sender)
+            }
+            AppState::Game(game) => screens::game::render_game_ui(ctx, game, sender),
+        }
     }
+
 }
 
 
 
 impl eframe::App for TemplateApp {
     /// Called each time the UI needs repainting, which may be many times per second.
-    fn update(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
-        let Self { label: _, game, sender, receiver } = self;
+    fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
+        let Self { label: _, app_state, sender, receiver, current_player_id } = self;
 
         // Process received messages
         if let Some(rx) = receiver {
             while let Ok(message) = rx.try_recv() {
                 match message {
+                    Message::StartLobby => {
+                        let mut lobby = Lobby::new("MAIN".to_string(), "Main Room".to_string());
+                        // Auto-join the lobby as Player 1
+                        if let Err(e) = lobby.handle_event(LobbyEvent::PlayerJoined {
+                            player_id: *current_player_id,
+                            player_name: "Player".to_string(),
+                        }) {
+                            eprintln!("Failed to auto-join lobby: {:?}", e);
+                        }
+                        *app_state = AppState::Lobby(lobby);
+                    }
+                    Message::StartSampleGame => {
+                        let players = vec![
+                            Player::new(1, PlayerPos::new(0, 2, 4)),
+                            Player::new(2, PlayerPos::new(2, 5, 2)),
+                            Player::new(3, PlayerPos::new(5, 3, 0)),
+                            Player::new(4, PlayerPos::new(3, 0, 6)),
+                        ];
+                        let game = Game::new(players);
+                        *app_state = AppState::Game(game);
+                    }
+                    Message::ShowCreateLobbyForm => {
+                        *app_state = AppState::CreateLobbyForm {
+                            lobby_name: "Test Lobby".to_string(),
+                            player_name: "Player 1".to_string(),
+                        };
+                    }
+                    Message::ShowJoinLobbyForm => {
+                        *app_state = AppState::JoinLobbyForm {
+                            lobby_id: String::new(),
+                            player_name: "Player 1".to_string(),
+                        };
+                    }
+                    Message::CreateAndJoinLobby(lobby_name, player_name) => {
+                        let (lobby, player_id) = Lobby::new_with_creator(lobby_name, player_name);
+                        *current_player_id = player_id;
+                        *app_state = AppState::Lobby(lobby);
+                    }
+                    Message::JoinLobbyWithId(lobby_id, player_name) => {
+                        use tsurust_common::lobby::normalize_lobby_id;
+                        // Normalize and validate lobby ID
+                        if let Some(normalized_id) = normalize_lobby_id(&lobby_id) {
+                            // In real implementation, would query server and join existing lobby
+                            // For now, create a new lobby as placeholder
+                            let (lobby, player_id) = Lobby::new_with_creator(
+                                format!("Lobby {}", normalized_id),
+                                player_name
+                            );
+                            *current_player_id = player_id;
+                            *app_state = AppState::Lobby(lobby);
+                        }
+                        // TODO: Handle invalid lobby ID error
+                    }
+                    Message::BackToMainMenu => {
+                        match app_state {
+                            AppState::LobbyPlacingFor(lobby, _) => {
+                                // Return to lobby instead of main menu
+                                let lobby_copy = lobby.clone();
+                                *app_state = AppState::Lobby(lobby_copy);
+                            }
+                            _ => {
+                                *app_state = AppState::MainMenu;
+                            }
+                        }
+                    }
+                    Message::JoinLobby(player_name) => {
+                        if let AppState::Lobby(lobby) = app_state {
+                            if let Err(e) = lobby.handle_event(LobbyEvent::PlayerJoined {
+                                player_id: *current_player_id,
+                                player_name,
+                            }) {
+                                eprintln!("Failed to join lobby: {:?}", e);
+                            }
+                        }
+                    }
+                    Message::PlacePawn(position) => {
+                        match app_state {
+                            AppState::Lobby(lobby) => {
+                                if let Err(e) = lobby.handle_event(LobbyEvent::PawnPlaced {
+                                    player_id: *current_player_id,
+                                    position,
+                                }) {
+                                    eprintln!("Failed to place pawn: {:?}", e);
+                                }
+                            }
+                            AppState::LobbyPlacingFor(lobby, placing_for_id) => {
+                                if let Err(e) = lobby.handle_event(LobbyEvent::PawnPlaced {
+                                    player_id: *placing_for_id,
+                                    position,
+                                }) {
+                                    eprintln!("Failed to place pawn: {:?}", e);
+                                } else {
+                                    // Return to normal lobby view
+                                    let lobby_copy = lobby.clone();
+                                    *app_state = AppState::Lobby(lobby_copy);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    Message::StartGameFromLobby => {
+                        if let AppState::Lobby(lobby) = app_state {
+                            if let Err(e) = lobby.handle_event(LobbyEvent::StartGame) {
+                                eprintln!("Failed to start game: {:?}", e);
+                            } else {
+                                match lobby.to_game() {
+                                    Ok(game) => {
+                                        *app_state = AppState::Game(game);
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Failed to convert lobby to game: {:?}", e);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Message::DebugAddPlayer => {
+                        match app_state {
+                            AppState::Lobby(lobby) => {
+                                let next_player_id = lobby.players.keys().max().unwrap_or(&0) + 1;
+                                let player_name = format!("Test Player {}", next_player_id);
+                                if let Err(e) = lobby.handle_event(LobbyEvent::PlayerJoined {
+                                    player_id: next_player_id,
+                                    player_name,
+                                }) {
+                                    eprintln!("Failed to add test player: {:?}", e);
+                                } else {
+                                    // Switch to placing mode for the new player
+                                    let lobby_copy = lobby.clone();
+                                    *app_state = AppState::LobbyPlacingFor(lobby_copy, next_player_id);
+                                }
+                            }
+                            AppState::LobbyPlacingFor(lobby, _) => {
+                                let next_player_id = lobby.players.keys().max().unwrap_or(&0) + 1;
+                                let player_name = format!("Test Player {}", next_player_id);
+                                if let Err(e) = lobby.handle_event(LobbyEvent::PlayerJoined {
+                                    player_id: next_player_id,
+                                    player_name,
+                                }) {
+                                    eprintln!("Failed to add test player: {:?}", e);
+                                } else {
+                                    // Switch to placing mode for the new player
+                                    let lobby_copy = lobby.clone();
+                                    *app_state = AppState::LobbyPlacingFor(lobby_copy, next_player_id);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    Message::DebugPlacePawn(player_id) => {
+                        if let AppState::Lobby(lobby) = app_state {
+                            // Switch to placing mode for this player
+                            let lobby_copy = lobby.clone();
+                            *app_state = AppState::LobbyPlacingFor(lobby_copy, player_id);
+                        }
+                    }
+                    Message::DebugCyclePlayer(next) => {
+                        if let AppState::LobbyPlacingFor(lobby, current_placing_id) = app_state {
+                            // Get all player IDs without spawn positions, sorted
+                            let mut unplaced_players: Vec<PlayerID> = lobby.players.iter()
+                                .filter(|(_, p)| p.spawn_position.is_none())
+                                .map(|(id, _)| *id)
+                                .collect();
+                            unplaced_players.sort();
+
+                            if !unplaced_players.is_empty() {
+                                // Find current index
+                                let current_idx = unplaced_players.iter()
+                                    .position(|id| id == current_placing_id)
+                                    .unwrap_or(0);
+
+                                // Calculate new index
+                                let new_idx = if next {
+                                    (current_idx + 1) % unplaced_players.len()
+                                } else {
+                                    if current_idx == 0 {
+                                        unplaced_players.len() - 1
+                                    } else {
+                                        current_idx - 1
+                                    }
+                                };
+
+                                let new_player_id = unplaced_players[new_idx];
+                                let lobby_copy = lobby.clone();
+                                *app_state = AppState::LobbyPlacingFor(lobby_copy, new_player_id);
+                            }
+                        }
+                    }
                     Message::TileRotated(tile_index, clockwise) => {
-                        let hand = game.hands.get_mut(&game.current_player_id).expect("current player should always have a hand");
-                        hand[tile_index] = hand[tile_index].rotated(clockwise);
+                        if let AppState::Game(game) = app_state {
+                            let hand = game.hands.get_mut(&game.current_player_id).expect("current player should always have a hand");
+                            hand[tile_index] = hand[tile_index].rotated(clockwise);
+                        }
                     }
                     Message::TilePlaced(tile_index) => {
-                        let player_cell = game.players.iter()
-                            .find(|p| p.id == game.current_player_id && p.alive)
-                            .expect("current player should exist and be alive")
-                            .pos.cell;
+                        if let AppState::Game(game) = app_state {
+                            let player_cell = game.players.iter()
+                                .find(|p| p.id == game.current_player_id && p.alive)
+                                .expect("current player should exist and be alive")
+                                .pos.cell;
 
-                        let hand = game.hands.get(&game.current_player_id)
-                            .expect("current player should always have a hand");
+                            let hand = game.hands.get(&game.current_player_id)
+                                .expect("current player should always have a hand");
 
-                        let tile = hand[tile_index];
+                            let tile = hand[tile_index];
 
-                        let mov = Move {
-                            tile,
-                            cell: player_cell,
-                            player_id: game.current_player_id,
-                        };
+                            let mov = Move {
+                                tile,
+                                cell: player_cell,
+                                player_id: game.current_player_id,
+                            };
 
-                        match game.perform_move(mov) {
-                            Ok(turn_result) => {
-                                println!("Tile placed successfully at {:?}!", player_cell);
-                                println!("  Tile: {:?}", tile);
+                            match game.perform_move(mov) {
+                                Ok(turn_result) => {
+                                    println!("Tile placed successfully at {:?}!", player_cell);
+                                    println!("  Tile: {:?}", tile);
 
-                                match &turn_result {
-                                    TurnResult::TurnAdvanced { turn_number, next_player, eliminated } => {
-                                        println!("Turn {} completed. Next player: {}", turn_number, next_player);
-                                        if !eliminated.is_empty() {
-                                            println!("  Players eliminated: {:?}", eliminated);
+                                    match &turn_result {
+                                        TurnResult::TurnAdvanced { turn_number, next_player, eliminated } => {
+                                            println!("Turn {} completed. Next player: {}", turn_number, next_player);
+                                            if !eliminated.is_empty() {
+                                                println!("  Players eliminated: {:?}", eliminated);
+                                            }
                                         }
-                                    }
-                                    TurnResult::PlayerWins { turn_number, winner, eliminated } => {
-                                        println!("GAME OVER! Player {} wins on turn {}!", winner, turn_number);
-                                        if !eliminated.is_empty() {
+                                        TurnResult::PlayerWins { turn_number, winner, eliminated } => {
+                                            println!("GAME OVER! Player {} wins on turn {}!", winner, turn_number);
+                                            if !eliminated.is_empty() {
+                                                println!("  Final eliminations: {:?}", eliminated);
+                                            }
+                                        }
+                                        TurnResult::Extinction { turn_number, eliminated } => {
+                                            println!("EXTINCTION! All players eliminated on turn {}!", turn_number);
                                             println!("  Final eliminations: {:?}", eliminated);
                                         }
                                     }
-                                    TurnResult::Extinction { turn_number, eliminated } => {
-                                        println!("EXTINCTION! All players eliminated on turn {}!", turn_number);
-                                        println!("  Final eliminations: {:?}", eliminated);
+
+                                    println!("  All player positions after move:");
+                                    for player in &game.players {
+                                        println!("    Player {} ({}): {:?}",
+                                            player.id,
+                                            if player.alive { "alive" } else { "eliminated" },
+                                            player.pos);
                                     }
                                 }
-
-                                println!("  All player positions after move:");
-                                for player in &game.players {
-                                    println!("    Player {} ({}): {:?}",
-                                        player.id,
-                                        if player.alive { "alive" } else { "eliminated" },
-                                        player.pos);
-                                }
+                                Err(error) => println!("Failed to place tile: {}", error),
                             }
-                            Err(error) => println!("Failed to place tile: {}", error),
+                        }
+                    }
+                    Message::RestartGame => {
+                        if let AppState::Game(game) = app_state {
+                            // Create a new game with fresh players
+                            let players = vec![
+                                Player::new(1, PlayerPos::new(0, 2, 1)),
+                                Player::new(2, PlayerPos::new(2, 5, 2)),
+                                Player::new(3, PlayerPos::new(5, 3, 0)),
+                                Player::new(4, PlayerPos::new(3, 0, 6)),
+                            ];
+                            *game = Game::new(players);
+                            println!("Game restarted!");
                         }
                     }
                 }
@@ -162,7 +378,7 @@ impl eframe::App for TemplateApp {
 
         // Render UI with sender
         if let Some(tx) = sender {
-            Self::render_ui(ctx, game, tx);
+            Self::render_ui(ctx, app_state, *current_player_id, tx);
         }
     }
 

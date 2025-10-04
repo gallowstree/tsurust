@@ -1,10 +1,10 @@
 use eframe::egui::{vec2, Frame, Rect, Sense, Widget};
 use std::sync::mpsc;
 
-use tsurust_common::board::*;
 use crate::app::Message;
+use tsurust_common::board::*;
 
-use crate::rendering::{paint_tile, paint_tile_button_hoverlay, tile_to_screen_transform};
+use crate::rendering::{paint_tile, paint_tile_button_hoverlay, paint_tile_button_hoverlay_with_highlight, tile_to_screen_transform};
 
 pub struct TileButton {
     tile: Tile,
@@ -19,7 +19,7 @@ impl TileButton {
 }
 
 impl Widget for TileButton {
-    fn ui(mut self, ui: &mut eframe::egui::Ui) -> eframe::egui::Response {
+    fn ui(self, ui: &mut eframe::egui::Ui) -> eframe::egui::Response {
         let (rect, response) =
             ui.allocate_exact_size(vec2(140.0, 140.0), Sense::click().union(Sense::hover()));
 
@@ -52,7 +52,21 @@ impl Widget for TileButton {
                 let rect = response.rect;
 
                 if response.hovered() {
-                    paint_tile_button_hoverlay(rect, painter);
+                    if let Some(pos) = response.hover_pos() {
+                        let pos = to_screen.inverse().transform_pos(pos);
+                        if pos.x < 1. {
+                            // Hovering over left rotation area - show both buttons, highlight left
+                            paint_tile_button_hoverlay_with_highlight(rect, painter, Some(false));
+                        } else if pos.x > 2. {
+                            // Hovering over right rotation area - show both buttons, highlight right
+                            paint_tile_button_hoverlay_with_highlight(rect, painter, Some(true));
+                        } else {
+                            // Hovering over center placement area - show both buttons, no highlight
+                            paint_tile_button_hoverlay_with_highlight(rect, painter, None);
+                        }
+                    } else {
+                        paint_tile_button_hoverlay(rect, painter);
+                    }
                 }
 
                 paint_tile(

@@ -1,5 +1,5 @@
+use crate::board::{Board, Move, PlayerID, PlayerPos, Tile, TileEndpoint};
 use std::collections::HashMap;
-use crate::board::{TileEndpoint, PlayerPos, PlayerID, Move, Board, Tile};
 
 /// Get the normalized position (0.0 to 1.0) of an endpoint within a tile
 pub fn endpoint_position(endpoint: TileEndpoint) -> (f32, f32) {

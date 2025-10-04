@@ -5,7 +5,11 @@
       "WebFetch(domain:docs.rs)",
       "Bash(cargo check:*)",
       "Bash(cargo test:*)",
-      "Bash(cargo run:*)"
+      "Bash(cargo run:*)",
+      "Bash(git add:*)",
+      "Bash(git checkout:*)",
+      "Bash(git push:*)",
+      "Bash(cargo build:*)"
     ],
     "deny": [],
     "ask": []

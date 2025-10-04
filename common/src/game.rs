@@ -10,6 +10,7 @@ pub enum TurnResult {
     Extinction { turn_number: usize, eliminated: Vec<PlayerID> },
 }
 
+#[derive(Debug)]
 pub struct Game {
     pub deck: Deck,
     pub board: Board,
@@ -17,7 +18,7 @@ pub struct Game {
     pub hands: HashMap<PlayerID, Vec<Tile>>,
     pub tile_trails: HashMap<CellCoord, Vec<(PlayerID, TileEndpoint)>>, // tile -> list of (player, segment) pairs
     pub current_player_id: PlayerID,
-    dragon: Option<PlayerID>,
+    pub dragon: Option<PlayerID>,
 }
 
 impl Game {
@@ -229,7 +230,7 @@ fn alive_players(players: &mut Vec<Player>) -> Vec<&mut Player> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::board::{CellCoord, PlayerPos, TileEndpoint};
+    use crate::board::{CellCoord, PlayerPos};
 
     fn create_straight_tile() -> Tile {
         // Create a tile with straight connections: 0-1, 2-3, 4-5, 6-7
@@ -260,6 +261,7 @@ mod tests {
         let players = vec![
             Player {
                 id: 1,
+                name: "Player 1".to_string(),
                 pos: PlayerPos { cell: CellCoord { row: 1, col: 1 }, endpoint: 0 },
                 alive: true,
                 has_moved: false,
@@ -297,6 +299,7 @@ mod tests {
         let players = vec![
             Player {
                 id: 1,
+                name: "Player 1".to_string(),
                 pos: PlayerPos { cell: CellCoord { row: 1, col: 1 }, endpoint: 0 },
                 alive: true,
                 has_moved: false,
@@ -304,6 +307,7 @@ mod tests {
             },
             Player {
                 id: 2,
+                name: "Player 2".to_string(),
                 pos: PlayerPos { cell: CellCoord { row: 1, col: 1 }, endpoint: 2 },
                 alive: true,
                 has_moved: false,
@@ -358,6 +362,7 @@ mod tests {
         let players = vec![
             Player {
                 id: 1,
+                name: "Player 1".to_string(),
                 pos: PlayerPos { cell: CellCoord { row: 1, col: 1 }, endpoint: 3 }, // Will move right to (1,2)
                 alive: true,
                 has_moved: false,
@@ -365,6 +370,7 @@ mod tests {
             },
             Player {
                 id: 2,
+                name: "Player 2".to_string(),
                 pos: PlayerPos { cell: CellCoord { row: 2, col: 2 }, endpoint: 0 }, // Will move up to (1,2)
                 alive: true,
                 has_moved: false,

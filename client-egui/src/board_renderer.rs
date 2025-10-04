@@ -1,9 +1,9 @@
-use eframe::egui::{vec2, Frame, Rect, Sense, Widget, Response, Ui};
+use eframe::egui::{vec2, Frame, Rect, Response, Sense, Ui, Widget};
 use eframe::emath::Vec2;
 use eframe::epaint::{Color32, Stroke};
 use egui::Pos2;
-use tsurust_common::board::*;
 use std::collections::HashMap;
+use tsurust_common::board::*;
 
 use crate::rendering::{paint_tile_with_trails, PINK};
 
@@ -50,8 +50,23 @@ impl Widget for BoardRenderer<'_> {
                 endpoint_offset.y * cell_rect.height()
             );
 
-            ui.painter().circle(player_pos, PLAYER_RADIUS, Color32::WHITE, Stroke::default());
-            ui.painter().circle_filled(player_pos, PLAYER_RADIUS*0.8, player_color);
+            if player.alive {
+                ui.painter().circle(player_pos, PLAYER_RADIUS, Color32::WHITE, Stroke::default());
+                ui.painter().circle_filled(player_pos, PLAYER_RADIUS*0.8, player_color);
+            } else {
+                // Dead player: gray circle with colored X
+                ui.painter().circle(player_pos, PLAYER_RADIUS, Color32::WHITE, Stroke::default());
+                ui.painter().circle_filled(player_pos, PLAYER_RADIUS*0.8, Color32::from_gray(100));
+                let x_size = PLAYER_RADIUS * 0.6;
+                ui.painter().line_segment(
+                    [player_pos - Vec2::new(x_size, x_size), player_pos + Vec2::new(x_size, x_size)],
+                    Stroke::new(4.0, player_color)
+                );
+                ui.painter().line_segment(
+                    [player_pos - Vec2::new(x_size, -x_size), player_pos + Vec2::new(x_size, -x_size)],
+                    Stroke::new(4.0, player_color)
+                );
+            }
         }
 
 
