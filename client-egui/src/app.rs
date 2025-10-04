@@ -81,7 +81,7 @@ impl TemplateApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.add_space(20.);
-                ui.add(BoardRenderer::new(&game.board.history, &game.players, &game.tile_trails));
+                ui.add(BoardRenderer::new(&game.board.history, &game.players, &game.tile_trails, &game.player_trails));
             });
         });
 
