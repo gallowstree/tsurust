@@ -15,7 +15,7 @@ pub const MAX: usize = BOARD_LENGTH - 1;
 /// enum { NE, NW, EN, ES, WN, WS, SW, SE } but with current order/num values
 pub type TileEndpoint = usize;
 ///  We represent a `Tile` as a collection of four `Segment`s.
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Tile {
     pub segments: [Segment; 4],
 }
@@ -30,20 +30,20 @@ impl std::fmt::Debug for Tile {
     }
 }
 /// which are just pairs of entry points connected by each segment.
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, serde::Serialize, serde::Deserialize)]
 pub struct Segment {
     pub a: TileEndpoint,
     pub b: TileEndpoint,
 }
 /// A position inside the board's grid
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct CellCoord {
     pub row: usize,
     pub col: usize,
 }
 /// Players and Pawns data
 pub type PlayerID = usize;
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Player {
     pub id: PlayerID,
     pub name: String,
@@ -77,7 +77,7 @@ impl Player {
     }
 }
 /// The position of a `Player`. Made of the cell coordinates and the current entry point id.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct PlayerPos {
     pub cell: CellCoord,
     pub endpoint: TileEndpoint,
@@ -85,7 +85,7 @@ pub struct PlayerPos {
 /// Game State
 /// Move: Modify board state.
 /// Represents a Player's move: which tile was placed where.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Move {
     pub tile: Tile,
     pub cell: CellCoord,
@@ -93,7 +93,7 @@ pub struct Move {
 }
 /// Board state history: all the moves that have been played
 /// Defines functions to calculate the effects of moves on the board's state
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Board {
     //setup: Vec<Player> something reflecting initial conditions?
     pub history: Vec<Move>,

@@ -3,7 +3,7 @@ use rand::thread_rng;
 
 use crate::board::*;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Deck {
     tiles: Vec<Tile>,
 }

@@ -9,6 +9,7 @@ mod hand_renderer;
 mod player_card;
 mod screens;
 mod components;
+pub mod ws_client;
 
 pub use app::TemplateApp;
 

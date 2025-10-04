@@ -3,14 +3,14 @@ use std::collections::HashMap;
 use crate::board::*;
 use crate::deck::Deck;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum TurnResult {
     TurnAdvanced { turn_number: usize, next_player: PlayerID, eliminated: Vec<PlayerID> },
     PlayerWins { turn_number: usize, winner: PlayerID, eliminated: Vec<PlayerID> },
     Extinction { turn_number: usize, eliminated: Vec<PlayerID> },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Game {
     pub deck: Deck,
     pub board: Board,

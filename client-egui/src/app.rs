@@ -3,6 +3,7 @@ use egui::Context;
 use std::sync::mpsc;
 
 use crate::screens;
+use crate::ws_client::{GameClient, ServerMessage};
 use tsurust_common::board::*;
 use tsurust_common::game::{Game, TurnResult};
 use tsurust_common::lobby::{Lobby, LobbyEvent};
@@ -56,6 +57,10 @@ pub struct TemplateApp {
     receiver: Option<mpsc::Receiver<Message>>,
     #[serde(skip)]
     current_player_id: PlayerID, // For lobby, tracks this client's player ID
+    #[serde(skip)]
+    game_client: Option<GameClient>, // WebSocket connection to server
+    #[serde(skip)]
+    current_room_id: Option<String>, // Track current room we're in
 }
 
 impl Default for TemplateApp {
@@ -68,6 +73,8 @@ impl Default for TemplateApp {
             sender: Some(sender),
             receiver: Some(receiver),
             current_player_id: 1, // Default player ID
+            game_client: None,
+            current_room_id: None,
         }
     }
 }
@@ -105,7 +112,39 @@ impl TemplateApp {
 impl eframe::App for TemplateApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
-        let Self { label: _, app_state, sender, receiver, current_player_id } = self;
+        let Self { label: _, app_state, sender, receiver, current_player_id, game_client, current_room_id } = self;
+
+        // Poll for server messages
+        if let Some(client) = game_client {
+            while let Some(server_msg) = client.try_recv() {
+                match server_msg {
+                    ServerMessage::RoomCreated { room_id, player_id } => {
+                        println!("Room created: {} with player ID: {}", room_id, player_id);
+                        *current_room_id = Some(room_id);
+                        *current_player_id = player_id;
+                    }
+                    ServerMessage::PlayerJoined { room_id, player_id: joined_player_id, player_name } => {
+                        println!("Player {} (ID: {}) joined room {}", player_name, joined_player_id, room_id);
+                    }
+                    ServerMessage::GameStateUpdate { room_id, state } => {
+                        println!("Game state update for room {}", room_id);
+                        // TODO: Update local game state from server
+                    }
+                    ServerMessage::TurnCompleted { room_id, result } => {
+                        println!("Turn completed in room {}: {:?}", room_id, result);
+                    }
+                    ServerMessage::Error { message } => {
+                        eprintln!("Server error: {}", message);
+                    }
+                    ServerMessage::PlayerLeft { room_id, player_id: left_player_id } => {
+                        println!("Player {} left room {}", left_player_id, room_id);
+                    }
+                }
+            }
+
+            // Request repaint if we're connected (to keep polling for messages)
+            ctx.request_repaint();
+        }
 
         // Process received messages
         if let Some(rx) = receiver {
@@ -145,9 +184,30 @@ impl eframe::App for TemplateApp {
                         };
                     }
                     Message::CreateAndJoinLobby(lobby_name, player_name) => {
-                        let (lobby, player_id) = Lobby::new_with_creator(lobby_name, player_name);
-                        *current_player_id = player_id;
-                        *app_state = AppState::Lobby(lobby);
+                        // Connect to WebSocket server
+                        match GameClient::connect("ws://127.0.0.1:8080") {
+                            Ok(mut client) => {
+                                println!("Connected to server, creating room: {}", lobby_name);
+
+                                // Send CreateRoom message
+                                client.create_room(lobby_name.clone(), player_name.clone());
+
+                                // Store the client for future communication
+                                self.game_client = Some(client);
+
+                                // For now, still create local lobby (will be replaced by server state)
+                                let (lobby, player_id) = Lobby::new_with_creator(lobby_name, player_name);
+                                *current_player_id = player_id;
+                                *app_state = AppState::Lobby(lobby);
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to connect to server: {}", e);
+                                // Fallback to local-only lobby
+                                let (lobby, player_id) = Lobby::new_with_creator(lobby_name, player_name);
+                                *current_player_id = player_id;
+                                *app_state = AppState::Lobby(lobby);
+                            }
+                        }
                     }
                     Message::JoinLobbyWithId(lobby_id, player_name) => {
                         use tsurust_common::lobby::normalize_lobby_id;
