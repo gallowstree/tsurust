@@ -2,46 +2,27 @@
 
 ## Current Development Prioritie
 
-### **Phase 1: Trail System Implementation** (1-2 weeks)
-**Goal**: Implement the improved trail-based architecture from TRAILS.md
+### **Phase 1: Trail System & Game Flow Polish**
 
-#### Tasks:
-1. **Define Trail Data Structures**
-   ```rust
-   pub struct TrailSegment {
-       pub board_pos: (usize, usize),
-       pub entry_point: u8,
-       pub exit_point: u8,
-   }
+#### Remaining Tasks:
+1. **Animation System**
+   - Add smooth animation when player follows trail after tile placement
+   - Implement configurable animation speed
+   - Add visual feedback during player movement
 
-   pub struct Trail {
-       pub segments: Vec<TrailSegment>,
-       pub start_pos: PlayerPosition,
-       pub end_pos: PlayerPosition,
-       pub completed: bool,
-   }
-   ```
-
-2. **Update `traverse_from` to Return Trail**
-   - Replace current `HashSet<(usize, usize)>` return with `Trail`
-   - Maintain backward compatibility with wrapper function
-   - Add trail intersection detection methods
-
-3. **Implement Trail-Based Rendering**
-   - Add `world_coordinates()` method to convert trails to screen coordinates
-   - Update `BoardRenderer` to use trail data for path rendering
-   - Add smooth animation support using trail data
-
-**Acceptance Criteria**: Trails rendered with better accuracy, foundation for animations
+2. **Game Flow Improvements**
+   - Add game over detection and winner announcement
+   - Implement proper turn management UI feedback
+   - Add invalid move error messages
 
 ---
 
 ### **Phase 2: Multiplayer Server** (2-3 weeks)
-**Goal**: Add networked multiplayer support using tarpc RPC framework
+**Goal**: Add networked multiplayer support using WebSockets
 
 #### Architecture Overview:
 - **Server Module**: New `server/` crate for game server logic
-- **RPC Service**: tarpc-based service for client-server communication
+- **WebSocket Communication**: Message-based protocol for client-server communication
 - **Client Updates**: Modify client to communicate with server instead of local game state
 
 #### Tasks:
@@ -50,47 +31,51 @@
    server/
    ├── Cargo.toml
    ├── src/
-   │   ├── main.rs          # Server binary
+   │   ├── main.rs          # Server binary (tokio-websockets server)
    │   ├── lib.rs           # Server library
-   │   ├── service.rs       # tarpc service implementation
+   │   ├── handler.rs       # WebSocket message handler
    │   ├── game_manager.rs  # Multi-game state management
    │   └── room.rs          # Game room/lobby management
    ```
 
-2. **Define RPC Service Interface**
+2. **Define WebSocket Message Protocol**
    ```rust
-   #[tarpc::service]
-   trait TsuroGameService {
-       // Room management
-       async fn create_room(room_name: String) -> Result<RoomId, GameError>;
-       async fn join_room(room_id: RoomId, player_name: String) -> Result<PlayerId, GameError>;
-       async fn leave_room(room_id: RoomId, player_id: PlayerId) -> Result<(), GameError>;
+   // Client -> Server messages
+   enum ClientMessage {
+       CreateRoom { room_name: String },
+       JoinRoom { room_id: RoomId, player_name: String },
+       LeaveRoom { room_id: RoomId },
+       PlaceTile { room_id: RoomId, tile: Tile, cell: CellCoord },
+       GetGameState { room_id: RoomId },
+   }
 
-       // Game actions
-       async fn place_tile(room_id: RoomId, player_id: PlayerId, tile: Tile, cell: CellCoord) -> Result<GameState, GameError>;
-       async fn get_game_state(room_id: RoomId) -> Result<GameState, GameError>;
-
-       // Real-time updates
-       async fn subscribe_to_game_updates(room_id: RoomId) -> Result<GameUpdateStream, GameError>;
+   // Server -> Client messages
+   enum ServerMessage {
+       RoomCreated { room_id: RoomId },
+       PlayerJoined { player_id: PlayerId },
+       GameStateUpdate { state: GameState },
+       Error { message: String },
+       PlayerDisconnected { player_id: PlayerId },
    }
    ```
 
 3. **Server-Side Game Management**
    - Multi-room support with concurrent games
-   - Player session management and authentication
+   - Player session management via WebSocket connections
    - Game state validation and synchronization
    - Spectator support
 
 4. **Client-Side Integration**
-   - Replace local `Game` state with `GameClient` that communicates via RPC
+   - WebSocket client integration (ewebsock for egui compatibility)
+   - Replace local `Game` state with messages to/from server
    - Handle network latency and connection issues
    - Implement optimistic updates for responsiveness
    - Add lobby/room selection UI
 
 5. **Network Protocol Design**
-   - Efficient serialization of game state updates
+   - JSON serialization for game state (serde)
    - Delta updates instead of full state sync
-   - Heartbeat/keepalive for connection management
+   - Heartbeat/ping-pong for connection management
    - Graceful handling of disconnections and reconnections
 
 **Acceptance Criteria**:

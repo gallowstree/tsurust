@@ -34,7 +34,7 @@ pub fn paint_tile_with_trails(
 
             let segment_color = if let Some((_, player_color)) = player_paths.get(&segment_key) {
                 // Make player trail semi-transparent but visible
-                Color32::from_rgba_premultiplied(
+                Color32::from_rgba_unmultiplied(
                     player_color.r(),
                     player_color.g(),
                     player_color.b(),
