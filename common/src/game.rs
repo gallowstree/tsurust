@@ -17,6 +17,7 @@ pub struct Game {
     pub players: Vec<Player>,
     pub hands: HashMap<PlayerID, Vec<Tile>>,
     pub tile_trails: HashMap<CellCoord, Vec<(PlayerID, TileEndpoint)>>, // tile -> list of (player, segment) pairs
+    pub player_trails: HashMap<PlayerID, crate::trail::Trail>, // Complete trail for each player
     pub current_player_id: PlayerID,
     pub dragon: Option<PlayerID>,
 }
@@ -33,9 +34,16 @@ impl Game {
 
         let current_player_id = if players.is_empty() { 1 } else { players[0].id };
 
+        // Initialize trails with each player's starting position
+        let mut player_trails = HashMap::new();
+        for player in &players {
+            player_trails.insert(player.id, crate::trail::Trail::new(player.pos));
+        }
+
         Game {
             players, hands, deck, board,
             tile_trails: HashMap::new(),
+            player_trails,
             current_player_id,
             dragon: None,
         }
@@ -98,7 +106,8 @@ impl Game {
                 continue;
             }
             let old_pos = player.pos;
-            let new_pos = self.board.traverse_from(player.pos);
+            let trail = self.board.traverse_from(player.pos);
+            let new_pos = trail.end_pos;
 
             // Mark that this player has moved if position changed
             if old_pos != new_pos {
@@ -115,6 +124,15 @@ impl Game {
                         player.id, old_pos.cell, old_pos.endpoint, new_pos.endpoint);
                 }
                 trails_to_record.push((player.id, old_pos)); // Record where they came FROM
+
+                // Extend player's trail with new segments
+                if let Some(player_trail) = self.player_trails.get_mut(&player.id) {
+                    for segment in &trail.segments {
+                        player_trail.add_segment(segment.clone());
+                    }
+                    player_trail.end_pos = new_pos;
+                    player_trail.completed = trail.completed;
+                }
             } else {
                 println!("DEBUG: Player {} stayed at same position {:?}",
                     player.id, old_pos);

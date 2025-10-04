@@ -4,8 +4,9 @@ use eframe::epaint::{Color32, Stroke};
 use egui::Pos2;
 use std::collections::HashMap;
 use tsurust_common::board::*;
+use tsurust_common::trail::Trail;
 
-use crate::rendering::{paint_tile_with_trails, PINK};
+use crate::rendering::{paint_tile_with_trails, endpoint_position, trail_to_world_coords, PINK};
 
 const TILE_LENGTH: f32 = 120.0;
 const TILE_SIZE: Vec2 = Vec2::new(TILE_LENGTH, TILE_LENGTH);
@@ -15,11 +16,17 @@ pub struct BoardRenderer<'a> {
     history: &'a Vec<Move>,
     players: &'a Vec<Player>,
     tile_trails: &'a HashMap<CellCoord, Vec<(PlayerID, TileEndpoint)>>,
+    player_trails: &'a HashMap<PlayerID, Trail>,
 }
 
 impl <'a> BoardRenderer<'a> {
-    pub(crate) fn new(history: &'a Vec<Move>, players: &'a Vec<Player>, tile_trails: &'a HashMap<CellCoord, Vec<(PlayerID, TileEndpoint)>>) -> Self {
-        Self { history, players, tile_trails }
+    pub(crate) fn new(
+        history: &'a Vec<Move>,
+        players: &'a Vec<Player>,
+        tile_trails: &'a HashMap<CellCoord, Vec<(PlayerID, TileEndpoint)>>,
+        player_trails: &'a HashMap<PlayerID, Trail>
+    ) -> Self {
+        Self { history, players, tile_trails, player_trails }
     }
 
 }
@@ -38,6 +45,28 @@ impl Widget for BoardRenderer<'_> {
             render_board_tiles(ui, self.history, self.tile_trails, self.players, board_rect);
         });
 
+        // Render player trails on top with higher opacity so tile paths don't show through as much
+        for player in self.players.iter() {
+            if let Some(trail) = self.player_trails.get(&player.id) {
+                let player_color = Color32::from_rgb(player.color.0, player.color.1, player.color.2);
+                let trail_color = Color32::from_rgba_unmultiplied(
+                    player_color.r(),
+                    player_color.g(),
+                    player_color.b(),
+                    200 // Higher opacity to minimize tile path blending
+                );
+
+                let line_segments = trail_to_world_coords(trail, TILE_LENGTH, board_rect.min);
+
+                for (start, end) in line_segments {
+                    ui.painter().line_segment(
+                        [start, end],
+                        Stroke::new(3.0, trail_color)
+                    );
+                }
+            }
+        }
+
         for player in self.players.iter() {
             let player_color = Color32::from_rgb(player.color.0, player.color.1, player.color.2);
 
@@ -54,17 +83,26 @@ impl Widget for BoardRenderer<'_> {
                 ui.painter().circle(player_pos, PLAYER_RADIUS, Color32::WHITE, Stroke::default());
                 ui.painter().circle_filled(player_pos, PLAYER_RADIUS*0.8, player_color);
             } else {
-                // Dead player: gray circle with colored X
+                // Dead player: gray circle with brighter, thicker X
                 ui.painter().circle(player_pos, PLAYER_RADIUS, Color32::WHITE, Stroke::default());
                 ui.painter().circle_filled(player_pos, PLAYER_RADIUS*0.8, Color32::from_gray(100));
-                let x_size = PLAYER_RADIUS * 0.6;
+
+                let x_size = PLAYER_RADIUS * 0.7; // Slightly larger X
+
+                // Brighten the player color for the X
+                let bright_color = Color32::from_rgb(
+                    player_color.r().saturating_add(80).min(255),
+                    player_color.g().saturating_add(80).min(255),
+                    player_color.b().saturating_add(80).min(255)
+                );
+
                 ui.painter().line_segment(
                     [player_pos - Vec2::new(x_size, x_size), player_pos + Vec2::new(x_size, x_size)],
-                    Stroke::new(4.0, player_color)
+                    Stroke::new(6.0, bright_color) // Thicker stroke
                 );
                 ui.painter().line_segment(
                     [player_pos - Vec2::new(x_size, -x_size), player_pos + Vec2::new(x_size, -x_size)],
-                    Stroke::new(4.0, player_color)
+                    Stroke::new(6.0, bright_color) // Thicker stroke
                 );
             }
         }
@@ -110,7 +148,7 @@ fn render_board_tiles(
 }
 
 fn path_index_position(i: TileEndpoint) -> Vec2 {
-    let (x, y) = tsurust_common::trail::endpoint_position(i);
+    let (x, y) = endpoint_position(i);
     Vec2::new(x, y)
 }
 

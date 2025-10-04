@@ -77,7 +77,7 @@ impl Player {
     }
 }
 /// The position of a `Player`. Made of the cell coordinates and the current entry point id.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct PlayerPos {
     pub cell: CellCoord,
     pub endpoint: TileEndpoint,
@@ -188,20 +188,68 @@ impl Board {
     }
 
     /// Returns the final position after traversing the path starting at the given position
-    pub fn traverse_from(&self, starting_point: PlayerPos) -> PlayerPos {
-        match self.get_tile_at(starting_point.cell) {
-            None => starting_point, // There is no tile to follow its path, so we're done
-            Some(tile) => {
-                let next_pos = Board::traverse_tile(tile, starting_point);
+    pub fn traverse_from(&self, starting_point: PlayerPos) -> crate::trail::Trail {
+        use crate::trail::{Trail, TrailSegment};
+        use std::collections::HashSet;
 
-                // If the player reached the board edge, stop traversing to prevent infinite recursion
-                if next_pos.on_edge() {
-                    return next_pos;
+        let mut trail = Trail::new(starting_point);
+        let mut current_pos = starting_point;
+        let mut visited = HashSet::new();
+
+        loop {
+            // Get tile at current position - if none, we're done
+            let tile = match self.get_tile_at(current_pos.cell) {
+                None => {
+                    trail.end_pos = current_pos;
+                    trail.completed = true;
+                    break;
                 }
+                Some(t) => t,
+            };
 
-                self.traverse_from(next_pos)
+            // Find the exit endpoint on the CURRENT tile
+            let tile_exit = tile
+                .segments
+                .iter()
+                .find(|&seg| seg.a() == current_pos.endpoint || seg.b() == current_pos.endpoint)
+                .map(|seg| {
+                    if seg.a() != current_pos.endpoint {
+                        seg.a()
+                    } else {
+                        seg.b()
+                    }
+                })
+                .expect("invalid tile - no segment for endpoint");
+
+            // Get the next position (could be same cell at edge, or next cell)
+            let next_pos = Board::traverse_tile(tile, current_pos);
+
+            // Add segment to trail (entry and exit on the CURRENT tile)
+            trail.add_segment(TrailSegment {
+                board_pos: (current_pos.cell.row, current_pos.cell.col),
+                entry_point: current_pos.endpoint,
+                exit_point: tile_exit,
+            });
+
+            // Move to next position
+            current_pos = next_pos;
+            trail.end_pos = current_pos;
+
+            // Check for infinite loop
+            if visited.contains(&current_pos) {
+                trail.completed = true;
+                break;
+            }
+            visited.insert(current_pos);
+
+            // Check if at board edge
+            if current_pos.on_edge() {
+                trail.completed = true;
+                break;
             }
         }
+
+        trail
     }
 
     /// Returns the immediate next position of a player starting at the given position and following the path of the given `Tile`
@@ -315,9 +363,9 @@ mod tests {
 
         // Should traverse through both tiles and end up at (0,2) entry point 6
         // (0,0,1) -> (0,0,2) -> move to (0,1,7) -> (0,1,3) -> move to (0,2,6)
-        let final_pos = board.traverse_from(start_pos);
+        let trail = board.traverse_from(start_pos);
 
-        assert_eq!(final_pos, PlayerPos::new(0, 2, 6));
+        assert_eq!(trail.end_pos, PlayerPos::new(0, 2, 6));
     }
 
     #[test]
@@ -333,10 +381,10 @@ mod tests {
 
         // Should move within tile from entry 1 to exit 3, then move to neighboring cell (0,1)
         // Since (0,1) has no tile, should stop at the entry point that corresponds to exit 3
-        let final_pos = board.traverse_from(start_pos);
+        let trail = board.traverse_from(start_pos);
 
         // According to neighboring_entry mapping, exit 3 -> entry 6
-        assert_eq!(final_pos, PlayerPos::new(0, 1, 6));
+        assert_eq!(trail.end_pos, PlayerPos::new(0, 1, 6));
     }
 
     #[test]
@@ -364,10 +412,11 @@ mod tests {
         let start_pos = PlayerPos::new(0, 0, 2);
 
         // This should detect the circular path and not overflow
-        let final_pos = board.traverse_from(start_pos);
+        let trail = board.traverse_from(start_pos);
 
         // For now, just test that it doesn't crash - we'll figure out expected behavior later
-        println!("Final position: {:?}", final_pos);
+        println!("Final position: {:?}", trail.end_pos);
+        assert!(trail.completed);
     }
 
     #[test]
@@ -383,12 +432,12 @@ mod tests {
         board.place_tile(Move { tile, cell: CellCoord { row: 0, col: 0 }, player_id: 1 });
 
         // Now traverse from the player's position - this simulates what happens in update_players()
-        let final_pos = board.traverse_from(player_pos);
+        let trail = board.traverse_from(player_pos);
 
-        println!("Player moved from {:?} to {:?}", player_pos, final_pos);
+        println!("Player moved from {:?} to {:?}", player_pos, trail.end_pos);
 
         // Should not cause stack overflow
-        assert_ne!(final_pos, player_pos); // Player should move somewhere
+        assert_ne!(trail.end_pos, player_pos); // Player should move somewhere
     }
 
     #[test]
@@ -404,12 +453,91 @@ mod tests {
         let start_pos = PlayerPos::new(0, 5, 2);
 
         // This should NOT cause stack overflow - should stop at the edge
-        let final_pos = board.traverse_from(start_pos);
+        let trail = board.traverse_from(start_pos);
 
         // Player should end up at the edge position
-        assert!(final_pos.on_edge());
-        assert_eq!(final_pos.cell, CellCoord { row: 0, col: 5 });
-        assert_eq!(final_pos.endpoint, 3); // The exit endpoint
+        assert!(trail.end_pos.on_edge());
+        assert_eq!(trail.end_pos.cell, CellCoord { row: 0, col: 5 });
+        assert_eq!(trail.end_pos.endpoint, 3); // The exit endpoint
+    }
+
+    #[test]
+    fn test_trail_building_from_spawn_position() {
+        let mut board = Board::new();
+
+        // Player spawns at board edge: top-left corner (0,0) facing inward at endpoint 0
+        let spawn_pos = PlayerPos::new(0, 0, 0);
+
+        // Move 1: Place tile at spawn position (0,0)
+        // This tile connects endpoint 0 -> 2 (entry bottom -> exit right)
+        let tile1 = Tile::new([seg(0, 2), seg(1, 3), seg(4, 5), seg(6, 7)]);
+        board.place_tile(Move { tile: tile1, cell: CellCoord { row: 0, col: 0 }, player_id: 1 });
+
+        let trail1 = board.traverse_from(spawn_pos);
+
+        // Verify trail after move 1
+        assert_eq!(trail1.start_pos, spawn_pos);
+        assert_eq!(trail1.segments.len(), 1, "Should have 1 segment after first move");
+        assert_eq!(trail1.segments[0].board_pos, (0, 0));
+        assert_eq!(trail1.segments[0].entry_point, 0);
+        assert_eq!(trail1.segments[0].exit_point, 2);
+        // Exit point 2 moves to cell (0,1) with entry point 7
+        assert_eq!(trail1.end_pos.cell, CellCoord { row: 0, col: 1 });
+        assert_eq!(trail1.end_pos.endpoint, 7);
+        assert!(trail1.completed, "Trail should be completed (no tile at next position)");
+
+        // Move 2: Place tile at (0,1) where player now is
+        // This tile connects endpoint 7 -> 1 (entry left -> exit bottom)
+        let tile2 = Tile::new([seg(7, 1), seg(0, 2), seg(3, 4), seg(5, 6)]);
+        board.place_tile(Move { tile: tile2, cell: CellCoord { row: 0, col: 1 }, player_id: 1 });
+
+        let trail2 = board.traverse_from(spawn_pos);
+
+        // Verify trail after move 2
+        assert_eq!(trail2.segments.len(), 2, "Should have 2 segments after second move");
+
+        // First segment should be same as before
+        assert_eq!(trail2.segments[0].board_pos, (0, 0));
+        assert_eq!(trail2.segments[0].entry_point, 0);
+        assert_eq!(trail2.segments[0].exit_point, 2);
+
+        // Second segment through tile at (0,1)
+        assert_eq!(trail2.segments[1].board_pos, (0, 1));
+        assert_eq!(trail2.segments[1].entry_point, 7);
+        assert_eq!(trail2.segments[1].exit_point, 1);
+
+        // Exit point 1 moves to cell (1,1) with entry point 4
+        assert_eq!(trail2.end_pos.cell, CellCoord { row: 1, col: 1 });
+        assert_eq!(trail2.end_pos.endpoint, 4);
+        assert!(trail2.completed, "Trail should be completed (no tile at next position)");
+
+        // Move 3: Place tile at (1,1) where player now is
+        // This tile connects endpoint 4 -> 6 (entry top -> exit left)
+        let tile3 = Tile::new([seg(4, 6), seg(0, 1), seg(2, 3), seg(5, 7)]);
+        board.place_tile(Move { tile: tile3, cell: CellCoord { row: 1, col: 1 }, player_id: 1 });
+
+        let trail3 = board.traverse_from(spawn_pos);
+
+        // Verify trail after move 3
+        assert_eq!(trail3.segments.len(), 3, "Should have 3 segments after third move");
+
+        // Third segment through tile at (1,1)
+        assert_eq!(trail3.segments[2].board_pos, (1, 1));
+        assert_eq!(trail3.segments[2].entry_point, 4);
+        assert_eq!(trail3.segments[2].exit_point, 6);
+
+        // Exit point 6 moves to cell (1,0) with entry point 3
+        assert_eq!(trail3.end_pos.cell, CellCoord { row: 1, col: 0 });
+        assert_eq!(trail3.end_pos.endpoint, 3);
+        assert!(trail3.completed, "Trail should be completed (no tile at next position)");
+
+        // Verify trail continuity: each segment's exit leads to next segment's position
+        println!("Trail segments:");
+        for (i, seg) in trail3.segments.iter().enumerate() {
+            println!("  Segment {}: ({},{}) entry {} -> exit {}",
+                i, seg.board_pos.0, seg.board_pos.1, seg.entry_point, seg.exit_point);
+        }
+        println!("Final position: {:?}", trail3.end_pos);
     }
 
     #[test]
