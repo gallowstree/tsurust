@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
-use crate::board::{Player, PlayerPos, PlayerID, CellCoord};
+
+use crate::board::{CellCoord, Player, PlayerID, PlayerPos};
 use crate::game::Game;
 
 pub type LobbyId = String;

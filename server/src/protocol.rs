@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+
 use tsurust_common::board::{Move, PlayerID};
 use tsurust_common::game::{Game, TurnResult};
 

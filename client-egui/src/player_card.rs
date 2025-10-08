@@ -1,4 +1,5 @@
 use egui::{Color32, Rect, Response, Sense, Ui, Vec2, Widget};
+
 use tsurust_common::board::Player;
 
 pub struct PlayerCard<'a> {

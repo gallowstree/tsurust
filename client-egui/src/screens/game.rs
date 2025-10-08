@@ -1,11 +1,14 @@
-use eframe::egui::{self, Context};
 use std::sync::mpsc;
+
+use eframe::egui::{self, Context};
+
+use tsurust_common::board::Player;
+use tsurust_common::game::Game;
+
 use crate::app::Message;
 use crate::board_renderer::BoardRenderer;
 use crate::hand_renderer::HandRenderer;
 use crate::player_card::PlayerCard;
-use tsurust_common::board::Player;
-use tsurust_common::game::Game;
 
 pub fn render_game_ui(ctx: &Context, game: &mut Game, sender: &mpsc::Sender<Message>) {
     egui::TopBottomPanel::top("top_panel")

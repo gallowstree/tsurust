@@ -1,9 +1,21 @@
-use eframe::egui::{self, Context};
 use std::sync::mpsc;
-use crate::app::Message;
-use crate::components::LobbyBoard;
+
+use eframe::egui::{self, Context};
+
 use tsurust_common::board::PlayerID;
 use tsurust_common::lobby::Lobby;
+
+use crate::app::Message;
+use crate::components::LobbyBoard;
+
+/// Helper function to render a player color indicator circle
+fn render_player_color_circle(ui: &mut egui::Ui, color: (u8, u8, u8), radius: f32) {
+    let player_color_ui = egui::Color32::from_rgb(color.0, color.1, color.2);
+    let circle_center = ui.cursor().min + egui::Vec2::new(radius + 4.0, radius + 4.0);
+    ui.painter().circle_filled(circle_center, radius, player_color_ui);
+    ui.painter().circle_stroke(circle_center, radius, (1.0, egui::Color32::WHITE));
+    ui.add_space(radius * 2.0 + 8.0);
+}
 
 pub fn render_lobby_ui(ctx: &Context, lobby: &mut Lobby, current_player_id: PlayerID, sender: &mpsc::Sender<Message>) {
     egui::TopBottomPanel::top("top_panel")
@@ -48,17 +60,7 @@ pub fn render_lobby_ui(ctx: &Context, lobby: &mut Lobby, current_player_id: Play
 
             for (player_id, lobby_player) in &lobby.players {
                 ui.horizontal(|ui| {
-                    let player_color = egui::Color32::from_rgb(
-                        lobby_player.color.0,
-                        lobby_player.color.1,
-                        lobby_player.color.2
-                    );
-
-                    let circle_center = ui.cursor().min + egui::Vec2::new(12.0, 12.0);
-                    ui.painter().circle_filled(circle_center, 8.0, player_color);
-                    ui.painter().circle_stroke(circle_center, 8.0, (1.0, egui::Color32::WHITE));
-
-                    ui.add_space(20.0);
+                    render_player_color_circle(ui, lobby_player.color, 8.0);
                     ui.label(&lobby_player.name);
 
                     if lobby_player.spawn_position.is_some() {
@@ -94,16 +96,8 @@ pub fn render_lobby_ui(ctx: &Context, lobby: &mut Lobby, current_player_id: Play
             ui.label("Place pawn for:");
             for (player_id, lobby_player) in &lobby.players {
                 if lobby_player.spawn_position.is_none() {
-                    let player_color = egui::Color32::from_rgb(
-                        lobby_player.color.0,
-                        lobby_player.color.1,
-                        lobby_player.color.2
-                    );
-
                     ui.horizontal(|ui| {
-                        let circle_center = ui.cursor().min + egui::Vec2::new(8.0, 8.0);
-                        ui.painter().circle_filled(circle_center, 6.0, player_color);
-                        ui.add_space(16.0);
+                        render_player_color_circle(ui, lobby_player.color, 6.0);
 
                         if ui.button(&lobby_player.name).clicked() {
                             sender.send(Message::DebugPlacePawn(*player_id)).expect("Failed to send message");
@@ -142,14 +136,10 @@ pub fn render_lobby_placing_ui(ctx: &Context, lobby: &mut Lobby, placing_for_id:
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.vertical_centered(|ui| {
             ui.add_space(20.0);
-            let player_color_ui = egui::Color32::from_rgb(player_color.0, player_color.1, player_color.2);
 
             ui.horizontal(|ui| {
                 ui.heading("Placing pawn for:");
-                let circle_center = ui.cursor().min + egui::Vec2::new(8.0, 12.0);
-                ui.painter().circle_filled(circle_center, 8.0, player_color_ui);
-                ui.painter().circle_stroke(circle_center, 8.0, (1.0, egui::Color32::WHITE));
-                ui.add_space(20.0);
+                render_player_color_circle(ui, player_color, 8.0);
                 ui.heading(player_name);
             });
 
@@ -165,17 +155,7 @@ pub fn render_lobby_placing_ui(ctx: &Context, lobby: &mut Lobby, placing_for_id:
 
             for (player_id, lobby_player) in &lobby.players {
                 ui.horizontal(|ui| {
-                    let player_color = egui::Color32::from_rgb(
-                        lobby_player.color.0,
-                        lobby_player.color.1,
-                        lobby_player.color.2
-                    );
-
-                    let circle_center = ui.cursor().min + egui::Vec2::new(12.0, 12.0);
-                    ui.painter().circle_filled(circle_center, 8.0, player_color);
-                    ui.painter().circle_stroke(circle_center, 8.0, (1.0, egui::Color32::WHITE));
-
-                    ui.add_space(20.0);
+                    render_player_color_circle(ui, lobby_player.color, 8.0);
                     ui.label(&lobby_player.name);
 
                     if lobby_player.spawn_position.is_some() {

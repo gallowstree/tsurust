@@ -1,6 +1,9 @@
 use std::cmp::{max, min};
+use std::collections::HashSet;
 
 use arrayvec::ArrayVec;
+
+use crate::trail::{Trail, TrailSegment};
 /// Board GRID Constants
 /// 6 rows & 6 cols
 pub const BOARD_LENGTH: usize = 6;
@@ -188,10 +191,7 @@ impl Board {
     }
 
     /// Returns the final position after traversing the path starting at the given position
-    pub fn traverse_from(&self, starting_point: PlayerPos) -> crate::trail::Trail {
-        use crate::trail::{Trail, TrailSegment};
-        use std::collections::HashSet;
-
+    pub fn traverse_from(&self, starting_point: PlayerPos) -> Trail {
         let mut trail = Trail::new(starting_point);
         let mut current_pos = starting_point;
         let mut visited = HashSet::new();
