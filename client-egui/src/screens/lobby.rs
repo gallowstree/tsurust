@@ -17,7 +17,8 @@ fn render_player_color_circle(ui: &mut egui::Ui, color: (u8, u8, u8), radius: f3
     ui.add_space(radius * 2.0 + 8.0);
 }
 
-pub fn render_lobby_ui(ctx: &Context, lobby: &mut Lobby, current_player_id: PlayerID, sender: &mpsc::Sender<Message>) {
+/// Render the top panel with lobby information
+fn render_lobby_top_panel(ctx: &Context, lobby: &Lobby, show_start_button: bool, sender: &mpsc::Sender<Message>) {
     egui::TopBottomPanel::top("top_panel")
         .resizable(true)
         .min_height(32.0)
@@ -30,19 +31,90 @@ pub fn render_lobby_ui(ctx: &Context, lobby: &mut Lobby, current_player_id: Play
                 ui.separator();
                 ui.label(format!("Players: {}/{}", lobby.players.len(), lobby.max_players));
 
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if lobby.can_start() {
-                        if ui.button("🚀 Start Game").clicked() {
-                            if let Err(e) = sender.send(Message::StartGameFromLobby) {
-                                eprintln!("Failed to send StartGameFromLobby message: {}", e);
+                if show_start_button {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if lobby.can_start() {
+                            if ui.button("🚀 Start Game").clicked() {
+                                if let Err(e) = sender.send(Message::StartGameFromLobby) {
+                                    eprintln!("Failed to send StartGameFromLobby message: {}", e);
+                                }
                             }
+                        } else {
+                            ui.add_enabled(false, egui::Button::new("⏳ Waiting for players..."));
                         }
-                    } else {
-                        ui.add_enabled(false, egui::Button::new("⏳ Waiting for players..."));
-                    }
-                });
+                    });
+                }
             });
         });
+}
+
+/// Render the player list in the side panel
+fn render_player_list(ui: &mut egui::Ui, lobby: &Lobby, current_player_id: PlayerID, placing_for_id: Option<PlayerID>) {
+    for (player_id, lobby_player) in &lobby.players {
+        ui.horizontal(|ui| {
+            render_player_color_circle(ui, lobby_player.color, 8.0);
+            ui.label(&lobby_player.name);
+
+            if lobby_player.spawn_position.is_some() {
+                ui.label("✔ Ready");
+            } else if let Some(placing_id) = placing_for_id {
+                if *player_id == placing_id {
+                    ui.label("👈 Placing now...");
+                } else {
+                    ui.label("⏳ Waiting...");
+                }
+            } else {
+                ui.label("⏳ Placing pawn...");
+            }
+
+            if *player_id == current_player_id {
+                ui.label("(You)");
+            }
+        });
+        ui.add_space(5.0);
+    }
+}
+
+/// Render debug tools section
+fn render_debug_tools(ui: &mut egui::Ui, lobby: &Lobby, show_cycle_controls: bool, sender: &mpsc::Sender<Message>) {
+    ui.separator();
+    ui.heading("Debug Tools");
+    ui.add_space(10.0);
+
+    if ui.button("➕ Add Test Player").clicked() {
+        sender.send(Message::DebugAddPlayer).expect("Failed to send message");
+    }
+
+    ui.add_space(10.0);
+
+    if show_cycle_controls {
+        ui.label("Switch Player:");
+        ui.horizontal(|ui| {
+            if ui.button("⬅ Previous").clicked() {
+                sender.send(Message::DebugCyclePlayer(false)).expect("Failed to send message");
+            }
+            if ui.button("Next ➡").clicked() {
+                sender.send(Message::DebugCyclePlayer(true)).expect("Failed to send message");
+            }
+        });
+    } else {
+        ui.label("Place pawn for:");
+        for (player_id, lobby_player) in &lobby.players {
+            if lobby_player.spawn_position.is_none() {
+                ui.horizontal(|ui| {
+                    render_player_color_circle(ui, lobby_player.color, 6.0);
+
+                    if ui.button(&lobby_player.name).clicked() {
+                        sender.send(Message::DebugPlacePawn(*player_id)).expect("Failed to send message");
+                    }
+                });
+            }
+        }
+    }
+}
+
+pub fn render_lobby_ui(ctx: &Context, lobby: &mut Lobby, current_player_id: PlayerID, sender: &mpsc::Sender<Message>) {
+    render_lobby_top_panel(ctx, lobby, true, sender);
 
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.vertical_centered(|ui| {
@@ -57,24 +129,7 @@ pub fn render_lobby_ui(ctx: &Context, lobby: &mut Lobby, current_player_id: Play
 
     egui::SidePanel::right("right_panel").show(ctx, |ui| {
         ui.vertical(|ui| {
-
-            for (player_id, lobby_player) in &lobby.players {
-                ui.horizontal(|ui| {
-                    render_player_color_circle(ui, lobby_player.color, 8.0);
-                    ui.label(&lobby_player.name);
-
-                    if lobby_player.spawn_position.is_some() {
-                        ui.label("✔ Ready");
-                    } else {
-                        ui.label("⏳ Placing pawn...");
-                    }
-
-                    if *player_id == current_player_id {
-                        ui.label("(You)");
-                    }
-                });
-                ui.add_space(5.0);
-            }
+            render_player_list(ui, lobby, current_player_id, None);
 
             ui.add_space(20.0);
             ui.separator();
@@ -84,27 +139,7 @@ pub fn render_lobby_ui(ctx: &Context, lobby: &mut Lobby, current_player_id: Play
             }
 
             ui.add_space(20.0);
-            ui.separator();
-            ui.heading("Debug Tools");
-            ui.add_space(10.0);
-
-            if ui.button("➕ Add Test Player").clicked() {
-                sender.send(Message::DebugAddPlayer).expect("Failed to send message");
-            }
-
-            ui.add_space(10.0);
-            ui.label("Place pawn for:");
-            for (player_id, lobby_player) in &lobby.players {
-                if lobby_player.spawn_position.is_none() {
-                    ui.horizontal(|ui| {
-                        render_player_color_circle(ui, lobby_player.color, 6.0);
-
-                        if ui.button(&lobby_player.name).clicked() {
-                            sender.send(Message::DebugPlacePawn(*player_id)).expect("Failed to send message");
-                        }
-                    });
-                }
-            }
+            render_debug_tools(ui, lobby, false, sender);
         });
     });
 }
@@ -119,19 +154,7 @@ pub fn render_lobby_placing_ui(ctx: &Context, lobby: &mut Lobby, placing_for_id:
     let player_name = placing_player.map(|p| p.name.as_str()).unwrap_or("Unknown");
     let player_color = placing_player.map(|p| p.color).unwrap_or((128, 128, 128));
 
-    egui::TopBottomPanel::top("top_panel")
-        .resizable(true)
-        .min_height(32.0)
-        .show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.add_space(10.0);
-                ui.heading(format!("Lobby: {}", lobby.name));
-                ui.separator();
-                ui.label(format!("Room ID: {}", lobby.id));
-                ui.separator();
-                ui.label(format!("Players: {}/{}", lobby.players.len(), lobby.max_players));
-            });
-        });
+    render_lobby_top_panel(ctx, lobby, false, sender);
 
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.vertical_centered(|ui| {
@@ -152,43 +175,10 @@ pub fn render_lobby_placing_ui(ctx: &Context, lobby: &mut Lobby, placing_for_id:
 
     egui::SidePanel::right("right_panel").show(ctx, |ui| {
         ui.vertical(|ui| {
-
-            for (player_id, lobby_player) in &lobby.players {
-                ui.horizontal(|ui| {
-                    render_player_color_circle(ui, lobby_player.color, 8.0);
-                    ui.label(&lobby_player.name);
-
-                    if lobby_player.spawn_position.is_some() {
-                        ui.label("✔ Ready");
-                    } else if *player_id == placing_for_id {
-                        ui.label("👈 Placing now...");
-                    } else {
-                        ui.label("⏳ Waiting...");
-                    }
-                });
-                ui.add_space(5.0);
-            }
+            render_player_list(ui, lobby, placing_for_id, Some(placing_for_id));
 
             ui.add_space(20.0);
-            ui.separator();
-            ui.heading("Debug Tools");
-            ui.add_space(10.0);
-
-            if ui.button("➕ Add Test Player").clicked() {
-                sender.send(Message::DebugAddPlayer).expect("Failed to send message");
-            }
-
-            ui.add_space(10.0);
-            ui.label("Switch Player:");
-
-            ui.horizontal(|ui| {
-                if ui.button("⬅ Previous").clicked() {
-                    sender.send(Message::DebugCyclePlayer(false)).expect("Failed to send message");
-                }
-                if ui.button("Next ➡").clicked() {
-                    sender.send(Message::DebugCyclePlayer(true)).expect("Failed to send message");
-                }
-            });
+            render_debug_tools(ui, lobby, true, sender);
 
             ui.add_space(20.0);
             ui.separator();

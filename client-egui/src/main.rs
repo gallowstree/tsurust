@@ -9,7 +9,7 @@ fn main() {
 
     let native_options = eframe::NativeOptions::default();
 
-    eframe::run_native(
+    let _ = eframe::run_native(
         "Tsurust",
         native_options,
         Box::new(|cc| Box::new(client_egui::TemplateApp::new(cc))),

@@ -72,8 +72,9 @@ impl Deck {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use crate::deck::Deck;
+    use super::Deck;
 
     #[test]
     fn take_works() {

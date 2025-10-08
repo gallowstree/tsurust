@@ -10,6 +10,9 @@ pub const TRANSPARENT_WHITE: Color32 = Color32::from_rgba_premultiplied(255, 255
 pub const TRANSPARENT_GOLD: Color32 = Color32::from_rgba_premultiplied(255, 215, 0, 191);
 pub const PINK: Color32 = Color32::from_rgba_premultiplied(200, 50, 125, 44);
 pub const TILE_BACKGROUND: Color32 = Color32::from_rgba_premultiplied(45, 45, 55, 180); // Dark blue-gray background
+
+/// Placeholder for future board painting functionality
+#[allow(dead_code)]
 pub fn paint_board(_board: &Board) {}
 
 pub fn paint_tile(tile: &Tile, rect: Rect, painter: &Painter) {

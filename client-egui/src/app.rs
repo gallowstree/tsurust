@@ -15,8 +15,10 @@ pub enum Message {
     TilePlaced(usize),                // tile index - place at current player position
     TileRotated(usize, bool),         // tile index, clockwise
     RestartGame,                      // restart the game
+    #[allow(dead_code)]
     StartLobby,                       // start a new lobby (old, for compatibility)
     StartSampleGame,                  // start sample game (current behavior)
+    #[allow(dead_code)]
     JoinLobby(String),               // join lobby with player name
     PlacePawn(PlayerPos),            // place pawn at position in lobby
     StartGameFromLobby,              // start game from lobby
@@ -192,6 +194,9 @@ impl TemplateApp {
             }
             ServerMessage::GameStateUpdate { room_id: _, state: _ } => {
                 // TODO: Update local game state from server
+                // This will be needed when the server broadcasts game state updates
+                // to keep all clients in sync during multiplayer gameplay.
+                // Implementation blocked on: converting server state format to client Game struct
             }
             ServerMessage::TurnCompleted { room_id: _, result: _ } => {
                 // Turn completed notification received
@@ -268,8 +273,12 @@ impl TemplateApp {
             );
             self.current_player_id = player_id;
             self.app_state = AppState::Lobby(lobby);
+        } else {
+            // TODO: Handle invalid lobby ID error
+            // Should show error message to user and remain on join form
+            // Currently silently fails - need to add error display mechanism
+            eprintln!("Invalid lobby ID format: {}", lobby_id);
         }
-        // TODO: Handle invalid lobby ID error
     }
 
     fn handle_back_to_main_menu(&mut self) {

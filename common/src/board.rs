@@ -294,8 +294,9 @@ pub fn seg(a: TileEndpoint, b: TileEndpoint) -> Segment {
     Segment::new(a, b)
 }
 
+#[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{seg, Board, CellCoord, Move, PlayerPos, Tile};
 
     #[test]
     fn test_next_pos_edge() {

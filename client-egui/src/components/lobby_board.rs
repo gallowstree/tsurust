@@ -10,6 +10,7 @@ use crate::app::Message;
 /// Component for rendering the lobby board with spawn positions
 pub struct LobbyBoard<'a> {
     lobby: &'a Lobby,
+    #[allow(dead_code)]
     current_player_id: PlayerID,
 }
 
