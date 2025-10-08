@@ -1,10 +1,11 @@
 use std::sync::Arc;
+
+use futures_util::{SinkExt, StreamExt};
 use tokio::sync::broadcast;
 use tokio_websockets::{Message, WebSocketStream};
-use futures_util::{SinkExt, StreamExt};
 
-use crate::protocol::{ClientMessage, ServerMessage, RoomId};
-use crate::server::{GameServer, ConnectionId};
+use crate::protocol::{ClientMessage, RoomId, ServerMessage};
+use crate::server::{ConnectionId, GameServer};
 
 pub async fn handle_connection(
     mut ws: WebSocketStream<tokio::net::TcpStream>,

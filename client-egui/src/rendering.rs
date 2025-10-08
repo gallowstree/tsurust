@@ -1,14 +1,16 @@
+use std::collections::HashMap;
+
 use eframe::egui::{
     emath::RectTransform, pos2, Align2, Color32, FontId, Painter, Pos2, Rect, Stroke,
 };
-use std::collections::HashMap;
+
 use tsurust_common::board::{Board, PlayerID, Segment, Tile, TileEndpoint};
 
 pub const TRANSPARENT_WHITE: Color32 = Color32::from_rgba_premultiplied(255, 255, 255, 191);
 pub const TRANSPARENT_GOLD: Color32 = Color32::from_rgba_premultiplied(255, 215, 0, 191);
 pub const PINK: Color32 = Color32::from_rgba_premultiplied(200, 50, 125, 44);
 pub const TILE_BACKGROUND: Color32 = Color32::from_rgba_premultiplied(45, 45, 55, 180); // Dark blue-gray background
-pub fn paint_board(board: &Board) {}
+pub fn paint_board(_board: &Board) {}
 
 pub fn paint_tile(tile: &Tile, rect: Rect, painter: &Painter) {
     paint_tile_with_trails(tile, rect, painter, &HashMap::new());

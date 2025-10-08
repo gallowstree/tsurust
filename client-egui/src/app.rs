@@ -1,6 +1,9 @@
 use eframe::egui;
 use egui::Context;
-use std::sync::mpsc;
+
+use tsurust_common::board::*;
+use tsurust_common::game::Game;
+use tsurust_common::lobby::{Lobby, LobbyEvent};
 
 use crate::screens;
 use crate::ws_client::{GameClient, ServerMessage};

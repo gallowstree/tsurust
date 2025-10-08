@@ -1,7 +1,10 @@
-use eframe::egui;
 use std::sync::mpsc;
-use tsurust_common::board::{PlayerPos, PlayerID};
+
+use eframe::egui;
+
+use tsurust_common::board::{PlayerID, PlayerPos};
 use tsurust_common::lobby::Lobby;
+
 use crate::app::Message;
 
 /// Component for rendering the lobby board with spawn positions

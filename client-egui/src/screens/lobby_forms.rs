@@ -1,5 +1,7 @@
-use eframe::egui::{self, Context};
 use std::sync::mpsc;
+
+use eframe::egui::{self, Context};
+
 use crate::app::Message;
 
 pub fn render_create_lobby_form(ctx: &Context, lobby_name: &mut String, player_name: &mut String, sender: &mpsc::Sender<Message>) {

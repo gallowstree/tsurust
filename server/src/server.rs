@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+
 use tokio::sync::RwLock;
-use tsurust_common::board::{Player, PlayerPos, CellCoord, PlayerID};
+
+use tsurust_common::board::{CellCoord, Player, PlayerID, PlayerPos};
 use tsurust_common::game::Game;
 
 use crate::protocol::{RoomId, ServerMessage};

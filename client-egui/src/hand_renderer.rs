@@ -1,8 +1,11 @@
+use std::sync::mpsc;
+
+use egui::{ScrollArea, Widget};
+
+use tsurust_common::board::*;
+
 use crate::app::Message;
 use crate::tile_button::TileButton;
-use egui::{ScrollArea, Widget};
-use std::sync::mpsc;
-use tsurust_common::board::*;
 
 pub struct HandRenderer {
     tiles: Vec<Tile>,

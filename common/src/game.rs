@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::board::*;
 use crate::deck::Deck;
+use crate::trail::Trail;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum TurnResult {
@@ -28,7 +29,7 @@ impl Game {
         let mut hands = HashMap::new();
         let board = Board::new();
 
-        for mut player in &players {
+        for player in &players {
             hands.insert(player.id, deck.take_up_to(3));
         }
 
@@ -37,7 +38,7 @@ impl Game {
         // Initialize trails with each player's starting position
         let mut player_trails = HashMap::new();
         for player in &players {
-            player_trails.insert(player.id, crate::trail::Trail::new(player.pos));
+            player_trails.insert(player.id, Trail::new(player.pos));
         }
 
         Game {
@@ -116,13 +117,6 @@ impl Game {
 
             // Collect trail information if player moved (either to different cell or different endpoint)
             if old_pos != new_pos {
-                if old_pos.cell != new_pos.cell {
-                    println!("DEBUG: Player {} moved from cell {:?} to cell {:?}",
-                        player.id, old_pos.cell, new_pos.cell);
-                } else {
-                    println!("DEBUG: Player {} moved within cell {:?} (endpoint {} -> {})",
-                        player.id, old_pos.cell, old_pos.endpoint, new_pos.endpoint);
-                }
                 trails_to_record.push((player.id, old_pos)); // Record where they came FROM
 
                 // Extend player's trail with new segments
@@ -133,9 +127,6 @@ impl Game {
                     player_trail.end_pos = new_pos;
                     player_trail.completed = trail.completed;
                 }
-            } else {
-                println!("DEBUG: Player {} stayed at same position {:?}",
-                    player.id, old_pos);
             }
 
             player.pos = new_pos;
@@ -173,9 +164,6 @@ impl Game {
                     .entry(exit_pos.cell)
                     .or_insert_with(Vec::new)
                     .push((player_id, segment_key));
-
-                println!("DEBUG: Recording trail for player {} at cell {:?}, segment {}",
-                    player_id, exit_pos.cell, segment_key);
             }
         }
     }

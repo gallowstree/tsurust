@@ -1,5 +1,7 @@
-use eframe::egui::{self, Context};
 use std::sync::mpsc;
+
+use eframe::egui::{self, Context};
+
 use crate::app::Message;
 
 pub fn render(ctx: &Context, sender: &mpsc::Sender<Message>) {

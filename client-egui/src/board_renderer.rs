@@ -1,12 +1,14 @@
-use eframe::egui::{vec2, Frame, Rect, Response, Sense, Ui, Widget};
+use std::collections::HashMap;
+
 use eframe::emath::Vec2;
+use eframe::egui::{vec2, Frame, Rect, Response, Sense, Ui, Widget};
 use eframe::epaint::{Color32, Stroke};
 use egui::Pos2;
-use std::collections::HashMap;
+
 use tsurust_common::board::*;
 use tsurust_common::trail::Trail;
 
-use crate::rendering::{paint_tile_with_trails, endpoint_position, trail_to_world_coords, PINK};
+use crate::rendering::{endpoint_position, paint_tile_with_trails, trail_to_world_coords, PINK};
 
 const TILE_LENGTH: f32 = 120.0;
 const TILE_SIZE: Vec2 = Vec2::new(TILE_LENGTH, TILE_LENGTH);
@@ -169,6 +171,4 @@ fn background(ui: &mut Ui, rect: Rect) {
         ui.painter().line_segment([start, end], Stroke::new(0.2, Color32::LIGHT_YELLOW));
 
     }
-
-    //crate::backgr_render::draw_yin_yang(ui, 120.);
 }

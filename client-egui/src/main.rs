@@ -8,9 +8,9 @@ fn main() {
     tracing_subscriber::fmt::init();
 
     let native_options = eframe::NativeOptions::default();
-    
+
     eframe::run_native(
-        "eframe template",
+        "Tsurust",
         native_options,
         Box::new(|cc| Box::new(client_egui::TemplateApp::new(cc))),
     );
