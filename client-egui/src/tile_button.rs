@@ -52,6 +52,14 @@ impl Widget for TileButton {
                 let painter = ui.painter();
                 let rect = response.rect;
 
+                // Draw tile first
+                paint_tile(
+                    &self.tile,
+                    Rect::from_center_size(rect.center(), vec2(139., 139.)),
+                    painter,
+                );
+
+                // Draw hover overlay on top so rotation indicators are visible
                 if response.hovered() {
                     if let Some(pos) = response.hover_pos() {
                         let pos = to_screen.inverse().transform_pos(pos);
@@ -69,12 +77,6 @@ impl Widget for TileButton {
                         paint_tile_button_hoverlay(rect, painter);
                     }
                 }
-
-                paint_tile(
-                    &self.tile,
-                    Rect::from_center_size(rect.center(), vec2(139., 139.)),
-                    painter,
-                );
             });
         response
     }
