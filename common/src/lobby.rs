@@ -147,7 +147,7 @@ impl Lobby {
             return Err(LobbyError::GameNotStarted);
         }
 
-        let players: Vec<Player> = self.players
+        let mut players: Vec<Player> = self.players
             .values()
             .filter_map(|lobby_player| {
                 lobby_player.spawn_position.map(|pos| {
@@ -164,6 +164,9 @@ impl Lobby {
         if players.len() < 2 {
             return Err(LobbyError::NotEnoughPlayers);
         }
+
+        // Sort players by ID to ensure consistent ordering
+        players.sort_by_key(|p| p.id);
 
         Ok(Game::new(players))
     }

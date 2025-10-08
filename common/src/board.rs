@@ -415,7 +415,6 @@ mod tests {
         let trail = board.traverse_from(start_pos);
 
         // For now, just test that it doesn't crash - we'll figure out expected behavior later
-        println!("Final position: {:?}", trail.end_pos);
         assert!(trail.completed);
     }
 
@@ -433,8 +432,6 @@ mod tests {
 
         // Now traverse from the player's position - this simulates what happens in update_players()
         let trail = board.traverse_from(player_pos);
-
-        println!("Player moved from {:?} to {:?}", player_pos, trail.end_pos);
 
         // Should not cause stack overflow
         assert_ne!(trail.end_pos, player_pos); // Player should move somewhere
@@ -530,14 +527,6 @@ mod tests {
         assert_eq!(trail3.end_pos.cell, CellCoord { row: 1, col: 0 });
         assert_eq!(trail3.end_pos.endpoint, 3);
         assert!(trail3.completed, "Trail should be completed (no tile at next position)");
-
-        // Verify trail continuity: each segment's exit leads to next segment's position
-        println!("Trail segments:");
-        for (i, seg) in trail3.segments.iter().enumerate() {
-            println!("  Segment {}: ({},{}) entry {} -> exit {}",
-                i, seg.board_pos.0, seg.board_pos.1, seg.entry_point, seg.exit_point);
-        }
-        println!("Final position: {:?}", trail3.end_pos);
     }
 
     #[test]
