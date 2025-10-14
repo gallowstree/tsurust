@@ -15,8 +15,7 @@ pub enum Message {
     TilePlaced(usize),                // tile index - place at current player position
     TileRotated(usize, bool),         // tile index, clockwise
     RestartGame,                      // restart the game
-    #[allow(dead_code)]
-    StartLobby,                       // start a new lobby (old, for compatibility)
+    StartLobby,                       // start a local lobby (offline multiplayer)
     StartSampleGame,                  // start sample game (current behavior)
     #[allow(dead_code)]
     JoinLobby(String),               // join lobby with player name
@@ -45,7 +44,12 @@ pub enum AppState {
     },
     Lobby(Lobby),
     LobbyPlacingFor(Lobby, PlayerID),  // Placing pawn for specific player
-    Game(Game),
+    Game(Game),                         // Local game - client authoritative
+    OnlineGame {
+        game: Game,                     // Server's authoritative state
+        room_id: String,
+        waiting_for_server: bool,       // Show loading state during server round-trip
+    },
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -92,7 +96,7 @@ impl TemplateApp {
         Default::default()
     }
 
-    fn render_ui(ctx: &Context, app_state: &mut AppState, current_player_id: PlayerID, sender: &mpsc::Sender<Message>) {
+    fn render_ui(ctx: &Context, app_state: &mut AppState, current_player_id: PlayerID, is_online: bool, sender: &mpsc::Sender<Message>) {
         match app_state {
             AppState::MainMenu => screens::main_menu::render(ctx, sender),
             AppState::CreateLobbyForm { lobby_name, player_name } => {
@@ -101,11 +105,16 @@ impl TemplateApp {
             AppState::JoinLobbyForm { lobby_id, player_name } => {
                 screens::lobby_forms::render_join_lobby_form(ctx, lobby_id, player_name, sender)
             }
-            AppState::Lobby(lobby) => screens::lobby::render_lobby_ui(ctx, lobby, current_player_id, sender),
-            AppState::LobbyPlacingFor(lobby, placing_for_id) => {
-                screens::lobby::render_lobby_placing_ui(ctx, lobby, *placing_for_id, sender)
+            AppState::Lobby(lobby) => {
+                screens::lobby::render_lobby_ui(ctx, lobby, current_player_id, is_online, sender)
             }
-            AppState::Game(game) => screens::game::render_game_ui(ctx, game, sender),
+            AppState::LobbyPlacingFor(lobby, placing_for_id) => {
+                screens::lobby::render_lobby_placing_ui(ctx, lobby, *placing_for_id, is_online, sender)
+            }
+            AppState::Game(game) => screens::game::render_game_ui(ctx, game, false, sender),
+            AppState::OnlineGame { game, waiting_for_server, .. } => {
+                screens::game::render_game_ui(ctx, game, *waiting_for_server, sender)
+            }
         }
     }
 
@@ -123,6 +132,7 @@ impl eframe::App for TemplateApp {
                     server_msg,
                     &mut self.current_room_id,
                     &mut self.current_player_id,
+                    &mut self.app_state,
                 );
             }
 
@@ -143,7 +153,8 @@ impl eframe::App for TemplateApp {
 
         // Render UI
         if let Some(tx) = &self.sender {
-            Self::render_ui(ctx, &mut self.app_state, self.current_player_id, tx);
+            let is_online = self.game_client.is_some();
+            Self::render_ui(ctx, &mut self.app_state, self.current_player_id, is_online, tx);
         }
     }
 
@@ -183,29 +194,39 @@ impl TemplateApp {
         server_msg: ServerMessage,
         current_room_id: &mut Option<String>,
         current_player_id: &mut PlayerID,
+        app_state: &mut AppState,
     ) {
         match server_msg {
             ServerMessage::RoomCreated { room_id, player_id } => {
                 *current_room_id = Some(room_id);
                 *current_player_id = player_id;
             }
-            ServerMessage::PlayerJoined { room_id: _, player_id: _, player_name: _ } => {
+            ServerMessage::PlayerJoined { room_id: _, player_id: _, player_name } => {
                 // Player joined notification received
+                println!("Player {} joined room", player_name);
             }
-            ServerMessage::GameStateUpdate { room_id: _, state: _ } => {
-                // TODO: Update local game state from server
-                // This will be needed when the server broadcasts game state updates
-                // to keep all clients in sync during multiplayer gameplay.
-                // Implementation blocked on: converting server state format to client Game struct
+            ServerMessage::GameStateUpdate { room_id: _, state } => {
+                // Server is source of truth - update our game state
+                if let AppState::OnlineGame { game, waiting_for_server, .. } = app_state {
+                    *game = state;
+                    *waiting_for_server = false;
+                    println!("Received game state update from server");
+                }
             }
-            ServerMessage::TurnCompleted { room_id: _, result: _ } => {
+            ServerMessage::TurnCompleted { room_id: _, result } => {
                 // Turn completed notification received
+                println!("Turn completed: {:?}", result);
             }
             ServerMessage::Error { message } => {
                 eprintln!("Server error: {}", message);
+                // Clear waiting state if we were waiting
+                if let AppState::OnlineGame { waiting_for_server, .. } = app_state {
+                    *waiting_for_server = false;
+                }
             }
-            ServerMessage::PlayerLeft { room_id: _, player_id: _ } => {
+            ServerMessage::PlayerLeft { room_id: _, player_id } => {
                 // Player left notification received
+                println!("Player {} left room", player_id);
             }
         }
     }
@@ -331,14 +352,29 @@ impl TemplateApp {
         if let AppState::Lobby(lobby) = &mut self.app_state {
             if let Err(e) = lobby.handle_event(LobbyEvent::StartGame) {
                 eprintln!("Failed to start game: {:?}", e);
-            } else {
-                match lobby.to_game() {
-                    Ok(game) => {
+                return;
+            }
+
+            match lobby.to_game() {
+                Ok(game) => {
+                    // Check if this is an online lobby (has active server connection)
+                    if self.game_client.is_some() && self.current_room_id.is_some() {
+                        // Online game - server will be authoritative
+                        let room_id = self.current_room_id.clone().unwrap();
+                        self.app_state = AppState::OnlineGame {
+                            game,
+                            room_id,
+                            waiting_for_server: false,
+                        };
+                        println!("Started online game in room {}", self.current_room_id.as_ref().unwrap());
+                    } else {
+                        // Local game - client is authoritative
                         self.app_state = AppState::Game(game);
+                        println!("Started local game");
                     }
-                    Err(e) => {
-                        eprintln!("Failed to convert lobby to game: {:?}", e);
-                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to convert lobby to game: {:?}", e);
                 }
             }
         }
@@ -412,49 +448,90 @@ impl TemplateApp {
     }
 
     fn handle_tile_placed(&mut self, tile_index: usize) {
-        if let AppState::Game(game) = &mut self.app_state {
-            let player_cell = game.players.iter()
-                .find(|p| p.id == game.current_player_id && p.alive)
-                .expect("current player should exist and be alive")
-                .pos.cell;
+        match &mut self.app_state {
+            // Local game: perform move immediately (client authoritative)
+            AppState::Game(game) => {
+                Self::perform_local_tile_placement(game, tile_index);
+            }
 
-            let hand = game.hands.get(&game.current_player_id)
-                .expect("current player should always have a hand");
+            // Online game: send to server and wait for response (server authoritative)
+            AppState::OnlineGame { game, room_id, waiting_for_server } => {
+                if *waiting_for_server {
+                    eprintln!("Already waiting for server response");
+                    return;
+                }
 
-            let tile = hand[tile_index];
+                if let Some(client) = &mut self.game_client {
+                    let player_cell = game.players.iter()
+                        .find(|p| p.id == game.current_player_id && p.alive)
+                        .expect("current player should exist and be alive")
+                        .pos.cell;
 
-            let mov = Move {
-                tile,
-                cell: player_cell,
-                player_id: game.current_player_id,
-            };
+                    let hand = game.hands.get(&game.current_player_id)
+                        .expect("current player should always have a hand");
 
-            match game.perform_move(mov) {
-                Ok(turn_result) => {
-                    println!("Tile placed successfully at {:?}!", player_cell);
-                    println!("  Tile: {:?}", tile);
+                    let tile = hand[tile_index];
 
-                    match &turn_result {
-                        TurnResult::TurnAdvanced { turn_number, next_player, eliminated } => {
-                            println!("Turn {} completed. Next player: {}", turn_number, next_player);
-                            if !eliminated.is_empty() {
-                                println!("  Players eliminated: {:?}", eliminated);
-                            }
+                    let mov = Move {
+                        tile,
+                        cell: player_cell,
+                        player_id: game.current_player_id,
+                    };
+
+                    // Send to server
+                    client.place_tile(room_id.clone(), game.current_player_id, mov);
+                    *waiting_for_server = true;
+                    println!("Sent tile placement to server, waiting for response...");
+                }
+            }
+
+            _ => {}
+        }
+    }
+
+    /// Perform a tile placement in a local game (client authoritative)
+    fn perform_local_tile_placement(game: &mut Game, tile_index: usize) {
+        let player_cell = game.players.iter()
+            .find(|p| p.id == game.current_player_id && p.alive)
+            .expect("current player should exist and be alive")
+            .pos.cell;
+
+        let hand = game.hands.get(&game.current_player_id)
+            .expect("current player should always have a hand");
+
+        let tile = hand[tile_index];
+
+        let mov = Move {
+            tile,
+            cell: player_cell,
+            player_id: game.current_player_id,
+        };
+
+        match game.perform_move(mov) {
+            Ok(turn_result) => {
+                println!("Tile placed successfully at {:?}!", player_cell);
+                println!("  Tile: {:?}", tile);
+
+                match &turn_result {
+                    TurnResult::TurnAdvanced { turn_number, next_player, eliminated } => {
+                        println!("Turn {} completed. Next player: {}", turn_number, next_player);
+                        if !eliminated.is_empty() {
+                            println!("  Players eliminated: {:?}", eliminated);
                         }
-                        TurnResult::PlayerWins { turn_number, winner, eliminated } => {
-                            println!("GAME OVER! Player {} wins on turn {}!", winner, turn_number);
-                            if !eliminated.is_empty() {
-                                println!("  Final eliminations: {:?}", eliminated);
-                            }
-                        }
-                        TurnResult::Extinction { turn_number, eliminated } => {
-                            println!("EXTINCTION! All players eliminated on turn {}!", turn_number);
+                    }
+                    TurnResult::PlayerWins { turn_number, winner, eliminated } => {
+                        println!("GAME OVER! Player {} wins on turn {}!", winner, turn_number);
+                        if !eliminated.is_empty() {
                             println!("  Final eliminations: {:?}", eliminated);
                         }
                     }
+                    TurnResult::Extinction { turn_number, eliminated } => {
+                        println!("EXTINCTION! All players eliminated on turn {}!", turn_number);
+                        println!("  Final eliminations: {:?}", eliminated);
+                    }
                 }
-                Err(error) => println!("Failed to place tile: {}", error),
             }
+            Err(error) => println!("Failed to place tile: {}", error),
         }
     }
 

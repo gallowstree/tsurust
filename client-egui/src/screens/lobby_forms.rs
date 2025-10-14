@@ -3,6 +3,7 @@ use std::sync::mpsc;
 use eframe::egui::{self, Context};
 
 use crate::app::Message;
+use crate::messaging::send_message;
 
 pub fn render_create_lobby_form(ctx: &Context, lobby_name: &mut String, player_name: &mut String, sender: &mpsc::Sender<Message>) {
     egui::CentralPanel::default().show(ctx, |ui| {
@@ -31,22 +32,22 @@ pub fn render_create_lobby_form(ctx: &Context, lobby_name: &mut String, player_n
 
             // Submit on Enter key
             if ui.input(|i| i.key_pressed(egui::Key::Enter)) && can_create {
-                sender.send(Message::CreateAndJoinLobby(
+                send_message(sender, Message::CreateAndJoinLobby(
                     lobby_name.clone(),
                     player_name.clone()
-                )).expect("Failed to send message");
+                ));
             }
 
             ui.horizontal(|ui| {
                 if ui.add_enabled(can_create, egui::Button::new("Create & Join")).clicked() {
-                    sender.send(Message::CreateAndJoinLobby(
+                    send_message(sender, Message::CreateAndJoinLobby(
                         lobby_name.clone(),
                         player_name.clone()
-                    )).expect("Failed to send message");
+                    ));
                 }
 
                 if ui.button("Back").clicked() {
-                    sender.send(Message::BackToMainMenu).expect("Failed to send message");
+                    send_message(sender, Message::BackToMainMenu);
                 }
             });
         });
@@ -81,22 +82,22 @@ pub fn render_join_lobby_form(ctx: &Context, lobby_id: &mut String, player_name:
 
             // Submit on Enter key
             if ui.input(|i| i.key_pressed(egui::Key::Enter)) && can_join {
-                sender.send(Message::JoinLobbyWithId(
+                send_message(sender, Message::JoinLobbyWithId(
                     lobby_id.clone(),
                     player_name.clone()
-                )).expect("Failed to send message");
+                ));
             }
 
             ui.horizontal(|ui| {
                 if ui.add_enabled(can_join, egui::Button::new("Join")).clicked() {
-                    sender.send(Message::JoinLobbyWithId(
+                    send_message(sender, Message::JoinLobbyWithId(
                         lobby_id.clone(),
                         player_name.clone()
-                    )).expect("Failed to send message");
+                    ));
                 }
 
                 if ui.button("Back").clicked() {
-                    sender.send(Message::BackToMainMenu).expect("Failed to send message");
+                    send_message(sender, Message::BackToMainMenu);
                 }
             });
         });

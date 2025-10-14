@@ -7,6 +7,7 @@ use tsurust_common::lobby::Lobby;
 
 use crate::app::Message;
 use crate::components::LobbyBoard;
+use crate::messaging::send_message;
 
 /// Helper function to render a player color indicator circle
 fn render_player_color_circle(ui: &mut egui::Ui, color: (u8, u8, u8), radius: f32) {
@@ -18,7 +19,7 @@ fn render_player_color_circle(ui: &mut egui::Ui, color: (u8, u8, u8), radius: f3
 }
 
 /// Render the top panel with lobby information
-fn render_lobby_top_panel(ctx: &Context, lobby: &Lobby, show_start_button: bool, sender: &mpsc::Sender<Message>) {
+fn render_lobby_top_panel(ctx: &Context, lobby: &Lobby, show_start_button: bool, is_online: bool, sender: &mpsc::Sender<Message>) {
     egui::TopBottomPanel::top("top_panel")
         .resizable(true)
         .min_height(32.0)
@@ -27,17 +28,20 @@ fn render_lobby_top_panel(ctx: &Context, lobby: &Lobby, show_start_button: bool,
                 ui.add_space(10.0);
                 ui.heading(format!("Lobby: {}", lobby.name));
                 ui.separator();
-                ui.label(format!("Room ID: {}", lobby.id));
-                ui.separator();
+
+                // Only show Room ID for online lobbies
+                if is_online {
+                    ui.label(format!("Room ID: {}", lobby.id));
+                    ui.separator();
+                }
+
                 ui.label(format!("Players: {}/{}", lobby.players.len(), lobby.max_players));
 
                 if show_start_button {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if lobby.can_start() {
                             if ui.button("🚀 Start Game").clicked() {
-                                if let Err(e) = sender.send(Message::StartGameFromLobby) {
-                                    eprintln!("Failed to send StartGameFromLobby message: {}", e);
-                                }
+                                send_message(sender, Message::StartGameFromLobby);
                             }
                         } else {
                             ui.add_enabled(false, egui::Button::new("⏳ Waiting for players..."));
@@ -82,7 +86,7 @@ fn render_debug_tools(ui: &mut egui::Ui, lobby: &Lobby, show_cycle_controls: boo
     ui.add_space(10.0);
 
     if ui.button("➕ Add Test Player").clicked() {
-        sender.send(Message::DebugAddPlayer).expect("Failed to send message");
+        send_message(sender, Message::DebugAddPlayer);
     }
 
     ui.add_space(10.0);
@@ -91,10 +95,10 @@ fn render_debug_tools(ui: &mut egui::Ui, lobby: &Lobby, show_cycle_controls: boo
         ui.label("Switch Player:");
         ui.horizontal(|ui| {
             if ui.button("⬅ Previous").clicked() {
-                sender.send(Message::DebugCyclePlayer(false)).expect("Failed to send message");
+                send_message(sender, Message::DebugCyclePlayer(false));
             }
             if ui.button("Next ➡").clicked() {
-                sender.send(Message::DebugCyclePlayer(true)).expect("Failed to send message");
+                send_message(sender, Message::DebugCyclePlayer(true));
             }
         });
     } else {
@@ -105,7 +109,7 @@ fn render_debug_tools(ui: &mut egui::Ui, lobby: &Lobby, show_cycle_controls: boo
                     render_player_color_circle(ui, lobby_player.color, 6.0);
 
                     if ui.button(&lobby_player.name).clicked() {
-                        sender.send(Message::DebugPlacePawn(*player_id)).expect("Failed to send message");
+                        send_message(sender, Message::DebugPlacePawn(*player_id));
                     }
                 });
             }
@@ -113,8 +117,8 @@ fn render_debug_tools(ui: &mut egui::Ui, lobby: &Lobby, show_cycle_controls: boo
     }
 }
 
-pub fn render_lobby_ui(ctx: &Context, lobby: &mut Lobby, current_player_id: PlayerID, sender: &mpsc::Sender<Message>) {
-    render_lobby_top_panel(ctx, lobby, true, sender);
+pub fn render_lobby_ui(ctx: &Context, lobby: &mut Lobby, current_player_id: PlayerID, is_online: bool, sender: &mpsc::Sender<Message>) {
+    render_lobby_top_panel(ctx, lobby, true, is_online, sender);
 
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.vertical_centered(|ui| {
@@ -134,12 +138,15 @@ pub fn render_lobby_ui(ctx: &Context, lobby: &mut Lobby, current_player_id: Play
             ui.add_space(20.0);
             ui.separator();
 
-            if lobby.players.len() < lobby.max_players {
+            if is_online && lobby.players.len() < lobby.max_players {
                 ui.label("Waiting for more players to join...");
             }
 
-            ui.add_space(20.0);
-            render_debug_tools(ui, lobby, false, sender);
+            // Only show debug tools for local lobbies
+            if !is_online {
+                ui.add_space(20.0);
+                render_debug_tools(ui, lobby, false, sender);
+            }
         });
     });
 }
@@ -149,12 +156,12 @@ fn render_lobby_board(ui: &mut egui::Ui, lobby: &Lobby, current_player_id: Playe
     board.render(ui, 300.0, sender);
 }
 
-pub fn render_lobby_placing_ui(ctx: &Context, lobby: &mut Lobby, placing_for_id: PlayerID, sender: &mpsc::Sender<Message>) {
+pub fn render_lobby_placing_ui(ctx: &Context, lobby: &mut Lobby, placing_for_id: PlayerID, is_online: bool, sender: &mpsc::Sender<Message>) {
     let placing_player = lobby.players.get(&placing_for_id);
     let player_name = placing_player.map(|p| p.name.as_str()).unwrap_or("Unknown");
     let player_color = placing_player.map(|p| p.color).unwrap_or((128, 128, 128));
 
-    render_lobby_top_panel(ctx, lobby, false, sender);
+    render_lobby_top_panel(ctx, lobby, false, is_online, sender);
 
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.vertical_centered(|ui| {
@@ -177,14 +184,17 @@ pub fn render_lobby_placing_ui(ctx: &Context, lobby: &mut Lobby, placing_for_id:
         ui.vertical(|ui| {
             render_player_list(ui, lobby, placing_for_id, Some(placing_for_id));
 
-            ui.add_space(20.0);
-            render_debug_tools(ui, lobby, true, sender);
+            // Only show debug tools for local lobbies
+            if !is_online {
+                ui.add_space(20.0);
+                render_debug_tools(ui, lobby, true, sender);
+            }
 
             ui.add_space(20.0);
             ui.separator();
 
             if ui.button("⬅ Back to Lobby").clicked() {
-                sender.send(Message::BackToMainMenu).expect("Failed to send message");
+                send_message(sender, Message::BackToMainMenu);
             }
         });
     });
