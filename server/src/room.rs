@@ -1,13 +1,15 @@
 use tokio::sync::broadcast;
 
-use tsurust_common::board::{Move, PlayerID};
+use tsurust_common::board::{Move, PlayerID, PlayerPos};
 use tsurust_common::game::{Game, TurnResult};
+use tsurust_common::lobby::{Lobby, LobbyEvent};
 
 use tsurust_common::protocol::{RoomId, ServerMessage};
 
 pub struct GameRoom {
     pub id: RoomId,
     pub game: Game,
+    pub lobby: Option<Lobby>, // Lobby state (None when game has started)
     // Broadcast channel for pushing updates to all connected clients
     pub update_tx: broadcast::Sender<ServerMessage>,
 }
@@ -15,9 +17,14 @@ pub struct GameRoom {
 impl GameRoom {
     pub fn new(id: RoomId, game: Game) -> Self {
         let (update_tx, _) = broadcast::channel(100);
+
+        // Create a lobby with the room ID
+        let lobby = Lobby::new(id.clone(), format!("Room {}", id));
+
         Self {
             id,
             game,
+            lobby: Some(lobby),
             update_tx,
         }
     }
@@ -46,5 +53,36 @@ impl GameRoom {
 
     pub fn broadcast(&self, message: ServerMessage) {
         let _ = self.update_tx.send(message);
+    }
+
+    pub fn place_pawn(&mut self, player_id: PlayerID, position: PlayerPos) -> Result<(), String> {
+        let lobby = self.lobby.as_mut()
+            .ok_or("Game has already started, cannot place pawns".to_string())?;
+
+        // Handle pawn placement in lobby
+        lobby.handle_event(LobbyEvent::PawnPlaced {
+            player_id,
+            position,
+        }).map_err(|e| format!("Failed to place pawn: {:?}", e))?;
+
+        // Clone the lobby before broadcasting to avoid borrow checker issues
+        let lobby_clone = lobby.clone();
+
+        // Broadcast pawn placement to all clients
+        let pawn_msg = ServerMessage::PawnPlaced {
+            room_id: self.id.clone(),
+            player_id,
+            position,
+        };
+        self.broadcast(pawn_msg);
+
+        // Also broadcast full lobby state update
+        let lobby_update = ServerMessage::LobbyStateUpdate {
+            room_id: self.id.clone(),
+            lobby: lobby_clone,
+        };
+        self.broadcast(lobby_update);
+
+        Ok(())
     }
 }

@@ -116,7 +116,7 @@ async fn handle_client_message(
         }
 
         ClientMessage::JoinRoom { room_id, player_name } => {
-            let player_id = server.join_room(room_id.clone(), player_name).await?;
+            let player_id = server.join_room(room_id.clone(), player_name.clone()).await?;
 
             // Subscribe to room updates
             let rooms = server.rooms.read().await;
@@ -126,12 +126,11 @@ async fn handle_client_message(
             }
             drop(rooms);
 
-            // Response is sent via broadcast (PlayerJoined + GameStateUpdate)
-            // But also send direct confirmation
+            // Send direct confirmation to the joining player
             let response = ServerMessage::PlayerJoined {
                 room_id,
                 player_id,
-                player_name: format!("Player {}", player_id),
+                player_name,
             };
             let json = serde_json::to_string(&response)
                 .map_err(|e| format!("Failed to serialize response: {}", e))?;
@@ -167,6 +166,15 @@ async fn handle_client_message(
                 .map_err(|e| format!("Failed to serialize response: {}", e))?;
             ws.send(Message::text(json)).await
                 .map_err(|e| format!("Failed to send response: {}", e))?;
+        }
+
+        ClientMessage::PlacePawn { room_id, player_id, position } => {
+            let mut rooms = server.rooms.write().await;
+            let room = rooms.get_mut(&room_id)
+                .ok_or_else(|| format!("Room '{}' not found", room_id))?;
+
+            room.place_pawn(player_id, position)?;
+            // Updates are broadcast automatically by place_pawn
         }
     }
 

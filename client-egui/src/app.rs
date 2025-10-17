@@ -213,12 +213,40 @@ impl TemplateApp {
     ) {
         match server_msg {
             ServerMessage::RoomCreated { room_id, player_id } => {
-                *current_room_id = Some(room_id);
+                *current_room_id = Some(room_id.clone());
                 *current_player_id = player_id;
+
+                // Update the lobby's ID to match the server-generated room ID
+                match app_state {
+                    AppState::Lobby(lobby) | AppState::LobbyPlacingFor(lobby, _) => {
+                        lobby.id = room_id.clone();
+                        println!("Updated lobby ID to {} (player ID: {})", room_id, player_id);
+                    }
+                    _ => {}
+                }
             }
-            ServerMessage::PlayerJoined { room_id: _, player_id: _, player_name } => {
-                // Player joined notification received
-                println!("Player {} joined room", player_name);
+            ServerMessage::PlayerJoined { room_id, player_id, player_name } => {
+                println!("Player {} (ID: {}) joined room {}", player_name, player_id, room_id);
+
+                // If we don't have a room ID yet, this might be our own join confirmation
+                if current_room_id.is_none() {
+                    *current_room_id = Some(room_id.clone());
+                    *current_player_id = player_id;
+                    println!("Set our player ID to {} in room {}", player_id, room_id);
+                }
+
+                // Update lobby state if we're in a lobby
+                match app_state {
+                    AppState::Lobby(lobby) | AppState::LobbyPlacingFor(lobby, _) => {
+                        if let Err(e) = lobby.handle_event(LobbyEvent::PlayerJoined {
+                            player_id,
+                            player_name: player_name.clone(),
+                        }) {
+                            eprintln!("Failed to sync player join to lobby: {:?}", e);
+                        }
+                    }
+                    _ => {}
+                }
             }
             ServerMessage::GameStateUpdate { room_id: _, state } => {
                 // Server is source of truth - update our game state
@@ -240,8 +268,33 @@ impl TemplateApp {
                 }
             }
             ServerMessage::PlayerLeft { room_id: _, player_id } => {
-                // Player left notification received
                 println!("Player {} left room", player_id);
+
+                // TODO: Update lobby state when PlayerLeft event is implemented in Lobby
+                // For now, we just log it - the lobby doesn't support removing players yet
+            }
+            ServerMessage::LobbyStateUpdate { room_id: _, lobby } => {
+                println!("Received lobby state update from server");
+                match app_state {
+                    AppState::Lobby(current_lobby) | AppState::LobbyPlacingFor(current_lobby, _) => {
+                        *current_lobby = lobby;
+                    }
+                    _ => {}
+                }
+            }
+            ServerMessage::PawnPlaced { room_id: _, player_id, position } => {
+                println!("Player {} placed pawn at {:?}", player_id, position);
+                match app_state {
+                    AppState::Lobby(lobby) | AppState::LobbyPlacingFor(lobby, _) => {
+                        if let Err(e) = lobby.handle_event(LobbyEvent::PawnPlaced {
+                            player_id,
+                            position,
+                        }) {
+                            eprintln!("Failed to sync pawn placement: {:?}", e);
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
     }
@@ -301,19 +354,23 @@ impl TemplateApp {
     }
 
     fn handle_join_lobby_with_id(&mut self, lobby_id: String, player_name: String) {
-        use tsurust_common::lobby::normalize_lobby_id;
-        if let Some(normalized_id) = normalize_lobby_id(&lobby_id) {
-            let (lobby, player_id) = Lobby::new_with_creator(
-                format!("Lobby {}", normalized_id),
-                player_name
-            );
-            self.current_player_id = player_id;
-            self.app_state = AppState::Lobby(lobby);
-        } else {
-            // TODO: Handle invalid lobby ID error
-            // Should show error message to user and remain on join form
-            // Currently silently fails - need to add error display mechanism
-            eprintln!("Invalid lobby ID format: {}", lobby_id);
+        match GameClient::connect("ws://127.0.0.1:8080") {
+            Ok(mut client) => {
+                // Send join room message to server
+                client.join_room(lobby_id.clone(), player_name.clone());
+                self.game_client = Some(client);
+
+                // Create empty lobby - it will be populated when server sends PlayerJoined messages
+                let lobby = Lobby::new(lobby_id.clone(), format!("Room {}", lobby_id));
+                self.app_state = AppState::Lobby(lobby);
+
+                println!("Connected to server and joined room {}", lobby_id);
+            }
+            Err(e) => {
+                eprintln!("Failed to connect to server: {}", e);
+                // Stay on join form so user can try again
+                // TODO: Display error message in UI
+            }
         }
     }
 
@@ -340,23 +397,49 @@ impl TemplateApp {
     }
 
     fn handle_place_pawn(&mut self, position: PlayerPos) {
+        let is_online = self.game_client.is_some();
+
         match &mut self.app_state {
             AppState::Lobby(lobby) => {
-                if let Err(e) = lobby.handle_event(LobbyEvent::PawnPlaced {
-                    player_id: self.current_player_id,
-                    position,
-                }) {
-                    eprintln!("Failed to place pawn: {:?}", e);
+                let player_id = self.current_player_id;
+
+                // For online lobbies, send to server instead of handling locally
+                if is_online {
+                    if let (Some(client), Some(room_id)) = (&mut self.game_client, &self.current_room_id) {
+                        client.place_pawn(room_id.clone(), player_id, position);
+                        println!("Sent pawn placement to server");
+                    }
+                } else {
+                    // Local lobby - handle locally
+                    if let Err(e) = lobby.handle_event(LobbyEvent::PawnPlaced {
+                        player_id,
+                        position,
+                    }) {
+                        eprintln!("Failed to place pawn: {:?}", e);
+                    }
                 }
             }
             AppState::LobbyPlacingFor(lobby, placing_for_id) => {
-                if let Err(e) = lobby.handle_event(LobbyEvent::PawnPlaced {
-                    player_id: *placing_for_id,
-                    position,
-                }) {
-                    eprintln!("Failed to place pawn: {:?}", e);
+                let player_id = *placing_for_id;
+
+                // For online lobbies, send to server
+                if is_online {
+                    if let (Some(client), Some(room_id)) = (&mut self.game_client, &self.current_room_id) {
+                        client.place_pawn(room_id.clone(), player_id, position);
+                        println!("Sent pawn placement to server");
+                        // Transition back to regular lobby view
+                        self.app_state = AppState::Lobby(lobby.clone());
+                    }
                 } else {
-                    self.app_state = AppState::Lobby(lobby.clone());
+                    // Local lobby - handle locally
+                    if let Err(e) = lobby.handle_event(LobbyEvent::PawnPlaced {
+                        player_id,
+                        position,
+                    }) {
+                        eprintln!("Failed to place pawn: {:?}", e);
+                    } else {
+                        self.app_state = AppState::Lobby(lobby.clone());
+                    }
                 }
             }
             _ => {}

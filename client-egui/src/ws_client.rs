@@ -1,6 +1,6 @@
 use ewebsock::{WsEvent, WsMessage, WsReceiver, WsSender};
 
-use tsurust_common::board::{Move, PlayerID};
+use tsurust_common::board::{Move, PlayerID, PlayerPos};
 use tsurust_common::protocol::{ClientMessage, RoomId, ServerMessage};
 
 pub struct GameClient {
@@ -87,5 +87,13 @@ impl GameClient {
 
     pub fn get_game_state(&mut self, room_id: RoomId) {
         self.send(ClientMessage::GetGameState { room_id });
+    }
+
+    pub fn place_pawn(&mut self, room_id: RoomId, player_id: PlayerID, position: PlayerPos) {
+        self.send(ClientMessage::PlacePawn {
+            room_id,
+            player_id,
+            position,
+        });
     }
 }

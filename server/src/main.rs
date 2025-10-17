@@ -2,6 +2,9 @@ mod room;
 mod server;
 mod handler;
 
+#[cfg(test)]
+mod server_tests;
+
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio_websockets::ServerBuilder;

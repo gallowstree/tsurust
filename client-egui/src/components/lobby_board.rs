@@ -23,6 +23,7 @@ impl<'a> LobbyBoard<'a> {
         }
     }
 
+    // TODO (low): use existing board rendering code and add support in there for spawns, etc.
     /// Render the lobby board in the given UI with the specified size
     pub fn render(&self, ui: &mut egui::Ui, board_size: f32, sender: &mpsc::Sender<Message>) {
         let (rect, _response) = ui.allocate_exact_size(egui::Vec2::splat(board_size), egui::Sense::hover());

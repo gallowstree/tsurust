@@ -13,7 +13,8 @@
       "WebFetch(domain:github.com)",
       "Bash(cat:*)",
       "Bash(tasklist)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(powershell:*)"
     ],
     "deny": [],
     "ask": []
