@@ -6,7 +6,8 @@ use tokio::sync::RwLock;
 use tsurust_common::board::{CellCoord, Player, PlayerID, PlayerPos};
 use tsurust_common::game::Game;
 
-use crate::protocol::{RoomId, ServerMessage};
+use tsurust_common::protocol::{RoomId, ServerMessage};
+
 use crate::room::GameRoom;
 
 pub type ConnectionId = usize;
@@ -45,7 +46,7 @@ impl GameServer {
         }
 
         // Create initial player at default starting position
-        let player_id = 0;
+        let player_id = 1;
         let start_pos = PlayerPos {
             cell: CellCoord { row: 0, col: 0 },
             endpoint: 0,
@@ -69,8 +70,11 @@ impl GameServer {
         let room = rooms.get_mut(&room_id)
             .ok_or_else(|| format!("Room '{}' not found", room_id))?;
 
-        // Determine next player ID
-        let player_id = room.game.players.len();
+        // Determine next player ID (start from 1, not 0)
+        let player_id = room.game.players.iter()
+            .map(|p| p.id)
+            .max()
+            .unwrap_or(0) + 1;
 
         // Create player at default starting position (will be customized in lobby)
         let start_pos = PlayerPos {

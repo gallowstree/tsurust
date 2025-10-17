@@ -17,4 +17,5 @@ pub mod colors;
 mod deck;
 pub mod game;
 pub mod lobby;
+pub mod protocol;
 pub mod trail;

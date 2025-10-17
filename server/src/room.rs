@@ -3,7 +3,7 @@ use tokio::sync::broadcast;
 use tsurust_common::board::{Move, PlayerID};
 use tsurust_common::game::{Game, TurnResult};
 
-use crate::protocol::{RoomId, ServerMessage};
+use tsurust_common::protocol::{RoomId, ServerMessage};
 
 pub struct GameRoom {
     pub id: RoomId,

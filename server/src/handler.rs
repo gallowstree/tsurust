@@ -4,7 +4,8 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::sync::broadcast;
 use tokio_websockets::{Message, WebSocketStream};
 
-use crate::protocol::{ClientMessage, RoomId, ServerMessage};
+use tsurust_common::protocol::{ClientMessage, RoomId, ServerMessage};
+
 use crate::server::{ConnectionId, GameServer};
 
 pub async fn handle_connection(

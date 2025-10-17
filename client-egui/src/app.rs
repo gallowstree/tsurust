@@ -7,8 +7,10 @@ use tsurust_common::board::*;
 use tsurust_common::game::{Game, TurnResult};
 use tsurust_common::lobby::{Lobby, LobbyEvent};
 
+use tsurust_common::protocol::ServerMessage;
+
 use crate::screens;
-use crate::ws_client::{GameClient, ServerMessage};
+use crate::ws_client::GameClient;
 
 #[derive(Debug, Clone)]
 pub enum Message {

@@ -11,7 +11,9 @@
       "Bash(git push:*)",
       "Bash(cargo build:*)",
       "WebFetch(domain:github.com)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(tasklist)",
+      "Bash(taskkill:*)"
     ],
     "deny": [],
     "ask": []
