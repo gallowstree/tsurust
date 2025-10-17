@@ -33,6 +33,9 @@ pub enum ClientMessage {
         player_id: PlayerID,
         position: PlayerPos,
     },
+    StartGame {
+        room_id: RoomId,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,6 +72,10 @@ pub enum ServerMessage {
         room_id: RoomId,
         player_id: PlayerID,
         position: PlayerPos,
+    },
+    GameStarted {
+        room_id: RoomId,
+        game: Game,
     },
 }
 

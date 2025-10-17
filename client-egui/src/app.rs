@@ -296,6 +296,15 @@ impl TemplateApp {
                     _ => {}
                 }
             }
+            ServerMessage::GameStarted { room_id, game } => {
+                println!("Game started in room {}", room_id);
+                // Transition to online game mode with server's authoritative game state
+                *app_state = AppState::OnlineGame {
+                    game,
+                    room_id,
+                    waiting_for_server: false,
+                };
+            }
         }
     }
 
@@ -447,7 +456,20 @@ impl TemplateApp {
     }
 
     fn handle_start_game_from_lobby(&mut self) {
+        let is_online = self.game_client.is_some();
+
         if let AppState::Lobby(lobby) = &mut self.app_state {
+            // For online lobbies, send start game request to server
+            if is_online {
+                if let (Some(client), Some(room_id)) = (&mut self.game_client, &self.current_room_id) {
+                    client.start_game(room_id.clone());
+                    println!("Sent start game request to server");
+                    // Server will send GameStarted message to all clients
+                }
+                return;
+            }
+
+            // Local lobby - handle locally
             if let Err(e) = lobby.handle_event(LobbyEvent::StartGame) {
                 eprintln!("Failed to start game: {:?}", e);
                 return;
@@ -455,21 +477,9 @@ impl TemplateApp {
 
             match lobby.to_game() {
                 Ok(game) => {
-                    // Check if this is an online lobby (has active server connection)
-                    if self.game_client.is_some() && self.current_room_id.is_some() {
-                        // Online game - server will be authoritative
-                        let room_id = self.current_room_id.clone().unwrap();
-                        self.app_state = AppState::OnlineGame {
-                            game,
-                            room_id,
-                            waiting_for_server: false,
-                        };
-                        println!("Started online game in room {}", self.current_room_id.as_ref().unwrap());
-                    } else {
-                        // Local game - client is authoritative
-                        self.app_state = AppState::Game(game);
-                        println!("Started local game");
-                    }
+                    // Local game - client is authoritative
+                    self.app_state = AppState::Game(game);
+                    println!("Started local game");
                 }
                 Err(e) => {
                     eprintln!("Failed to convert lobby to game: {:?}", e);

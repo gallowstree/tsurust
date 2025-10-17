@@ -85,4 +85,31 @@ impl GameRoom {
 
         Ok(())
     }
+
+    pub fn start_game(&mut self) -> Result<(), String> {
+        let lobby = self.lobby.take()
+            .ok_or("Game has already started or lobby does not exist".to_string())?;
+
+        // Start the game in the lobby
+        let mut lobby_clone = lobby.clone();
+        lobby_clone.handle_event(tsurust_common::lobby::LobbyEvent::StartGame)
+            .map_err(|e| format!("Failed to start game in lobby: {:?}", e))?;
+
+        // Convert lobby to game
+        let game = lobby_clone.to_game()
+            .map_err(|e| format!("Failed to convert lobby to game: {:?}", e))?;
+
+        // Update the game state
+        self.game = game.clone();
+
+        // Broadcast game started to all clients
+        let game_started = ServerMessage::GameStarted {
+            room_id: self.id.clone(),
+            game,
+        };
+        self.broadcast(game_started);
+
+        println!("Game started in room {}", self.id);
+        Ok(())
+    }
 }

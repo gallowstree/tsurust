@@ -96,4 +96,8 @@ impl GameClient {
             position,
         });
     }
+
+    pub fn start_game(&mut self, room_id: RoomId) {
+        self.send(ClientMessage::StartGame { room_id });
+    }
 }

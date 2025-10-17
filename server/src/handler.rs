@@ -96,11 +96,23 @@ async fn handle_client_message(
         ClientMessage::CreateRoom { room_name, creator_name } => {
             let (room_id, player_id) = server.create_room(room_name, creator_name).await?;
 
-            // Subscribe to room updates
+            // Subscribe to room updates and send initial lobby state
             let rooms = server.rooms.read().await;
             if let Some(room) = rooms.get(&room_id) {
                 *update_rx = Some(room.update_tx.subscribe());
                 *current_room = Some(room_id.clone());
+
+                // Send current lobby state to the creator
+                if let Some(lobby) = &room.lobby {
+                    let lobby_state = ServerMessage::LobbyStateUpdate {
+                        room_id: room_id.clone(),
+                        lobby: lobby.clone(),
+                    };
+                    let json = serde_json::to_string(&lobby_state)
+                        .map_err(|e| format!("Failed to serialize lobby state: {}", e))?;
+                    ws.send(Message::text(json)).await
+                        .map_err(|e| format!("Failed to send lobby state: {}", e))?;
+                }
             }
             drop(rooms);
 
@@ -118,11 +130,23 @@ async fn handle_client_message(
         ClientMessage::JoinRoom { room_id, player_name } => {
             let player_id = server.join_room(room_id.clone(), player_name.clone()).await?;
 
-            // Subscribe to room updates
+            // Subscribe to room updates and send current lobby state
             let rooms = server.rooms.read().await;
             if let Some(room) = rooms.get(&room_id) {
                 *update_rx = Some(room.update_tx.subscribe());
                 *current_room = Some(room_id.clone());
+
+                // Send current lobby state directly to the joining player
+                if let Some(lobby) = &room.lobby {
+                    let lobby_state = ServerMessage::LobbyStateUpdate {
+                        room_id: room_id.clone(),
+                        lobby: lobby.clone(),
+                    };
+                    let json = serde_json::to_string(&lobby_state)
+                        .map_err(|e| format!("Failed to serialize lobby state: {}", e))?;
+                    ws.send(Message::text(json)).await
+                        .map_err(|e| format!("Failed to send lobby state: {}", e))?;
+                }
             }
             drop(rooms);
 
@@ -175,6 +199,15 @@ async fn handle_client_message(
 
             room.place_pawn(player_id, position)?;
             // Updates are broadcast automatically by place_pawn
+        }
+
+        ClientMessage::StartGame { room_id } => {
+            let mut rooms = server.rooms.write().await;
+            let room = rooms.get_mut(&room_id)
+                .ok_or_else(|| format!("Room '{}' not found", room_id))?;
+
+            room.start_game()?;
+            // GameStarted message is broadcast automatically by start_game
         }
     }
 
