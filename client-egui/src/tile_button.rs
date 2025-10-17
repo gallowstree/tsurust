@@ -5,7 +5,7 @@ use eframe::egui::{vec2, Frame, Rect, Sense, Widget};
 use tsurust_common::board::*;
 
 use crate::app::Message;
-use crate::messaging::send_message;
+use crate::messaging::send_ui_message;
 use crate::rendering::{paint_tile, paint_tile_button_hoverlay, paint_tile_button_hoverlay_with_highlight, tile_to_screen_transform};
 
 pub struct TileButton {
@@ -31,13 +31,13 @@ impl Widget for TileButton {
                 let pos = to_screen.inverse().transform_pos(pos);
                 if pos.x < 1. {
                     // Left side clicked - rotate counterclockwise
-                    send_message(&self.sender, Message::TileRotated(self.index, false));
+                    send_ui_message(&self.sender, Message::TileRotated(self.index, false));
                 } else if pos.x > 2. {
                     // Right side clicked - rotate clockwise
-                    send_message(&self.sender, Message::TileRotated(self.index, true));
+                    send_ui_message(&self.sender, Message::TileRotated(self.index, true));
                 } else {
                     // Center clicked - place tile at current player position
-                    send_message(&self.sender, Message::TilePlaced(self.index));
+                    send_ui_message(&self.sender, Message::TilePlaced(self.index));
                 }
             }
         }

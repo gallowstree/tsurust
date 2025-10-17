@@ -7,7 +7,7 @@ use tsurust_common::lobby::Lobby;
 
 use crate::app::Message;
 use crate::components::LobbyBoard;
-use crate::messaging::send_message;
+use crate::messaging::send_ui_message;
 
 /// Helper function to render a player color indicator circle
 fn render_player_color_circle(ui: &mut egui::Ui, color: (u8, u8, u8), radius: f32) {
@@ -41,7 +41,8 @@ fn render_lobby_top_panel(ctx: &Context, lobby: &Lobby, show_start_button: bool,
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if lobby.can_start() {
                             if ui.button("🚀 Start Game").clicked() {
-                                send_message(sender, Message::StartGameFromLobby);
+                                println!("[DEBUG] Start Game button clicked!");
+                                send_ui_message(sender, Message::StartGameFromLobby);
                             }
                         } else {
                             ui.add_enabled(false, egui::Button::new("⏳ Waiting for players..."));
@@ -86,7 +87,7 @@ fn render_debug_tools(ui: &mut egui::Ui, lobby: &Lobby, show_cycle_controls: boo
     ui.add_space(10.0);
 
     if ui.button("➕ Add Test Player").clicked() {
-        send_message(sender, Message::DebugAddPlayer);
+        send_ui_message(sender, Message::DebugAddPlayer);
     }
 
     ui.add_space(10.0);
@@ -95,10 +96,10 @@ fn render_debug_tools(ui: &mut egui::Ui, lobby: &Lobby, show_cycle_controls: boo
         ui.label("Switch Player:");
         ui.horizontal(|ui| {
             if ui.button("⬅ Previous").clicked() {
-                send_message(sender, Message::DebugCyclePlayer(false));
+                send_ui_message(sender, Message::DebugCyclePlayer(false));
             }
             if ui.button("Next ➡").clicked() {
-                send_message(sender, Message::DebugCyclePlayer(true));
+                send_ui_message(sender, Message::DebugCyclePlayer(true));
             }
         });
     } else {
@@ -109,7 +110,7 @@ fn render_debug_tools(ui: &mut egui::Ui, lobby: &Lobby, show_cycle_controls: boo
                     render_player_color_circle(ui, lobby_player.color, 6.0);
 
                     if ui.button(&lobby_player.name).clicked() {
-                        send_message(sender, Message::DebugPlacePawn(*player_id));
+                        send_ui_message(sender, Message::DebugPlacePawn(*player_id));
                     }
                 });
             }
@@ -194,7 +195,7 @@ pub fn render_lobby_placing_ui(ctx: &Context, lobby: &mut Lobby, placing_for_id:
             ui.separator();
 
             if ui.button("⬅ Back to Lobby").clicked() {
-                send_message(sender, Message::BackToMainMenu);
+                send_ui_message(sender, Message::BackToMainMenu);
             }
         });
     });

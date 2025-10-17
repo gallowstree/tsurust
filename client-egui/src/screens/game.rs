@@ -8,7 +8,7 @@ use tsurust_common::game::Game;
 use crate::app::Message;
 use crate::board_renderer::BoardRenderer;
 use crate::hand_renderer::HandRenderer;
-use crate::messaging::send_message;
+use crate::messaging::send_ui_message;
 use crate::player_card::PlayerCard;
 
 pub fn render_game_ui(ctx: &Context, game: &mut Game, waiting_for_server: bool, sender: &mpsc::Sender<Message>) {
@@ -19,10 +19,10 @@ pub fn render_game_ui(ctx: &Context, game: &mut Game, waiting_for_server: bool, 
             ui.horizontal(|ui| {
                 ui.add_space(10.0);
                 if ui.button("🔄 Restart Game").clicked() {
-                    send_message(sender, Message::RestartGame);
+                    send_ui_message(sender, Message::RestartGame);
                 }
                 if ui.button("⬅ Back to Menu").clicked() {
-                    send_message(sender, Message::BackToMainMenu);
+                    send_ui_message(sender, Message::BackToMainMenu);
                 }
 
                 // Show waiting indicator for online games

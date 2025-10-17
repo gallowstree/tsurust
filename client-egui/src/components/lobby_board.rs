@@ -6,7 +6,7 @@ use tsurust_common::board::{PlayerID, PlayerPos};
 use tsurust_common::lobby::Lobby;
 
 use crate::app::Message;
-use crate::messaging::send_message;
+use crate::messaging::send_ui_message;
 
 /// Component for rendering the lobby board with spawn positions
 pub struct LobbyBoard<'a> {
@@ -153,7 +153,7 @@ impl<'a> LobbyBoard<'a> {
         ui.painter().circle_filled(spawn_center, 4.0, color);
 
         if spawn_response.clicked() {
-            send_message(sender, Message::PlacePawn(pos));
+            send_ui_message(sender, Message::PlacePawn(pos));
         }
     }
 }

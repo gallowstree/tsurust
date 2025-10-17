@@ -14,7 +14,8 @@
       "Bash(cat:*)",
       "Bash(tasklist)",
       "Bash(taskkill:*)",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Bash(netstat:*)"
     ],
     "deny": [],
     "ask": []

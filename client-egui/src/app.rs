@@ -7,7 +7,7 @@ use tsurust_common::board::*;
 use tsurust_common::game::{Game, TurnResult};
 use tsurust_common::lobby::{Lobby, LobbyEvent};
 
-use tsurust_common::protocol::ServerMessage;
+use tsurust_common::protocol::{ClientMessage, ServerMessage};
 
 use crate::screens;
 use crate::ws_client::GameClient;
@@ -32,6 +32,7 @@ pub enum Message {
     DebugPlacePawn(PlayerID),        // debug: place pawn for specific player
     DebugCyclePlayer(bool),          // debug: cycle active player (true = next, false = prev)
     StartLocalServer,                // start a local server process
+    SendToServer(ClientMessage),     // send a message to the server via WebSocket
 }
 
 #[derive(Debug)]
@@ -200,6 +201,7 @@ impl TemplateApp {
             Message::TilePlaced(idx) => self.handle_tile_placed(idx),
             Message::RestartGame => self.handle_restart_game(),
             Message::StartLocalServer => self.handle_start_local_server(),
+            Message::SendToServer(client_msg) => self.handle_send_to_server(client_msg),
         }
     }
 
@@ -345,9 +347,16 @@ impl TemplateApp {
 
     fn handle_create_and_join_lobby(&mut self, lobby_name: String, player_name: String) {
         match GameClient::connect("ws://127.0.0.1:8080") {
-            Ok(mut client) => {
-                client.create_room(lobby_name.clone(), player_name.clone());
+            Ok(client) => {
                 self.game_client = Some(client);
+
+                // Send create room message via mpsc
+                if let Some(sender) = &self.sender {
+                    crate::messaging::send_server_message(sender, ClientMessage::CreateRoom {
+                        room_name: lobby_name.clone(),
+                        creator_name: player_name.clone(),
+                    });
+                }
 
                 let (lobby, player_id) = Lobby::new_with_creator(lobby_name, player_name);
                 self.current_player_id = player_id;
@@ -364,10 +373,16 @@ impl TemplateApp {
 
     fn handle_join_lobby_with_id(&mut self, lobby_id: String, player_name: String) {
         match GameClient::connect("ws://127.0.0.1:8080") {
-            Ok(mut client) => {
-                // Send join room message to server
-                client.join_room(lobby_id.clone(), player_name.clone());
+            Ok(client) => {
                 self.game_client = Some(client);
+
+                // Send join room message via mpsc
+                if let Some(sender) = &self.sender {
+                    crate::messaging::send_server_message(sender, ClientMessage::JoinRoom {
+                        room_id: lobby_id.clone(),
+                        player_name: player_name.clone(),
+                    });
+                }
 
                 // Create empty lobby - it will be populated when server sends PlayerJoined messages
                 let lobby = Lobby::new(lobby_id.clone(), format!("Room {}", lobby_id));
@@ -414,8 +429,12 @@ impl TemplateApp {
 
                 // For online lobbies, send to server instead of handling locally
                 if is_online {
-                    if let (Some(client), Some(room_id)) = (&mut self.game_client, &self.current_room_id) {
-                        client.place_pawn(room_id.clone(), player_id, position);
+                    if let (Some(sender), Some(room_id)) = (&self.sender, &self.current_room_id) {
+                        crate::messaging::send_server_message(sender, ClientMessage::PlacePawn {
+                            room_id: room_id.clone(),
+                            player_id,
+                            position,
+                        });
                         println!("Sent pawn placement to server");
                     }
                 } else {
@@ -433,8 +452,12 @@ impl TemplateApp {
 
                 // For online lobbies, send to server
                 if is_online {
-                    if let (Some(client), Some(room_id)) = (&mut self.game_client, &self.current_room_id) {
-                        client.place_pawn(room_id.clone(), player_id, position);
+                    if let (Some(sender), Some(room_id)) = (&self.sender, &self.current_room_id) {
+                        crate::messaging::send_server_message(sender, ClientMessage::PlacePawn {
+                            room_id: room_id.clone(),
+                            player_id,
+                            position,
+                        });
                         println!("Sent pawn placement to server");
                         // Transition back to regular lobby view
                         self.app_state = AppState::Lobby(lobby.clone());
@@ -458,13 +481,23 @@ impl TemplateApp {
     fn handle_start_game_from_lobby(&mut self) {
         let is_online = self.game_client.is_some();
 
+        println!("[DEBUG] handle_start_game_from_lobby called, is_online: {}", is_online);
+
         if let AppState::Lobby(lobby) = &mut self.app_state {
             // For online lobbies, send start game request to server
             if is_online {
-                if let (Some(client), Some(room_id)) = (&mut self.game_client, &self.current_room_id) {
-                    client.start_game(room_id.clone());
+                println!("[DEBUG] Checking sender and room_id: sender={}, room_id={:?}",
+                    self.sender.is_some(), self.current_room_id);
+
+                if let (Some(sender), Some(room_id)) = (&self.sender, &self.current_room_id) {
+                    println!("[DEBUG] Calling send_server_message for StartGame");
+                    crate::messaging::send_server_message(sender, ClientMessage::StartGame {
+                        room_id: room_id.clone(),
+                    });
                     println!("Sent start game request to server");
                     // Server will send GameStarted message to all clients
+                } else {
+                    eprintln!("[DEBUG] Missing sender or room_id!");
                 }
                 return;
             }
@@ -569,25 +602,29 @@ impl TemplateApp {
                     return;
                 }
 
-                if let Some(client) = &mut self.game_client {
-                    let player_cell = game.players.iter()
-                        .find(|p| p.id == game.current_player_id && p.alive)
-                        .expect("current player should exist and be alive")
-                        .pos.cell;
+                let player_cell = game.players.iter()
+                    .find(|p| p.id == game.current_player_id && p.alive)
+                    .expect("current player should exist and be alive")
+                    .pos.cell;
 
-                    let hand = game.hands.get(&game.current_player_id)
-                        .expect("current player should always have a hand");
+                let hand = game.hands.get(&game.current_player_id)
+                    .expect("current player should always have a hand");
 
-                    let tile = hand[tile_index];
+                let tile = hand[tile_index];
 
-                    let mov = Move {
-                        tile,
-                        cell: player_cell,
+                let mov = Move {
+                    tile,
+                    cell: player_cell,
+                    player_id: game.current_player_id,
+                };
+
+                // Send to server via mpsc
+                if let Some(sender) = &self.sender {
+                    crate::messaging::send_server_message(sender, ClientMessage::PlaceTile {
+                        room_id: room_id.clone(),
                         player_id: game.current_player_id,
-                    };
-
-                    // Send to server
-                    client.place_tile(room_id.clone(), game.current_player_id, mov);
+                        mov,
+                    });
                     *waiting_for_server = true;
                     println!("Sent tile placement to server, waiting for response...");
                 }
@@ -710,6 +747,15 @@ impl TemplateApp {
                     }
                 }
             }
+        }
+    }
+
+    fn handle_send_to_server(&mut self, client_msg: ClientMessage) {
+        if let Some(client) = &mut self.game_client {
+            println!("[DEBUG] Sending to server: {:?}", client_msg);
+            client.send(client_msg);
+        } else {
+            eprintln!("Cannot send message to server: not connected");
         }
     }
 }
