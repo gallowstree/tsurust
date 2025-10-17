@@ -2,10 +2,10 @@ use std::sync::mpsc;
 
 use eframe::egui::{self, Context};
 
-use crate::app::Message;
+use crate::app::{LocalServerStatus, Message};
 use crate::messaging::send_message;
 
-pub fn render(ctx: &Context, sender: &mpsc::Sender<Message>) {
+pub fn render(ctx: &Context, server_status: &LocalServerStatus, sender: &mpsc::Sender<Message>) {
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.vertical_centered(|ui| {
             ui.add_space(100.0);
@@ -24,6 +24,23 @@ pub fn render(ctx: &Context, sender: &mpsc::Sender<Message>) {
 
             if ui.add_sized([button_width, 30.0], egui::Button::new("🔗 Join Online Lobby")).clicked() {
                 send_message(sender, Message::ShowJoinLobbyForm);
+            }
+
+            ui.add_space(10.0);
+
+            if ui.add_sized([button_width, 30.0], egui::Button::new("🖥️ Start Local Server")).clicked() {
+                send_message(sender, Message::StartLocalServer);
+            }
+
+            // Show server status feedback
+            match server_status {
+                LocalServerStatus::Running(pid) => {
+                    ui.label(format!("✅ Server running (PID: {})", pid));
+                }
+                LocalServerStatus::Failed(error) => {
+                    ui.colored_label(egui::Color32::RED, format!("❌ Server failed: {}", error));
+                }
+                LocalServerStatus::NotStarted => {}
             }
 
             ui.add_space(10.0);

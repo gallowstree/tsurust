@@ -29,6 +29,7 @@ pub enum Message {
     DebugAddPlayer,                  // debug: simulate player joining
     DebugPlacePawn(PlayerID),        // debug: place pawn for specific player
     DebugCyclePlayer(bool),          // debug: cycle active player (true = next, false = prev)
+    StartLocalServer,                // start a local server process
 }
 
 #[derive(Debug)]
@@ -69,6 +70,16 @@ pub struct TemplateApp {
     game_client: Option<GameClient>, // WebSocket connection to server
     #[serde(skip)]
     current_room_id: Option<String>, // Track current room we're in
+    #[serde(skip)]
+    local_server_status: LocalServerStatus, // Status of locally launched server
+}
+
+#[derive(Debug, Clone, Default)]
+pub enum LocalServerStatus {
+    #[default]
+    NotStarted,
+    Running(u32), // PID of the server process
+    Failed(String), // Error message
 }
 
 impl Default for TemplateApp {
@@ -83,6 +94,7 @@ impl Default for TemplateApp {
             current_player_id: 1, // Default player ID
             game_client: None,
             current_room_id: None,
+            local_server_status: LocalServerStatus::NotStarted,
         }
     }
 }
@@ -96,9 +108,9 @@ impl TemplateApp {
         Default::default()
     }
 
-    fn render_ui(ctx: &Context, app_state: &mut AppState, current_player_id: PlayerID, is_online: bool, sender: &mpsc::Sender<Message>) {
+    fn render_ui(ctx: &Context, app_state: &mut AppState, current_player_id: PlayerID, is_online: bool, server_status: &LocalServerStatus, sender: &mpsc::Sender<Message>) {
         match app_state {
-            AppState::MainMenu => screens::main_menu::render(ctx, sender),
+            AppState::MainMenu => screens::main_menu::render(ctx, server_status, sender),
             AppState::CreateLobbyForm { lobby_name, player_name } => {
                 screens::lobby_forms::render_create_lobby_form(ctx, lobby_name, player_name, sender)
             }
@@ -154,7 +166,7 @@ impl eframe::App for TemplateApp {
         // Render UI
         if let Some(tx) = &self.sender {
             let is_online = self.game_client.is_some();
-            Self::render_ui(ctx, &mut self.app_state, self.current_player_id, is_online, tx);
+            Self::render_ui(ctx, &mut self.app_state, self.current_player_id, is_online, &self.local_server_status, tx);
         }
     }
 
@@ -185,6 +197,7 @@ impl TemplateApp {
             Message::TileRotated(idx, cw) => self.handle_tile_rotated(idx, cw),
             Message::TilePlaced(idx) => self.handle_tile_placed(idx),
             Message::RestartGame => self.handle_restart_game(),
+            Message::StartLocalServer => self.handle_start_local_server(),
         }
     }
 
@@ -545,6 +558,63 @@ impl TemplateApp {
                     Player::new(4, PlayerPos::new(3, 0, 6)),
                 ];
                 *game = Game::new(players);
+        }
+    }
+
+    fn handle_start_local_server(&mut self) {
+        use std::process::Command;
+
+        println!("[DEBUG] Attempting to start local server...");
+
+        // Determine the server binary name based on platform
+        #[cfg(target_os = "windows")]
+        let server_binary = "server.exe";
+        #[cfg(not(target_os = "windows"))]
+        let server_binary = "server";
+
+        println!("[DEBUG] Server binary name: {}", server_binary);
+
+        // Try to launch the server binary
+        // First, try the debug build location
+        let debug_path = format!("target/debug/{}", server_binary);
+        println!("[DEBUG] Attempting to launch from: {}", debug_path);
+
+        let result = Command::new(&debug_path)
+            .spawn();
+
+        match result {
+            Ok(child) => {
+                let pid = child.id();
+                println!("[SUCCESS] Local server started successfully!");
+                println!("[SUCCESS] Server PID: {}", pid);
+                println!("[SUCCESS] Server should be listening on ws://127.0.0.1:8080");
+                self.local_server_status = LocalServerStatus::Running(pid);
+                // Note: We're not storing the child process handle, so it will run independently
+            }
+            Err(e) => {
+                println!("[DEBUG] Debug build failed: {}", e);
+                // If debug build fails, try release build
+                let release_path = format!("target/release/{}", server_binary);
+                println!("[DEBUG] Attempting to launch from: {}", release_path);
+
+                match Command::new(&release_path).spawn() {
+                    Ok(child) => {
+                        let pid = child.id();
+                        println!("[SUCCESS] Local server started successfully!");
+                        println!("[SUCCESS] Server PID: {}", pid);
+                        println!("[SUCCESS] Server should be listening on ws://127.0.0.1:8080");
+                        self.local_server_status = LocalServerStatus::Running(pid);
+                    }
+                    Err(e2) => {
+                        eprintln!("[ERROR] Failed to start local server from debug build: {}", e);
+                        eprintln!("[ERROR] Failed to start local server from release build: {}", e2);
+                        eprintln!("[ERROR] Make sure to build the server first with: cargo build --bin server");
+
+                        let error_msg = "Binary not found. Run 'cargo build --bin server' first.".to_string();
+                        self.local_server_status = LocalServerStatus::Failed(error_msg);
+                    }
+                }
+            }
         }
     }
 }
