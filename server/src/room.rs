@@ -29,24 +29,37 @@ impl GameRoom {
         }
     }
 
-    pub fn place_tile(&mut self, _player_id: PlayerID, mov: Move) -> Result<TurnResult, String> {
+    pub fn place_tile(&mut self, player_id: PlayerID, mov: Move) -> Result<TurnResult, String> {
+        // Validate it's this player's turn
+        if self.game.current_player_id != player_id {
+            return Err(format!(
+                "Not your turn! Current player is {}, you are {}",
+                self.game.current_player_id, player_id
+            ));
+        }
+
+        // Validate the move is for the correct player
+        if mov.player_id != player_id {
+            return Err(format!(
+                "Move player_id mismatch! Expected {}, got {}",
+                player_id, mov.player_id
+            ));
+        }
+
         // Validate and perform move
         let result = self.game.perform_move(mov)
             .map_err(|e| format!("Invalid move: {:?}", e))?;
 
-        // Broadcast turn completed to all clients in this room
-        let turn_update = ServerMessage::TurnCompleted {
-            room_id: self.id.clone(),
-            result: result.clone(),
-        };
-        let _ = self.update_tx.send(turn_update);
-
-        // Also send full state update
+        // Broadcast game state update to all clients in this room
+        // This contains all information clients need (game state, current player, etc.)
         let state_update = ServerMessage::GameStateUpdate {
             room_id: self.id.clone(),
             state: self.game.clone(),
         };
-        let _ = self.update_tx.send(state_update);
+        match self.update_tx.send(state_update) {
+            Ok(receiver_count) => println!("[SERVER] Broadcast GameStateUpdate to {} receivers", receiver_count),
+            Err(e) => eprintln!("[SERVER] Failed to broadcast GameStateUpdate: {:?}", e),
+        }
 
         Ok(result)
     }

@@ -4,6 +4,18 @@ use crate::board::*;
 use crate::deck::Deck;
 use crate::trail::Trail;
 
+/// Statistics tracked for each player during a game
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PlayerStats {
+    pub player_id: PlayerID,
+    pub turns_survived: usize,        // Number of turns the player stayed alive
+    pub tiles_placed: usize,          // Number of tiles placed before elimination
+    pub path_length: usize,           // Number of unique tiles traversed
+    pub dragon_turns: usize,          // Number of turns holding the dragon
+    pub hand_tiles_remaining: usize,  // Tiles in hand when eliminated
+    pub elimination_turn: Option<usize>, // Turn number when eliminated (None if winner)
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum TurnResult {
     TurnAdvanced { turn_number: usize, next_player: PlayerID, eliminated: Vec<PlayerID> },
@@ -17,10 +29,13 @@ pub struct Game {
     pub board: Board,
     pub players: Vec<Player>,
     pub hands: HashMap<PlayerID, Vec<Tile>>,
+    #[serde(skip, default)]
     pub tile_trails: HashMap<CellCoord, Vec<(PlayerID, TileEndpoint)>>, // tile -> list of (player, segment) pairs
+    #[serde(skip, default)]
     pub player_trails: HashMap<PlayerID, crate::trail::Trail>, // Complete trail for each player
     pub current_player_id: PlayerID,
     pub dragon: Option<PlayerID>,
+    pub stats: HashMap<PlayerID, PlayerStats>, // Statistics for each player
 }
 
 impl Game {
@@ -41,17 +56,37 @@ impl Game {
             player_trails.insert(player.id, Trail::new(player.pos));
         }
 
+        // Initialize stats for each player
+        let mut stats = HashMap::new();
+        for player in &players {
+            stats.insert(player.id, PlayerStats {
+                player_id: player.id,
+                turns_survived: 0,
+                tiles_placed: 0,
+                path_length: 1, // Start with 1 for their starting position
+                dragon_turns: 0,
+                hand_tiles_remaining: 3, // Starting hand size
+                elimination_turn: None,
+            });
+        }
+
         Game {
             players, hands, deck, board,
             tile_trails: HashMap::new(),
             player_trails,
             current_player_id,
             dragon: None,
+            stats,
         }
     }
 
     pub fn curr_player_hand(&self) -> Vec<Tile> {
         self.hands[&self.current_player_id].clone()
+    }
+
+    /// Returns true if the game is over (1 or fewer players alive)
+    pub fn is_game_over(&self) -> bool {
+        self.players.iter().filter(|p| p.alive).count() <= 1
     }
 
     pub fn perform_move(&mut self, mov: Move) -> Result<TurnResult, &'static str> {
@@ -72,6 +107,11 @@ impl Game {
 
         // Validate player has the tile in hand
         self.deduct_tile_from_hand(mov)?;
+
+        // Update stats: increment tiles_placed for the current player
+        if let Some(stats) = self.stats.get_mut(&mov.player_id) {
+            stats.tiles_placed += 1;
+        }
 
         // Place the tile on the board
         self.board.place_tile(mov);
@@ -126,6 +166,13 @@ impl Game {
                     }
                     player_trail.end_pos = new_pos;
                     player_trail.completed = trail.completed;
+                }
+
+                // Update stats: increment path_length for each new cell visited
+                if old_pos.cell != new_pos.cell {
+                    if let Some(stats) = self.stats.get_mut(&player.id) {
+                        stats.path_length += 1;
+                    }
                 }
             }
 
@@ -200,6 +247,30 @@ impl Game {
 
     fn complete_turn(&mut self, eliminated: Vec<PlayerID>) -> TurnResult {
         let turn_number = self.board.history.len(); // Turn number starts from 1
+
+        // Update stats for eliminated players
+        for &player_id in &eliminated {
+            if let Some(stats) = self.stats.get_mut(&player_id) {
+                stats.elimination_turn = Some(turn_number);
+                stats.hand_tiles_remaining = self.hands.get(&player_id).map(|h| h.len()).unwrap_or(0);
+            }
+        }
+
+        // Increment turns_survived for all alive players
+        for player in &self.players {
+            if player.alive {
+                if let Some(stats) = self.stats.get_mut(&player.id) {
+                    stats.turns_survived += 1;
+                }
+            }
+        }
+
+        // Increment dragon_turns for the player holding the dragon
+        if let Some(dragon_holder) = self.dragon {
+            if let Some(stats) = self.stats.get_mut(&dragon_holder) {
+                stats.dragon_turns += 1;
+            }
+        }
 
         // Count remaining alive players
         let alive_count = self.players.iter().filter(|p| p.alive).count();

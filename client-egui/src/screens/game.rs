@@ -2,7 +2,7 @@ use std::sync::mpsc;
 
 use eframe::egui::{self, Context};
 
-use tsurust_common::board::Player;
+use tsurust_common::board::{Player, PlayerID};
 use tsurust_common::game::Game;
 
 use crate::app::Message;
@@ -11,7 +11,7 @@ use crate::hand_renderer::HandRenderer;
 use crate::messaging::send_ui_message;
 use crate::player_card::PlayerCard;
 
-pub fn render_game_ui(ctx: &Context, game: &mut Game, waiting_for_server: bool, sender: &mpsc::Sender<Message>) {
+pub fn render_game_ui(ctx: &Context, game: &mut Game, client_player_id: PlayerID, waiting_for_server: bool, sender: &mpsc::Sender<Message>) {
     egui::TopBottomPanel::top("top_panel")
         .resizable(true)
         .min_height(32.0)
@@ -89,6 +89,9 @@ pub fn render_game_ui(ctx: &Context, game: &mut Game, waiting_for_server: bool, 
                     }
                     if is_winner {
                         card = card.winner();
+                    }
+                    if player.id == client_player_id {
+                        card = card.you();
                     }
                     ui.add(card);
                 });

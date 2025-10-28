@@ -4,6 +4,8 @@ mod handler;
 
 #[cfg(test)]
 mod server_tests;
+#[cfg(test)]
+mod room_tests;
 
 use std::sync::Arc;
 use tokio::net::TcpListener;

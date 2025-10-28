@@ -54,6 +54,7 @@ pub enum AppState {
         room_id: String,
         waiting_for_server: bool,       // Show loading state during server round-trip
     },
+    GameOver(Game),                     // Game ended - show statistics
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -126,10 +127,11 @@ impl TemplateApp {
             AppState::LobbyPlacingFor(lobby, placing_for_id) => {
                 screens::lobby::render_lobby_placing_ui(ctx, lobby, *placing_for_id, is_online, sender)
             }
-            AppState::Game(game) => screens::game::render_game_ui(ctx, game, false, sender),
+            AppState::Game(game) => screens::game::render_game_ui(ctx, game, current_player_id, false, sender),
             AppState::OnlineGame { game, waiting_for_server, .. } => {
-                screens::game::render_game_ui(ctx, game, *waiting_for_server, sender)
+                screens::game::render_game_ui(ctx, game, current_player_id, *waiting_for_server, sender)
             }
+            AppState::GameOver(game) => screens::game_over::render_game_over_ui(ctx, game, current_player_id, sender),
         }
     }
 
@@ -250,17 +252,47 @@ impl TemplateApp {
                     _ => {}
                 }
             }
-            ServerMessage::GameStateUpdate { room_id: _, state } => {
+            ServerMessage::GameStateUpdate { room_id, state } => {
                 // Server is source of truth - update our game state
+                println!("[DEBUG] Received GameStateUpdate message for room: {}", room_id);
+                println!("[DEBUG] Current app_state discriminant: {:?}", std::mem::discriminant(app_state));
                 if let AppState::OnlineGame { game, waiting_for_server, .. } = app_state {
-                    *game = state;
+                    println!("[DEBUG] Updating game state. New current_player: {}", state.current_player_id);
+                    println!("[DEBUG] Board history length: {}", state.board.history.len());
+                    println!("[DEBUG] Alive players: {}", state.players.iter().filter(|p| p.alive).count());
+
+                    *game = state.clone();
                     *waiting_for_server = false;
-                    println!("Received game state update from server");
+                    println!("[DEBUG] Game state updated! waiting_for_server now: false");
+
+                    // Transition to GameOver if the game ended
+                    if state.is_game_over() {
+                        println!("Game over detected! Transitioning to GameOver state");
+                        *app_state = AppState::GameOver(state);
+                    } else {
+                        println!("[DEBUG] Game continues, staying in OnlineGame state");
+                    }
+                } else {
+                    println!("[DEBUG] Not in OnlineGame state (state: {:?}), ignoring GameStateUpdate", std::mem::discriminant(app_state));
                 }
             }
             ServerMessage::TurnCompleted { room_id: _, result } => {
                 // Turn completed notification received
                 println!("Turn completed: {:?}", result);
+
+                // Check if the game is over and transition to GameOver state
+                match &result {
+                    TurnResult::PlayerWins { .. } | TurnResult::Extinction { .. } => {
+                        // Game is over - transition to GameOver state
+                        if let AppState::OnlineGame { game, .. } = app_state {
+                            println!("Game over detected! Transitioning to GameOver state");
+                            *app_state = AppState::GameOver(game.clone());
+                        }
+                    }
+                    TurnResult::TurnAdvanced { .. } => {
+                        // Game continues, nothing special to do
+                    }
+                }
             }
             ServerMessage::Error { message } => {
                 eprintln!("Server error: {}", message);
@@ -581,18 +613,39 @@ impl TemplateApp {
     }
 
     fn handle_tile_rotated(&mut self, tile_index: usize, clockwise: bool) {
-        if let AppState::Game(game) = &mut self.app_state {
-            let hand = game.hands.get_mut(&game.current_player_id)
-                .expect("current player should always have a hand");
-            hand[tile_index] = hand[tile_index].rotated(clockwise);
-        }
+        // Get mutable reference to the game, whether local or online
+        let game = match &mut self.app_state {
+            AppState::Game(game) => game,
+            AppState::OnlineGame { game, .. } => game,  // Rotation is client-side only
+            _ => return,
+        };
+
+        let hand = game.hands.get_mut(&game.current_player_id)
+            .expect("current player should always have a hand");
+        hand[tile_index] = hand[tile_index].rotated(clockwise);
     }
 
     fn handle_tile_placed(&mut self, tile_index: usize) {
+        println!("[DEBUG] handle_tile_placed called with tile_index: {}", tile_index);
+        println!("[DEBUG] Current app_state: {:?}", std::mem::discriminant(&self.app_state));
+
         match &mut self.app_state {
             // Local game: perform move immediately (client authoritative)
-            AppState::Game(game) => {
-                Self::perform_local_tile_placement(game, tile_index);
+            AppState::Game(_) => {
+                println!("[DEBUG] In AppState::Game branch");
+                // Take ownership of the game state temporarily
+                if let AppState::Game(game) = std::mem::replace(&mut self.app_state, AppState::MainMenu) {
+                    println!("[DEBUG] Calling perform_local_tile_placement");
+                    let game = Self::perform_local_tile_placement(game, tile_index);
+
+                    if game.is_game_over() {
+                        println!("[DEBUG] Game over! Transitioning to GameOver state");
+                        self.app_state = AppState::GameOver(game);
+                    } else {
+                        println!("[DEBUG] Game continues, restoring Game state");
+                        self.app_state = AppState::Game(game);
+                    }
+                }
             }
 
             // Online game: send to server and wait for response (server authoritative)
@@ -635,7 +688,7 @@ impl TemplateApp {
     }
 
     /// Perform a tile placement in a local game (client authoritative)
-    fn perform_local_tile_placement(game: &mut Game, tile_index: usize) {
+    fn perform_local_tile_placement(mut game: Game, tile_index: usize) -> Game {
         let player_cell = game.players.iter()
             .find(|p| p.id == game.current_player_id && p.alive)
             .expect("current player should exist and be alive")
@@ -675,14 +728,19 @@ impl TemplateApp {
                         println!("  Final eliminations: {:?}", eliminated);
                     }
                 }
+                game
             }
-            Err(error) => println!("Failed to place tile: {}", error),
+            Err(error) => {
+                println!("Failed to place tile: {}", error);
+                game
+            }
         }
     }
 
 
     fn handle_restart_game(&mut self) {
-            if let AppState::Game(game) = &mut self.app_state {
+        match &mut self.app_state {
+            AppState::Game(game) | AppState::GameOver(game) => {
                 let players = vec![
                     Player::new(1, PlayerPos::new(0, 2, 5)),
                     Player::new(2, PlayerPos::new(2, 5, 2)),
@@ -690,6 +748,9 @@ impl TemplateApp {
                     Player::new(4, PlayerPos::new(3, 0, 6)),
                 ];
                 *game = Game::new(players);
+                self.app_state = AppState::Game(game.clone());
+            }
+            _ => {}
         }
     }
 

@@ -27,16 +27,21 @@ impl Widget for TileButton {
 
         let to_screen = tile_to_screen_transform(rect);
         if response.clicked() {
+            println!("[DEBUG] TileButton {} clicked!", self.index);
             if let Some(pos) = response.interact_pointer_pos() {
                 let pos = to_screen.inverse().transform_pos(pos);
+                println!("[DEBUG] Click position: x={:.2}, y={:.2}", pos.x, pos.y);
                 if pos.x < 1. {
                     // Left side clicked - rotate counterclockwise
+                    println!("[DEBUG] Sending TileRotated({}, false)", self.index);
                     send_ui_message(&self.sender, Message::TileRotated(self.index, false));
                 } else if pos.x > 2. {
                     // Right side clicked - rotate clockwise
+                    println!("[DEBUG] Sending TileRotated({}, true)", self.index);
                     send_ui_message(&self.sender, Message::TileRotated(self.index, true));
                 } else {
                     // Center clicked - place tile at current player position
+                    println!("[DEBUG] Sending TilePlaced({})", self.index);
                     send_ui_message(&self.sender, Message::TilePlaced(self.index));
                 }
             }

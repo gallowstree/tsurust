@@ -15,7 +15,8 @@
       "Bash(tasklist)",
       "Bash(taskkill:*)",
       "Bash(powershell:*)",
-      "Bash(netstat:*)"
+      "Bash(netstat:*)",
+      "Bash(timeout 2 tail:*)"
     ],
     "deny": [],
     "ask": []
