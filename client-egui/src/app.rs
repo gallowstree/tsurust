@@ -46,8 +46,8 @@ pub enum AppState {
         lobby_id: String,
         player_name: String,
     },
-    Lobby(Lobby),
-    LobbyPlacingFor(Lobby, PlayerID),  // Placing pawn for specific player
+    Lobby(Lobby),                       // Normal lobby view (place own pawn)
+    LobbyPlacingFor(Lobby, PlayerID),  // Debug mode: placing pawn for specific player
     Game(Game),                         // Local game - client authoritative
     OnlineGame {
         game: Game,                     // Server's authoritative state
@@ -58,6 +58,8 @@ pub enum AppState {
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
+/// Most fields are skipped because they contain runtime state (channels, WebSocket connections,
+/// active games) that can't/shouldn't be serialized. Only UI preferences like label are persisted.
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct TemplateApp {
@@ -78,6 +80,8 @@ pub struct TemplateApp {
     local_server_status: LocalServerStatus, // Status of locally launched server
 }
 
+/// Tracks the status of a locally spawned server process.
+/// The client can launch its own server instance for convenience (see handle_start_local_server).
 #[derive(Debug, Clone, Default)]
 pub enum LocalServerStatus {
     #[default]
@@ -91,7 +95,7 @@ impl Default for TemplateApp {
         let (sender, receiver) = mpsc::channel();
 
         Self {
-            label: "Tsurust - Year of the Dragon of Wood".to_owned(),
+            label: "Tsurust".to_owned(),
             app_state: AppState::MainMenu,
             sender: Some(sender),
             receiver: Some(receiver),
@@ -221,76 +225,44 @@ impl TemplateApp {
                 *current_player_id = player_id;
 
                 // Update the lobby's ID to match the server-generated room ID
-                match app_state {
-                    AppState::Lobby(lobby) | AppState::LobbyPlacingFor(lobby, _) => {
-                        lobby.id = room_id.clone();
-                        println!("Updated lobby ID to {} (player ID: {})", room_id, player_id);
-                    }
-                    _ => {}
+                if let AppState::Lobby(lobby) | AppState::LobbyPlacingFor(lobby, _) = app_state {
+                    lobby.id = room_id.clone();
                 }
             }
             ServerMessage::PlayerJoined { room_id, player_id, player_name } => {
-                println!("Player {} (ID: {}) joined room {}", player_name, player_id, room_id);
-
                 // If we don't have a room ID yet, this might be our own join confirmation
                 if current_room_id.is_none() {
                     *current_room_id = Some(room_id.clone());
                     *current_player_id = player_id;
-                    println!("Set our player ID to {} in room {}", player_id, room_id);
                 }
 
                 // Update lobby state if we're in a lobby
-                match app_state {
-                    AppState::Lobby(lobby) | AppState::LobbyPlacingFor(lobby, _) => {
-                        if let Err(e) = lobby.handle_event(LobbyEvent::PlayerJoined {
-                            player_id,
-                            player_name: player_name.clone(),
-                        }) {
-                            eprintln!("Failed to sync player join to lobby: {:?}", e);
-                        }
+                if let AppState::Lobby(lobby) | AppState::LobbyPlacingFor(lobby, _) = app_state {
+                    if let Err(e) = lobby.handle_event(LobbyEvent::PlayerJoined {
+                        player_id,
+                        player_name: player_name.clone(),
+                    }) {
+                        eprintln!("Failed to sync player join to lobby: {:?}", e);
                     }
-                    _ => {}
                 }
             }
-            ServerMessage::GameStateUpdate { room_id, state } => {
+            ServerMessage::GameStateUpdate { room_id: _, state } => {
                 // Server is source of truth - update our game state
-                println!("[DEBUG] Received GameStateUpdate message for room: {}", room_id);
-                println!("[DEBUG] Current app_state discriminant: {:?}", std::mem::discriminant(app_state));
                 if let AppState::OnlineGame { game, waiting_for_server, .. } = app_state {
-                    println!("[DEBUG] Updating game state. New current_player: {}", state.current_player_id);
-                    println!("[DEBUG] Board history length: {}", state.board.history.len());
-                    println!("[DEBUG] Alive players: {}", state.players.iter().filter(|p| p.alive).count());
-
                     *game = state.clone();
                     *waiting_for_server = false;
-                    println!("[DEBUG] Game state updated! waiting_for_server now: false");
 
                     // Transition to GameOver if the game ended
                     if state.is_game_over() {
-                        println!("Game over detected! Transitioning to GameOver state");
                         *app_state = AppState::GameOver(state);
-                    } else {
-                        println!("[DEBUG] Game continues, staying in OnlineGame state");
                     }
-                } else {
-                    println!("[DEBUG] Not in OnlineGame state (state: {:?}), ignoring GameStateUpdate", std::mem::discriminant(app_state));
                 }
             }
             ServerMessage::TurnCompleted { room_id: _, result } => {
-                // Turn completed notification received
-                println!("Turn completed: {:?}", result);
-
                 // Check if the game is over and transition to GameOver state
-                match &result {
-                    TurnResult::PlayerWins { .. } | TurnResult::Extinction { .. } => {
-                        // Game is over - transition to GameOver state
-                        if let AppState::OnlineGame { game, .. } = app_state {
-                            println!("Game over detected! Transitioning to GameOver state");
-                            *app_state = AppState::GameOver(game.clone());
-                        }
-                    }
-                    TurnResult::TurnAdvanced { .. } => {
-                        // Game continues, nothing special to do
+                if matches!(result, TurnResult::PlayerWins { .. } | TurnResult::Extinction { .. }) {
+                    if let AppState::OnlineGame { game, .. } = app_state {
+                        *app_state = AppState::GameOver(game.clone());
                     }
                 }
             }
@@ -301,37 +273,25 @@ impl TemplateApp {
                     *waiting_for_server = false;
                 }
             }
-            ServerMessage::PlayerLeft { room_id: _, player_id } => {
-                println!("Player {} left room", player_id);
-
+            ServerMessage::PlayerLeft { room_id: _, player_id: _ } => {
                 // TODO: Update lobby state when PlayerLeft event is implemented in Lobby
-                // For now, we just log it - the lobby doesn't support removing players yet
             }
             ServerMessage::LobbyStateUpdate { room_id: _, lobby } => {
-                println!("Received lobby state update from server");
-                match app_state {
-                    AppState::Lobby(current_lobby) | AppState::LobbyPlacingFor(current_lobby, _) => {
-                        *current_lobby = lobby;
-                    }
-                    _ => {}
+                if let AppState::Lobby(current_lobby) | AppState::LobbyPlacingFor(current_lobby, _) = app_state {
+                    *current_lobby = lobby;
                 }
             }
             ServerMessage::PawnPlaced { room_id: _, player_id, position } => {
-                println!("Player {} placed pawn at {:?}", player_id, position);
-                match app_state {
-                    AppState::Lobby(lobby) | AppState::LobbyPlacingFor(lobby, _) => {
-                        if let Err(e) = lobby.handle_event(LobbyEvent::PawnPlaced {
-                            player_id,
-                            position,
-                        }) {
-                            eprintln!("Failed to sync pawn placement: {:?}", e);
-                        }
+                if let AppState::Lobby(lobby) | AppState::LobbyPlacingFor(lobby, _) = app_state {
+                    if let Err(e) = lobby.handle_event(LobbyEvent::PawnPlaced {
+                        player_id,
+                        position,
+                    }) {
+                        eprintln!("Failed to sync pawn placement: {:?}", e);
                     }
-                    _ => {}
                 }
             }
             ServerMessage::GameStarted { room_id, game } => {
-                println!("Game started in room {}", room_id);
                 // Transition to online game mode with server's authoritative game state
                 *app_state = AppState::OnlineGame {
                     game,
@@ -419,8 +379,6 @@ impl TemplateApp {
                 // Create empty lobby - it will be populated when server sends PlayerJoined messages
                 let lobby = Lobby::new(lobby_id.clone(), format!("Room {}", lobby_id));
                 self.app_state = AppState::Lobby(lobby);
-
-                println!("Connected to server and joined room {}", lobby_id);
             }
             Err(e) => {
                 eprintln!("Failed to connect to server: {}", e);
@@ -467,7 +425,6 @@ impl TemplateApp {
                             player_id,
                             position,
                         });
-                        println!("Sent pawn placement to server");
                     }
                 } else {
                     // Local lobby - handle locally
@@ -490,7 +447,6 @@ impl TemplateApp {
                             player_id,
                             position,
                         });
-                        println!("Sent pawn placement to server");
                         // Transition back to regular lobby view
                         self.app_state = AppState::Lobby(lobby.clone());
                     }
@@ -513,23 +469,14 @@ impl TemplateApp {
     fn handle_start_game_from_lobby(&mut self) {
         let is_online = self.game_client.is_some();
 
-        println!("[DEBUG] handle_start_game_from_lobby called, is_online: {}", is_online);
-
         if let AppState::Lobby(lobby) = &mut self.app_state {
             // For online lobbies, send start game request to server
             if is_online {
-                println!("[DEBUG] Checking sender and room_id: sender={}, room_id={:?}",
-                    self.sender.is_some(), self.current_room_id);
-
                 if let (Some(sender), Some(room_id)) = (&self.sender, &self.current_room_id) {
-                    println!("[DEBUG] Calling send_server_message for StartGame");
                     crate::messaging::send_server_message(sender, ClientMessage::StartGame {
                         room_id: room_id.clone(),
                     });
-                    println!("Sent start game request to server");
                     // Server will send GameStarted message to all clients
-                } else {
-                    eprintln!("[DEBUG] Missing sender or room_id!");
                 }
                 return;
             }
@@ -544,7 +491,6 @@ impl TemplateApp {
                 Ok(game) => {
                     // Local game - client is authoritative
                     self.app_state = AppState::Game(game);
-                    println!("Started local game");
                 }
                 Err(e) => {
                     eprintln!("Failed to convert lobby to game: {:?}", e);
@@ -626,23 +572,16 @@ impl TemplateApp {
     }
 
     fn handle_tile_placed(&mut self, tile_index: usize) {
-        println!("[DEBUG] handle_tile_placed called with tile_index: {}", tile_index);
-        println!("[DEBUG] Current app_state: {:?}", std::mem::discriminant(&self.app_state));
-
         match &mut self.app_state {
             // Local game: perform move immediately (client authoritative)
             AppState::Game(_) => {
-                println!("[DEBUG] In AppState::Game branch");
                 // Take ownership of the game state temporarily
                 if let AppState::Game(game) = std::mem::replace(&mut self.app_state, AppState::MainMenu) {
-                    println!("[DEBUG] Calling perform_local_tile_placement");
                     let game = Self::perform_local_tile_placement(game, tile_index);
 
                     if game.is_game_over() {
-                        println!("[DEBUG] Game over! Transitioning to GameOver state");
                         self.app_state = AppState::GameOver(game);
                     } else {
-                        println!("[DEBUG] Game continues, restoring Game state");
                         self.app_state = AppState::Game(game);
                     }
                 }
@@ -679,7 +618,6 @@ impl TemplateApp {
                         mov,
                     });
                     *waiting_for_server = true;
-                    println!("Sent tile placement to server, waiting for response...");
                 }
             }
 
@@ -757,51 +695,34 @@ impl TemplateApp {
     fn handle_start_local_server(&mut self) {
         use std::process::Command;
 
-        println!("[DEBUG] Attempting to start local server...");
-
         // Determine the server binary name based on platform
         #[cfg(target_os = "windows")]
         let server_binary = "server.exe";
         #[cfg(not(target_os = "windows"))]
         let server_binary = "server";
 
-        println!("[DEBUG] Server binary name: {}", server_binary);
-
-        // Try to launch the server binary
-        // First, try the debug build location
+        // Try to launch the server binary - first try debug, then release
         let debug_path = format!("target/debug/{}", server_binary);
-        println!("[DEBUG] Attempting to launch from: {}", debug_path);
-
-        let result = Command::new(&debug_path)
-            .spawn();
+        let result = Command::new(&debug_path).spawn();
 
         match result {
             Ok(child) => {
                 let pid = child.id();
-                println!("[SUCCESS] Local server started successfully!");
-                println!("[SUCCESS] Server PID: {}", pid);
-                println!("[SUCCESS] Server should be listening on ws://127.0.0.1:8080");
                 self.local_server_status = LocalServerStatus::Running(pid);
                 // Note: We're not storing the child process handle, so it will run independently
             }
-            Err(e) => {
-                println!("[DEBUG] Debug build failed: {}", e);
+            Err(_) => {
                 // If debug build fails, try release build
                 let release_path = format!("target/release/{}", server_binary);
-                println!("[DEBUG] Attempting to launch from: {}", release_path);
 
                 match Command::new(&release_path).spawn() {
                     Ok(child) => {
                         let pid = child.id();
-                        println!("[SUCCESS] Local server started successfully!");
-                        println!("[SUCCESS] Server PID: {}", pid);
-                        println!("[SUCCESS] Server should be listening on ws://127.0.0.1:8080");
                         self.local_server_status = LocalServerStatus::Running(pid);
                     }
-                    Err(e2) => {
-                        eprintln!("[ERROR] Failed to start local server from debug build: {}", e);
-                        eprintln!("[ERROR] Failed to start local server from release build: {}", e2);
-                        eprintln!("[ERROR] Make sure to build the server first with: cargo build --bin server");
+                    Err(e) => {
+                        eprintln!("Failed to start local server: {}", e);
+                        eprintln!("Make sure to build the server first with: cargo build --bin server");
 
                         let error_msg = "Binary not found. Run 'cargo build --bin server' first.".to_string();
                         self.local_server_status = LocalServerStatus::Failed(error_msg);
@@ -813,7 +734,6 @@ impl TemplateApp {
 
     fn handle_send_to_server(&mut self, client_msg: ClientMessage) {
         if let Some(client) = &mut self.game_client {
-            println!("[DEBUG] Sending to server: {:?}", client_msg);
             client.send(client_msg);
         } else {
             eprintln!("Cannot send message to server: not connected");
