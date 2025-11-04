@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tsurust - Multiplayer Tsuro Game</title>
+
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #1e1e1e;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        #the_canvas_id {
+            width: 100%;
+            height: 100%;
+        }
+
+        .centered {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: #ffffff;
+        }
+
+        #loading {
+            font-size: 1.2em;
+        }
+
+        .error {
+            color: #ff6b6b;
+            padding: 20px;
+            max-width: 600px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading" class="centered">
+        <div>
+            <h2>Loading Tsurust...</h2>
+            <p>Initializing WebAssembly module</p>
+        </div>
+    </div>
+
+    <canvas id="the_canvas_id"></canvas>
+
+    <script type="module">
+        import init, { start } from './client_egui.js';
+
+        async function run() {
+            try {
+                // Initialize the WASM module
+                await init();
+
+                // Hide loading message
+                document.getElementById('loading').style.display = 'none';
+
+                // Start the app
+                await start('the_canvas_id');
+
+                console.log("Tsurust WASM module loaded successfully");
+            } catch (error) {
+                console.error("Failed to load WASM module:", error);
+                document.getElementById('loading').innerHTML = `
+                    <div class="error">
+                        <h2>Failed to Load</h2>
+                        <p>Error: ${error.message}</p>
+                        <p>Please make sure you're running this page from a web server (not file://)</p>
+                    </div>
+                `;
+            }
+        }
+
+        run();
+    </script>
+</body>
+</html>
