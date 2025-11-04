@@ -80,6 +80,17 @@ pub struct TemplateApp {
     local_server_status: LocalServerStatus, // Status of locally launched server
     #[serde(skip)]
     last_rotated_tile: Option<(usize, bool)>, // (tile_index, clockwise) - for animation tracking
+    #[serde(skip)]
+    player_animations: std::collections::HashMap<PlayerID, PlayerAnimation>, // Active player movement animations
+}
+
+/// Tracks animation state for a player moving along their trail
+#[derive(Debug, Clone)]
+pub struct PlayerAnimation {
+    pub trail: tsurust_common::trail::Trail,
+    pub progress: f32, // 0.0 = start, 1.0 = end
+    pub start_time: std::time::Instant,
+    pub duration_secs: f32,
 }
 
 /// Tracks the status of a locally spawned server process.
@@ -101,6 +112,7 @@ impl Default for TemplateApp {
             app_state: AppState::MainMenu,
             sender: Some(sender),
             last_rotated_tile: None,
+            player_animations: std::collections::HashMap::new(),
             receiver: Some(receiver),
             current_player_id: 1, // Default player ID
             game_client: None,
@@ -119,7 +131,62 @@ impl TemplateApp {
         Default::default()
     }
 
-    fn render_ui(ctx: &Context, app_state: &mut AppState, current_player_id: PlayerID, is_online: bool, server_status: &LocalServerStatus, sender: &mpsc::Sender<Message>, last_rotated_tile: Option<(usize, bool)>) {
+    fn start_player_animations(&mut self, game: &Game) {
+        Self::start_player_animations_static(&mut self.player_animations, game);
+    }
+
+    fn start_player_animations_static(
+        player_animations: &mut std::collections::HashMap<PlayerID, PlayerAnimation>,
+        game: &Game
+    ) {
+        // Clear existing animations
+        player_animations.clear();
+
+        let now = std::time::Instant::now();
+        let animation_speed = 2.0; // tiles per second
+
+        // Create animations for all players who have trails
+        for (player_id, trail) in &game.player_trails {
+            if trail.segments.is_empty() {
+                continue; // No movement
+            }
+
+            // Calculate animation duration based on trail length
+            let duration = trail.length() as f32 / animation_speed;
+
+            player_animations.insert(*player_id, PlayerAnimation {
+                trail: trail.clone(),
+                progress: 0.0,
+                start_time: now,
+                duration_secs: duration.max(0.3), // Minimum 0.3 seconds
+            });
+        }
+    }
+
+    fn update_player_animations(&mut self, ctx: &Context) {
+        let now = std::time::Instant::now();
+        let mut completed_animations = Vec::new();
+
+        // Update progress for all active animations
+        for (player_id, animation) in self.player_animations.iter_mut() {
+            let elapsed = now.duration_since(animation.start_time).as_secs_f32();
+            animation.progress = (elapsed / animation.duration_secs).min(1.0);
+
+            if animation.progress >= 1.0 {
+                completed_animations.push(*player_id);
+            } else {
+                // Request repaint for next frame
+                ctx.request_repaint();
+            }
+        }
+
+        // Remove completed animations
+        for player_id in completed_animations {
+            self.player_animations.remove(&player_id);
+        }
+    }
+
+    fn render_ui(ctx: &Context, app_state: &mut AppState, current_player_id: PlayerID, is_online: bool, server_status: &LocalServerStatus, sender: &mpsc::Sender<Message>, last_rotated_tile: Option<(usize, bool)>, player_animations: &std::collections::HashMap<PlayerID, PlayerAnimation>) {
         match app_state {
             AppState::MainMenu => screens::main_menu::render(ctx, server_status, sender),
             AppState::CreateLobbyForm { lobby_name, player_name } => {
@@ -134,9 +201,9 @@ impl TemplateApp {
             AppState::LobbyPlacingFor(lobby, placing_for_id) => {
                 screens::lobby::render_lobby_placing_ui(ctx, lobby, *placing_for_id, is_online, sender)
             }
-            AppState::Game(game) => screens::game::render_game_ui(ctx, game, current_player_id, false, sender, last_rotated_tile),
+            AppState::Game(game) => screens::game::render_game_ui(ctx, game, current_player_id, false, sender, last_rotated_tile, player_animations),
             AppState::OnlineGame { game, waiting_for_server, .. } => {
-                screens::game::render_game_ui(ctx, game, current_player_id, *waiting_for_server, sender, last_rotated_tile)
+                screens::game::render_game_ui(ctx, game, current_player_id, *waiting_for_server, sender, last_rotated_tile, player_animations)
             }
             AppState::GameOver(game) => screens::game_over::render_game_over_ui(ctx, game, current_player_id, sender),
         }
@@ -157,6 +224,7 @@ impl eframe::App for TemplateApp {
                     &mut self.current_room_id,
                     &mut self.current_player_id,
                     &mut self.app_state,
+                    &mut self.player_animations,
                 );
             }
 
@@ -178,10 +246,13 @@ impl eframe::App for TemplateApp {
         // Render UI
         if let Some(tx) = &self.sender {
             let is_online = self.game_client.is_some();
-            Self::render_ui(ctx, &mut self.app_state, self.current_player_id, is_online, &self.local_server_status, tx, self.last_rotated_tile);
+            Self::render_ui(ctx, &mut self.app_state, self.current_player_id, is_online, &self.local_server_status, tx, self.last_rotated_tile, &self.player_animations);
 
             // Clear the rotation animation state after one frame
             self.last_rotated_tile = None;
+
+            // Update player animations
+            self.update_player_animations(ctx);
         }
     }
 
@@ -224,6 +295,7 @@ impl TemplateApp {
         current_room_id: &mut Option<String>,
         current_player_id: &mut PlayerID,
         app_state: &mut AppState,
+        player_animations: &mut std::collections::HashMap<PlayerID, PlayerAnimation>,
     ) {
         match server_msg {
             ServerMessage::RoomCreated { room_id, player_id } => {
@@ -257,6 +329,9 @@ impl TemplateApp {
                 if let AppState::OnlineGame { game, waiting_for_server, .. } = app_state {
                     *game = state.clone();
                     *waiting_for_server = false;
+
+                    // Start player movement animations
+                    Self::start_player_animations_static(player_animations, &state);
 
                     // Transition to GameOver if the game ended
                     if state.is_game_over() {
@@ -593,6 +668,9 @@ impl TemplateApp {
                 // Take ownership of the game state temporarily
                 if let AppState::Game(game) = std::mem::replace(&mut self.app_state, AppState::MainMenu) {
                     let game = Self::perform_local_tile_placement(game, tile_index);
+
+                    // Start animations for players who moved
+                    self.start_player_animations(&game);
 
                     if game.is_game_over() {
                         self.app_state = AppState::GameOver(game);

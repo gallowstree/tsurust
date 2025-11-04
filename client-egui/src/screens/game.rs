@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::mpsc;
 
 use eframe::egui::{self, Context};
@@ -5,7 +6,7 @@ use eframe::egui::{self, Context};
 use tsurust_common::board::{Player, PlayerID};
 use tsurust_common::game::Game;
 
-use crate::app::Message;
+use crate::app::{Message, PlayerAnimation};
 use crate::board_renderer::BoardRenderer;
 use crate::hand_renderer::HandRenderer;
 use crate::messaging::send_ui_message;
@@ -17,7 +18,8 @@ pub fn render_game_ui(
     client_player_id: PlayerID,
     waiting_for_server: bool,
     sender: &mpsc::Sender<Message>,
-    last_rotated_tile: Option<(usize, bool)>
+    last_rotated_tile: Option<(usize, bool)>,
+    player_animations: &HashMap<PlayerID, PlayerAnimation>,
 ) {
     egui::TopBottomPanel::top("top_panel")
         .resizable(true)
@@ -45,7 +47,7 @@ pub fn render_game_ui(
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.horizontal(|ui| {
             ui.add_space(20.);
-            ui.add(BoardRenderer::new(&game.board.history, &game.players, &game.tile_trails, &game.player_trails));
+            ui.add(BoardRenderer::new(&game.board.history, &game.players, &game.tile_trails, &game.player_trails, player_animations));
         });
     });
 
