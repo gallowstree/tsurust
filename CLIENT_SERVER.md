@@ -12,6 +12,14 @@ Tsurust uses **WebSockets** for all client-server communication. WebSockets prov
 - **Server**: `tokio-websockets` - High-performance WebSocket server with SIMD acceleration
 - **Client**: `ewebsock` - WebSocket client that compiles to both native and WASM (egui-compatible)
 
+## Implementation Decisions
+
+1. **RoomId Type**: `String` (human-readable, easy to share)
+2. **PlayerID**: Use existing `PlayerID` from `tsurust_common::board` if available, otherwise define in protocol
+3. **Serialization**: Add `Serialize`/`Deserialize` derives to `Game`, `Move`, `Tile` in `common/`
+4. **Authentication**: Not implemented initially - add in future iteration
+5. **Server Port**: Hardcoded to `8080`
+
 ## Architecture
 
 ```

@@ -10,7 +10,14 @@
       "Bash(git checkout:*)",
       "Bash(git push:*)",
       "Bash(cargo build:*)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(cat:*)",
+      "Bash(tasklist)",
+      "Bash(taskkill:*)",
+      "Bash(powershell:*)",
+      "Bash(netstat:*)",
+      "Bash(timeout 2 tail:*)",
+      "Bash(findstr:*)"
     ],
     "deny": [],
     "ask": []

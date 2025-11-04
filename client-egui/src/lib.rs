@@ -4,11 +4,13 @@ mod app;
 mod rendering;
 mod tile_button;
 mod board_renderer;
-mod backgr_render;
 mod hand_renderer;
 mod player_card;
 mod screens;
 mod components;
+mod messaging;
+mod stats_display;
+pub mod ws_client;
 
 pub use app::TemplateApp;
 

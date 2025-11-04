@@ -1,12 +1,14 @@
-use eframe::egui::{vec2, Frame, Rect, Response, Sense, Ui, Widget};
+use std::collections::HashMap;
+
 use eframe::emath::Vec2;
+use eframe::egui::{vec2, Frame, Rect, Response, Sense, Ui, Widget};
 use eframe::epaint::{Color32, Stroke};
 use egui::Pos2;
-use std::collections::HashMap;
+
 use tsurust_common::board::*;
 use tsurust_common::trail::Trail;
 
-use crate::rendering::{paint_tile_with_trails, endpoint_position, trail_to_world_coords, PINK};
+use crate::rendering::{endpoint_position, paint_tile_with_trails, trail_to_world_coords, PINK};
 
 const TILE_LENGTH: f32 = 120.0;
 const TILE_SIZE: Vec2 = Vec2::new(TILE_LENGTH, TILE_LENGTH);
@@ -15,7 +17,7 @@ const PLAYER_RADIUS: f32 = TILE_LENGTH / 7.;
 pub struct BoardRenderer<'a> {
     history: &'a Vec<Move>,
     players: &'a Vec<Player>,
-    tile_trails: &'a HashMap<CellCoord, Vec<(PlayerID, TileEndpoint)>>,
+    tile_trails: &'a Vec<(CellCoord, Vec<(PlayerID, TileEndpoint)>)>,
     player_trails: &'a HashMap<PlayerID, Trail>,
 }
 
@@ -23,7 +25,7 @@ impl <'a> BoardRenderer<'a> {
     pub(crate) fn new(
         history: &'a Vec<Move>,
         players: &'a Vec<Player>,
-        tile_trails: &'a HashMap<CellCoord, Vec<(PlayerID, TileEndpoint)>>,
+        tile_trails: &'a Vec<(CellCoord, Vec<(PlayerID, TileEndpoint)>)>,
         player_trails: &'a HashMap<PlayerID, Trail>
     ) -> Self {
         Self { history, players, tile_trails, player_trails }
@@ -120,7 +122,7 @@ fn rect_at_coord(cell_coord: CellCoord, board_rect: Rect) -> Rect {
 fn render_board_tiles(
     ui: &mut Ui,
     history: &Vec<Move>,
-    tile_trails: &HashMap<CellCoord, Vec<(PlayerID, TileEndpoint)>>,
+    tile_trails: &Vec<(CellCoord, Vec<(PlayerID, TileEndpoint)>)>,
     players: &Vec<Player>,
     board_rect: Rect
 ) {
@@ -132,13 +134,17 @@ fn render_board_tiles(
 
             // Get player paths for this tile
             let mut player_paths = HashMap::new();
-            if let Some(trail_entries) = tile_trails.get(&mov.cell) {
-                for &(player_id, segment_key) in trail_entries {
-                    // Find player color
-                    if let Some(player) = players.iter().find(|p| p.id == player_id) {
-                        let player_color = Color32::from_rgb(player.color.0, player.color.1, player.color.2);
-                        player_paths.insert(segment_key, (player_id, player_color));
+            // Find trail entries for this cell coordinate
+            for (cell_coord, trail_entries) in tile_trails {
+                if cell_coord == &mov.cell {
+                    for &(player_id, segment_key) in trail_entries {
+                        // Find player color
+                        if let Some(player) = players.iter().find(|p| p.id == player_id) {
+                            let player_color = Color32::from_rgb(player.color.0, player.color.1, player.color.2);
+                            player_paths.insert(segment_key, (player_id, player_color));
+                        }
                     }
+                    break;
                 }
             }
 
@@ -169,6 +175,4 @@ fn background(ui: &mut Ui, rect: Rect) {
         ui.painter().line_segment([start, end], Stroke::new(0.2, Color32::LIGHT_YELLOW));
 
     }
-
-    //crate::backgr_render::draw_yin_yang(ui, 120.);
 }

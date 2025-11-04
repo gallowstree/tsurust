@@ -3,7 +3,7 @@ use rand::thread_rng;
 
 use crate::board::*;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Deck {
     tiles: Vec<Tile>,
 }
@@ -72,8 +72,9 @@ impl Deck {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use crate::deck::Deck;
+    use super::Deck;
 
     #[test]
     fn take_works() {

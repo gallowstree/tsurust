@@ -1,12 +1,17 @@
-use eframe::egui;
 use std::sync::mpsc;
-use tsurust_common::board::{PlayerPos, PlayerID};
+
+use eframe::egui;
+
+use tsurust_common::board::{PlayerID, PlayerPos};
 use tsurust_common::lobby::Lobby;
+
 use crate::app::Message;
+use crate::messaging::send_ui_message;
 
 /// Component for rendering the lobby board with spawn positions
 pub struct LobbyBoard<'a> {
     lobby: &'a Lobby,
+    #[allow(dead_code)]
     current_player_id: PlayerID,
 }
 
@@ -18,6 +23,7 @@ impl<'a> LobbyBoard<'a> {
         }
     }
 
+    // TODO (low): use existing board rendering code and add support in there for spawns, etc.
     /// Render the lobby board in the given UI with the specified size
     pub fn render(&self, ui: &mut egui::Ui, board_size: f32, sender: &mpsc::Sender<Message>) {
         let (rect, _response) = ui.allocate_exact_size(egui::Vec2::splat(board_size), egui::Sense::hover());
@@ -147,9 +153,7 @@ impl<'a> LobbyBoard<'a> {
         ui.painter().circle_filled(spawn_center, 4.0, color);
 
         if spawn_response.clicked() {
-            if let Err(e) = sender.send(Message::PlacePawn(pos)) {
-                eprintln!("Failed to send PlacePawn message: {}", e);
-            }
+            send_ui_message(sender, Message::PlacePawn(pos));
         }
     }
 }

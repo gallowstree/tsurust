@@ -3,5 +3,6 @@
 members = [
     "client-egui",
     "common",
+    "server",
 ]
 resolver = "2"

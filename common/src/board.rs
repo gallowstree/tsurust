@@ -1,6 +1,9 @@
 use std::cmp::{max, min};
+use std::collections::HashSet;
 
 use arrayvec::ArrayVec;
+
+use crate::trail::{Trail, TrailSegment};
 /// Board GRID Constants
 /// 6 rows & 6 cols
 pub const BOARD_LENGTH: usize = 6;
@@ -15,7 +18,7 @@ pub const MAX: usize = BOARD_LENGTH - 1;
 /// enum { NE, NW, EN, ES, WN, WS, SW, SE } but with current order/num values
 pub type TileEndpoint = usize;
 ///  We represent a `Tile` as a collection of four `Segment`s.
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Tile {
     pub segments: [Segment; 4],
 }
@@ -30,20 +33,20 @@ impl std::fmt::Debug for Tile {
     }
 }
 /// which are just pairs of entry points connected by each segment.
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, serde::Serialize, serde::Deserialize)]
 pub struct Segment {
     pub a: TileEndpoint,
     pub b: TileEndpoint,
 }
 /// A position inside the board's grid
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct CellCoord {
     pub row: usize,
     pub col: usize,
 }
 /// Players and Pawns data
 pub type PlayerID = usize;
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Player {
     pub id: PlayerID,
     pub name: String,
@@ -77,7 +80,7 @@ impl Player {
     }
 }
 /// The position of a `Player`. Made of the cell coordinates and the current entry point id.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct PlayerPos {
     pub cell: CellCoord,
     pub endpoint: TileEndpoint,
@@ -85,7 +88,7 @@ pub struct PlayerPos {
 /// Game State
 /// Move: Modify board state.
 /// Represents a Player's move: which tile was placed where.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Move {
     pub tile: Tile,
     pub cell: CellCoord,
@@ -93,7 +96,7 @@ pub struct Move {
 }
 /// Board state history: all the moves that have been played
 /// Defines functions to calculate the effects of moves on the board's state
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Board {
     //setup: Vec<Player> something reflecting initial conditions?
     pub history: Vec<Move>,
@@ -188,10 +191,7 @@ impl Board {
     }
 
     /// Returns the final position after traversing the path starting at the given position
-    pub fn traverse_from(&self, starting_point: PlayerPos) -> crate::trail::Trail {
-        use crate::trail::{Trail, TrailSegment};
-        use std::collections::HashSet;
-
+    pub fn traverse_from(&self, starting_point: PlayerPos) -> Trail {
         let mut trail = Trail::new(starting_point);
         let mut current_pos = starting_point;
         let mut visited = HashSet::new();
@@ -294,8 +294,9 @@ pub fn seg(a: TileEndpoint, b: TileEndpoint) -> Segment {
     Segment::new(a, b)
 }
 
+#[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{seg, Board, CellCoord, Move, PlayerPos, Tile};
 
     #[test]
     fn test_next_pos_edge() {
@@ -415,7 +416,6 @@ mod tests {
         let trail = board.traverse_from(start_pos);
 
         // For now, just test that it doesn't crash - we'll figure out expected behavior later
-        println!("Final position: {:?}", trail.end_pos);
         assert!(trail.completed);
     }
 
@@ -433,8 +433,6 @@ mod tests {
 
         // Now traverse from the player's position - this simulates what happens in update_players()
         let trail = board.traverse_from(player_pos);
-
-        println!("Player moved from {:?} to {:?}", player_pos, trail.end_pos);
 
         // Should not cause stack overflow
         assert_ne!(trail.end_pos, player_pos); // Player should move somewhere
@@ -530,14 +528,6 @@ mod tests {
         assert_eq!(trail3.end_pos.cell, CellCoord { row: 1, col: 0 });
         assert_eq!(trail3.end_pos.endpoint, 3);
         assert!(trail3.completed, "Trail should be completed (no tile at next position)");
-
-        // Verify trail continuity: each segment's exit leads to next segment's position
-        println!("Trail segments:");
-        for (i, seg) in trail3.segments.iter().enumerate() {
-            println!("  Segment {}: ({},{}) entry {} -> exit {}",
-                i, seg.board_pos.0, seg.board_pos.1, seg.entry_point, seg.exit_point);
-        }
-        println!("Final position: {:?}", trail3.end_pos);
     }
 
     #[test]

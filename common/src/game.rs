@@ -1,25 +1,40 @@
+use std::cmp::min;
 use std::collections::HashMap;
 
 use crate::board::*;
 use crate::deck::Deck;
+use crate::trail::Trail;
 
-#[derive(Debug, Clone)]
+/// Statistics tracked for each player during a game
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PlayerStats {
+    pub player_id: PlayerID,
+    pub turns_survived: usize,        // Number of turns the player stayed alive
+    pub tiles_placed: usize,          // Number of tiles placed before elimination
+    pub path_length: usize,           // Number of unique tiles traversed
+    pub dragon_turns: usize,          // Number of turns holding the dragon
+    pub hand_tiles_remaining: usize,  // Tiles in hand when eliminated
+    pub elimination_turn: Option<usize>, // Turn number when eliminated (None if winner)
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum TurnResult {
     TurnAdvanced { turn_number: usize, next_player: PlayerID, eliminated: Vec<PlayerID> },
     PlayerWins { turn_number: usize, winner: PlayerID, eliminated: Vec<PlayerID> },
     Extinction { turn_number: usize, eliminated: Vec<PlayerID> },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Game {
     pub deck: Deck,
     pub board: Board,
     pub players: Vec<Player>,
     pub hands: HashMap<PlayerID, Vec<Tile>>,
-    pub tile_trails: HashMap<CellCoord, Vec<(PlayerID, TileEndpoint)>>, // tile -> list of (player, segment) pairs
+    pub tile_trails: Vec<(CellCoord, Vec<(PlayerID, TileEndpoint)>)>, // tile -> list of (player, segment) pairs
     pub player_trails: HashMap<PlayerID, crate::trail::Trail>, // Complete trail for each player
     pub current_player_id: PlayerID,
     pub dragon: Option<PlayerID>,
+    pub stats: HashMap<PlayerID, PlayerStats>, // Statistics for each player
 }
 
 impl Game {
@@ -28,7 +43,7 @@ impl Game {
         let mut hands = HashMap::new();
         let board = Board::new();
 
-        for mut player in &players {
+        for player in &players {
             hands.insert(player.id, deck.take_up_to(3));
         }
 
@@ -37,20 +52,40 @@ impl Game {
         // Initialize trails with each player's starting position
         let mut player_trails = HashMap::new();
         for player in &players {
-            player_trails.insert(player.id, crate::trail::Trail::new(player.pos));
+            player_trails.insert(player.id, Trail::new(player.pos));
+        }
+
+        // Initialize stats for each player
+        let mut stats = HashMap::new();
+        for player in &players {
+            stats.insert(player.id, PlayerStats {
+                player_id: player.id,
+                turns_survived: 0,
+                tiles_placed: 0,
+                path_length: 1, // Start with 1 for their starting position
+                dragon_turns: 0,
+                hand_tiles_remaining: 3, // Starting hand size
+                elimination_turn: None,
+            });
         }
 
         Game {
             players, hands, deck, board,
-            tile_trails: HashMap::new(),
+            tile_trails: Vec::new(),
             player_trails,
             current_player_id,
             dragon: None,
+            stats,
         }
     }
 
     pub fn curr_player_hand(&self) -> Vec<Tile> {
         self.hands[&self.current_player_id].clone()
+    }
+
+    /// Returns true if the game is over (1 or fewer players alive)
+    pub fn is_game_over(&self) -> bool {
+        self.players.iter().filter(|p| p.alive).count() <= 1
     }
 
     pub fn perform_move(&mut self, mov: Move) -> Result<TurnResult, &'static str> {
@@ -71,6 +106,11 @@ impl Game {
 
         // Validate player has the tile in hand
         self.deduct_tile_from_hand(mov)?;
+
+        // Update stats: increment tiles_placed for the current player
+        if let Some(stats) = self.stats.get_mut(&mov.player_id) {
+            stats.tiles_placed += 1;
+        }
 
         // Place the tile on the board
         self.board.place_tile(mov);
@@ -116,13 +156,6 @@ impl Game {
 
             // Collect trail information if player moved (either to different cell or different endpoint)
             if old_pos != new_pos {
-                if old_pos.cell != new_pos.cell {
-                    println!("DEBUG: Player {} moved from cell {:?} to cell {:?}",
-                        player.id, old_pos.cell, new_pos.cell);
-                } else {
-                    println!("DEBUG: Player {} moved within cell {:?} (endpoint {} -> {})",
-                        player.id, old_pos.cell, old_pos.endpoint, new_pos.endpoint);
-                }
                 trails_to_record.push((player.id, old_pos)); // Record where they came FROM
 
                 // Extend player's trail with new segments
@@ -133,9 +166,13 @@ impl Game {
                     player_trail.end_pos = new_pos;
                     player_trail.completed = trail.completed;
                 }
-            } else {
-                println!("DEBUG: Player {} stayed at same position {:?}",
-                    player.id, old_pos);
+
+                // Update stats: increment path_length for each new cell visited
+                if old_pos.cell != new_pos.cell {
+                    if let Some(stats) = self.stats.get_mut(&player.id) {
+                        stats.path_length += 1;
+                    }
+                }
             }
 
             player.pos = new_pos;
@@ -166,16 +203,15 @@ impl Game {
 
             if let Some(segment) = segment {
                 // Use min(from, to) convention for segment key
-                let segment_key = std::cmp::min(segment.a, segment.b);
+                let segment_key = min(segment.a, segment.b);
 
                 // Record that this player used this segment (every time they pass through)
-                self.tile_trails
-                    .entry(exit_pos.cell)
-                    .or_insert_with(Vec::new)
-                    .push((player_id, segment_key));
-
-                println!("DEBUG: Recording trail for player {} at cell {:?}, segment {}",
-                    player_id, exit_pos.cell, segment_key);
+                // Find existing entry for this cell or add a new one
+                if let Some((_, trail_entries)) = self.tile_trails.iter_mut().find(|(cell, _)| cell == &exit_pos.cell) {
+                    trail_entries.push((player_id, segment_key));
+                } else {
+                    self.tile_trails.push((exit_pos.cell, vec![(player_id, segment_key)]));
+                }
             }
         }
     }
@@ -212,6 +248,30 @@ impl Game {
 
     fn complete_turn(&mut self, eliminated: Vec<PlayerID>) -> TurnResult {
         let turn_number = self.board.history.len(); // Turn number starts from 1
+
+        // Update stats for eliminated players
+        for &player_id in &eliminated {
+            if let Some(stats) = self.stats.get_mut(&player_id) {
+                stats.elimination_turn = Some(turn_number);
+                stats.hand_tiles_remaining = self.hands.get(&player_id).map(|h| h.len()).unwrap_or(0);
+            }
+        }
+
+        // Increment turns_survived for all alive players
+        for player in &self.players {
+            if player.alive {
+                if let Some(stats) = self.stats.get_mut(&player.id) {
+                    stats.turns_survived += 1;
+                }
+            }
+        }
+
+        // Increment dragon_turns for the player holding the dragon
+        if let Some(dragon_holder) = self.dragon {
+            if let Some(stats) = self.stats.get_mut(&dragon_holder) {
+                stats.dragon_turns += 1;
+            }
+        }
 
         // Count remaining alive players
         let alive_count = self.players.iter().filter(|p| p.alive).count();
@@ -305,7 +365,11 @@ mod tests {
         assert!(result.is_ok());
 
         // Check that trail was recorded for the tile
-        let trail_entries = game.tile_trails.get(&CellCoord { row: 1, col: 1 }).unwrap();
+        let trail_entries = game.tile_trails
+            .iter()
+            .find(|(coord, _)| coord == &CellCoord { row: 1, col: 1 })
+            .map(|(_, entries)| entries)
+            .unwrap();
 
         // Player started at endpoint 0, tile connects 0-1, so segment key should be min(0,1) = 0
         assert_eq!(trail_entries.len(), 1);
@@ -349,7 +413,11 @@ mod tests {
         assert!(result.is_ok());
 
         // Check that trails were recorded for both players
-        let trail_entries = game.tile_trails.get(&CellCoord { row: 1, col: 1 }).unwrap();
+        let trail_entries = game.tile_trails
+            .iter()
+            .find(|(coord, _)| coord == &CellCoord { row: 1, col: 1 })
+            .map(|(_, entries)| entries)
+            .unwrap();
 
         // Should have exactly 2 entries: one for each player
         assert_eq!(trail_entries.len(), 2);
@@ -413,7 +481,10 @@ mod tests {
         assert!(result1.is_ok());
 
         // Check that player 1 moved to a different cell and trail was recorded
-        let trail_entries_1_1 = game.tile_trails.get(&CellCoord { row: 1, col: 1 });
+        let trail_entries_1_1 = game.tile_trails
+            .iter()
+            .find(|(coord, _)| coord == &CellCoord { row: 1, col: 1 })
+            .map(|(_, entries)| entries);
         if let Some(entries) = trail_entries_1_1 {
             assert!(entries.contains(&(1, 2))); // Player 1 used segment 2-3 (key=2)
         }
@@ -431,23 +502,14 @@ mod tests {
         let result2 = game.perform_move(mov2);
         assert!(result2.is_ok());
 
-        // Step 3: Place a tile at a strategic location that will cause both players
-        // to return to one of the previous tiles through game mechanics
-        // This is the challenging part - we need to set up a path that naturally
-        // causes players to loop back.
-
-        // For simplicity, let's verify that when players do end up in the same cell
-        // and we place a tile there, both their trails are recorded correctly.
-
-        // Let's manually position both players in the same cell to simulate
-        // them having arrived there through previous moves
+        // Manually position both players in cell (1,2) to simulate they arrived there
         game.players[0].pos = PlayerPos { cell: CellCoord { row: 1, col: 2 }, endpoint: 0 };
         game.players[1].pos = PlayerPos { cell: CellCoord { row: 1, col: 2 }, endpoint: 4 };
 
-        // Now place a tile that will cause both to traverse and record trails
+        // Place a tile at (1,2) that will cause both to traverse
         let tile3 = create_straight_tile(); // 0-1, 2-3, 4-5, 6-7
         let mov3 = Move {
-            player_id: 1, // Current player's turn
+            player_id: 1,
             cell: CellCoord { row: 1, col: 2 },
             tile: tile3,
         };
@@ -457,48 +519,16 @@ mod tests {
         assert!(result3.is_ok());
 
         // Verify that both players' trails are recorded at (1,2)
-        let trail_entries_1_2 = game.tile_trails.get(&CellCoord { row: 1, col: 2 }).unwrap();
+        let trail_entries_1_2 = game.tile_trails
+            .iter()
+            .find(|(coord, _)| coord == &CellCoord { row: 1, col: 2 })
+            .map(|(_, entries)| entries)
+            .unwrap();
+        assert!(trail_entries_1_2.contains(&(1, 0))); // Player 1, segment 0-1
+        assert!(trail_entries_1_2.contains(&(2, 4))); // Player 2, segment 4-5
 
-        // Should have trails for both players using different segments
-        // Player 1 at endpoint 0 uses segment 0-1 (key=0)
-        // Player 2 at endpoint 4 uses segment 4-5 (key=4)
-        assert!(trail_entries_1_2.contains(&(1, 0))); // Player 1, segment 0
-        assert!(trail_entries_1_2.contains(&(2, 4))); // Player 2, segment 4
-
-        // Now simulate both players returning to this tile again
-        // Position them back in the same cell from different endpoints
-        game.players[0].pos = PlayerPos { cell: CellCoord { row: 1, col: 2 }, endpoint: 2 };
-        game.players[1].pos = PlayerPos { cell: CellCoord { row: 1, col: 2 }, endpoint: 6 };
-
-        // Place another tile at the same location
-        let tile4 = create_curve_tile(); // 0-2, 1-3, 4-6, 5-7
-        let mov4 = Move {
-            player_id: 2, // Player 2's turn now
-            cell: CellCoord { row: 1, col: 2 },
-            tile: tile4,
-        };
-        game.hands.get_mut(&2).unwrap().push(mov4.tile);
-
-        let result4 = game.perform_move(mov4);
-        assert!(result4.is_ok());
-
-        // Verify that both passes are recorded
-        let final_trail_entries = game.tile_trails.get(&CellCoord { row: 1, col: 2 }).unwrap();
-
-        // Should have 4 entries total: 2 from first pass + 2 from second pass
-        assert_eq!(final_trail_entries.len(), 4);
-
-        // Verify all expected trail entries exist
-        assert!(final_trail_entries.contains(&(1, 0))); // Player 1, first pass
-        assert!(final_trail_entries.contains(&(2, 4))); // Player 2, first pass
-        assert!(final_trail_entries.contains(&(1, 0))); // Player 1, second pass (segment 0-2, key=0)
-        assert!(final_trail_entries.contains(&(2, 4))); // Player 2, second pass (segment 4-6, key=4)
-
-        // Count occurrences to verify no overwriting occurred
-        let player1_count = final_trail_entries.iter().filter(|(pid, _)| *pid == 1).count();
-        let player2_count = final_trail_entries.iter().filter(|(pid, _)| *pid == 2).count();
-
-        assert_eq!(player1_count, 2); // Player 1 should appear twice
-        assert_eq!(player2_count, 2); // Player 2 should appear twice
+        // The test is complete - we've verified that multiple players can have their
+        // trails recorded when passing through the same tile. Testing a second pass
+        // through would require placing a tile at the same location which is invalid.
     }
 }

@@ -1,5 +1,8 @@
 use std::collections::{HashMap, HashSet};
-use crate::board::{Player, PlayerPos, PlayerID, CellCoord};
+
+use serde::{Deserialize, Serialize};
+
+use crate::board::{CellCoord, Player, PlayerID, PlayerPos};
 use crate::game::Game;
 
 pub type LobbyId = String;
@@ -26,7 +29,7 @@ pub fn normalize_lobby_id(id: &str) -> Option<LobbyId> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Lobby {
     pub id: LobbyId,
     pub name: String,
@@ -35,7 +38,7 @@ pub struct Lobby {
     pub max_players: usize, // Default: 8, minimum: 2
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LobbyPlayer {
     pub id: PlayerID,
     pub name: String,
@@ -146,7 +149,7 @@ impl Lobby {
             return Err(LobbyError::GameNotStarted);
         }
 
-        let players: Vec<Player> = self.players
+        let mut players: Vec<Player> = self.players
             .values()
             .filter_map(|lobby_player| {
                 lobby_player.spawn_position.map(|pos| {
@@ -163,6 +166,9 @@ impl Lobby {
         if players.len() < 2 {
             return Err(LobbyError::NotEnoughPlayers);
         }
+
+        // Sort players by ID to ensure consistent ordering
+        players.sort_by_key(|p| p.id);
 
         Ok(Game::new(players))
     }
@@ -453,6 +459,117 @@ mod tests {
         });
 
         assert!(matches!(result, Err(LobbyError::NoAvailableColors)));
+    }
+
+    // Tests for lobby synchronization (simulating server messages)
+    #[test]
+    fn test_lobby_sync_multiple_players_joining() {
+        // Simulate a client receiving multiple PlayerJoined messages
+        let mut lobby = Lobby::new("ROOM1".to_string(), "Test Room".to_string());
+
+        // First player joins (creator)
+        lobby.handle_event(LobbyEvent::PlayerJoined {
+            player_id: 1,
+            player_name: "Alice".to_string(),
+        }).unwrap();
+
+        // Second player joins (via server broadcast)
+        lobby.handle_event(LobbyEvent::PlayerJoined {
+            player_id: 2,
+            player_name: "Bob".to_string(),
+        }).unwrap();
+
+        // Third player joins (via server broadcast)
+        lobby.handle_event(LobbyEvent::PlayerJoined {
+            player_id: 3,
+            player_name: "Charlie".to_string(),
+        }).unwrap();
+
+        // Verify all players are in the lobby
+        assert_eq!(lobby.players.len(), 3);
+        assert!(lobby.players.contains_key(&1));
+        assert!(lobby.players.contains_key(&2));
+        assert!(lobby.players.contains_key(&3));
+
+        assert_eq!(lobby.players[&1].name, "Alice");
+        assert_eq!(lobby.players[&2].name, "Bob");
+        assert_eq!(lobby.players[&3].name, "Charlie");
+    }
+
+    #[test]
+    fn test_lobby_sync_duplicate_player_join_idempotent() {
+        // Ensure that if a player already exists, joining again doesn't break things
+        let mut lobby = Lobby::new("ROOM1".to_string(), "Test Room".to_string());
+
+        // First join
+        lobby.handle_event(LobbyEvent::PlayerJoined {
+            player_id: 1,
+            player_name: "Alice".to_string(),
+        }).unwrap();
+
+        // Duplicate join with same ID (might happen in edge cases)
+        // This should either succeed idempotently or return a specific error
+        let result = lobby.handle_event(LobbyEvent::PlayerJoined {
+            player_id: 1,
+            player_name: "Alice2".to_string(),
+        });
+
+        // Currently, this will overwrite - verify the behavior
+        // In a real system, you might want to prevent this
+        assert!(result.is_ok());
+        assert_eq!(lobby.players.len(), 1);
+    }
+
+    #[test]
+    fn test_lobby_sync_player_ids_not_sequential() {
+        // Test that lobby can handle non-sequential player IDs
+        // (e.g., if player 2 left and player 4 joined)
+        let mut lobby = Lobby::new("ROOM1".to_string(), "Test Room".to_string());
+
+        lobby.handle_event(LobbyEvent::PlayerJoined {
+            player_id: 1,
+            player_name: "Alice".to_string(),
+        }).unwrap();
+
+        lobby.handle_event(LobbyEvent::PlayerJoined {
+            player_id: 3,  // Skipping 2
+            player_name: "Charlie".to_string(),
+        }).unwrap();
+
+        lobby.handle_event(LobbyEvent::PlayerJoined {
+            player_id: 7,  // Large gap
+            player_name: "Grace".to_string(),
+        }).unwrap();
+
+        assert_eq!(lobby.players.len(), 3);
+        assert!(lobby.players.contains_key(&1));
+        assert!(lobby.players.contains_key(&3));
+        assert!(lobby.players.contains_key(&7));
+    }
+
+    #[test]
+    fn test_lobby_sync_colors_assigned_correctly() {
+        // Verify that when multiple players join, each gets a unique color
+        let mut lobby = Lobby::new("ROOM1".to_string(), "Test Room".to_string());
+
+        for i in 1..=4 {
+            lobby.handle_event(LobbyEvent::PlayerJoined {
+                player_id: i,
+                player_name: format!("Player{}", i),
+            }).unwrap();
+        }
+
+        // Collect all colors
+        let colors: Vec<_> = (1..=4)
+            .map(|id| lobby.players[&id].color)
+            .collect();
+
+        // Verify all colors are unique
+        for i in 0..colors.len() {
+            for j in (i+1)..colors.len() {
+                assert_ne!(colors[i], colors[j], "Players {} and {} have the same color", i+1, j+1);
+            }
+        }
     }
 
     // Helper function for tests that need a ready lobby

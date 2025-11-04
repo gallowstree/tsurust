@@ -1,4 +1,5 @@
 use egui::{Color32, Rect, Response, Sense, Ui, Vec2, Widget};
+
 use tsurust_common::board::Player;
 
 pub struct PlayerCard<'a> {
@@ -8,6 +9,7 @@ pub struct PlayerCard<'a> {
     is_current: bool,
     has_dragon: bool,
     is_winner: bool,
+    is_you: bool,
 }
 
 impl<'a> PlayerCard<'a> {
@@ -19,6 +21,7 @@ impl<'a> PlayerCard<'a> {
             is_current: false,
             has_dragon,
             is_winner: false,
+            is_you: false,
         }
     }
 
@@ -29,6 +32,11 @@ impl<'a> PlayerCard<'a> {
 
     pub fn winner(mut self) -> Self {
         self.is_winner = true;
+        self
+    }
+
+    pub fn you(mut self) -> Self {
+        self.is_you = true;
         self
     }
 }
@@ -84,11 +92,16 @@ impl<'a> Widget for PlayerCard<'a> {
                 );
             }
 
-            // Player name (color name)
+            // Player name (color name) with "(You)" indicator
             let name_pos = rect.min + Vec2::new(32.0, 12.0);
             let name = color_to_name(self.player.color);
+            let display_name = if self.is_you {
+                format!("{} (You)", name)
+            } else {
+                name.to_string()
+            };
             let font_id = egui::FontId::proportional(16.0); // Larger font
-            ui.painter().text(name_pos, egui::Align2::LEFT_TOP, name, font_id, visuals.text_color());
+            ui.painter().text(name_pos, egui::Align2::LEFT_TOP, display_name, font_id, visuals.text_color());
 
             // Hand indicator - rectangles for tiles (for alive players and winners)
             if self.player.alive || self.is_winner {

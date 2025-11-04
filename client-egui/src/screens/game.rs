@@ -1,13 +1,17 @@
-use eframe::egui::{self, Context};
 use std::sync::mpsc;
+
+use eframe::egui::{self, Context};
+
+use tsurust_common::board::{Player, PlayerID};
+use tsurust_common::game::Game;
+
 use crate::app::Message;
 use crate::board_renderer::BoardRenderer;
 use crate::hand_renderer::HandRenderer;
+use crate::messaging::send_ui_message;
 use crate::player_card::PlayerCard;
-use tsurust_common::board::Player;
-use tsurust_common::game::Game;
 
-pub fn render_game_ui(ctx: &Context, game: &mut Game, sender: &mpsc::Sender<Message>) {
+pub fn render_game_ui(ctx: &Context, game: &mut Game, client_player_id: PlayerID, waiting_for_server: bool, sender: &mpsc::Sender<Message>) {
     egui::TopBottomPanel::top("top_panel")
         .resizable(true)
         .min_height(32.0)
@@ -15,14 +19,18 @@ pub fn render_game_ui(ctx: &Context, game: &mut Game, sender: &mpsc::Sender<Mess
             ui.horizontal(|ui| {
                 ui.add_space(10.0);
                 if ui.button("🔄 Restart Game").clicked() {
-                    if let Err(e) = sender.send(Message::RestartGame) {
-                        eprintln!("Failed to send RestartGame message: {}", e);
-                    }
+                    send_ui_message(sender, Message::RestartGame);
                 }
                 if ui.button("⬅ Back to Menu").clicked() {
-                    if let Err(e) = sender.send(Message::BackToMainMenu) {
-                        eprintln!("Failed to send BackToMainMenu message: {}", e);
-                    }
+                    send_ui_message(sender, Message::BackToMainMenu);
+                }
+
+                // Show waiting indicator for online games
+                if waiting_for_server {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.add_space(10.0);
+                        ui.label("⏳ Waiting for server...");
+                    });
                 }
             });
         });
@@ -82,6 +90,9 @@ pub fn render_game_ui(ctx: &Context, game: &mut Game, sender: &mpsc::Sender<Mess
                     if is_winner {
                         card = card.winner();
                     }
+                    if player.id == client_player_id {
+                        card = card.you();
+                    }
                     ui.add(card);
                 });
             }
@@ -90,8 +101,10 @@ pub fn render_game_ui(ctx: &Context, game: &mut Game, sender: &mpsc::Sender<Mess
             ui.separator();
         });
 
-        // Hand section
-        let hand = game.curr_player_hand().clone();
+        // Hand section - show this client's hand, not the current player's hand
+        let hand = game.hands.get(&client_player_id)
+            .cloned()
+            .unwrap_or_default();
         ui.add(HandRenderer::new(hand, sender.clone()));
     });
 }
