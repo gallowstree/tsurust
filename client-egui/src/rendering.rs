@@ -20,17 +20,32 @@ pub fn paint_tile(tile: &Tile, rect: Rect, painter: &Painter) {
     paint_tile_with_trails(tile, rect, painter, &HashMap::new());
 }
 
+pub fn paint_tile_with_rotation(tile: &Tile, rect: Rect, painter: &Painter, rotation_angle: f32) {
+    paint_tile_with_trails_and_rotation(tile, rect, painter, &HashMap::new(), rotation_angle);
+}
+
 pub fn paint_tile_with_trails(
     tile: &Tile,
     rect: Rect,
     painter: &Painter,
     player_paths: &HashMap<TileEndpoint, (PlayerID, Color32)>
 ) {
+    paint_tile_with_trails_and_rotation(tile, rect, painter, player_paths, 0.0);
+}
+
+pub fn paint_tile_with_trails_and_rotation(
+    tile: &Tile,
+    rect: Rect,
+    painter: &Painter,
+    player_paths: &HashMap<TileEndpoint, (PlayerID, Color32)>,
+    rotation_angle: f32
+) {
     // Draw tile background
     painter.rect_filled(rect, 4.0, TILE_BACKGROUND);
     painter.rect_stroke(rect, 4.0, Stroke::new(1.0, Color32::from_gray(80)));
 
     let to_screen = tile_to_screen_transform(rect);
+    let center = rect.center();
 
     tile.segments
         .iter()
@@ -59,10 +74,35 @@ pub fn paint_tile_with_trails(
             [start_chunk, middle_chunk, end_chunk]
                 .iter()
                 .for_each(|line| {
-                    let points = line.map(|point| to_screen.transform_pos(point));
+                    let points = line.map(|point| {
+                        let screen_pos = to_screen.transform_pos(point);
+                        // Apply rotation around the tile center
+                        rotate_point(screen_pos, center, rotation_angle)
+                    });
                     painter.line_segment(points, stroke);
                 });
         });
+}
+
+/// Rotate a point around a center by the given angle (in radians)
+fn rotate_point(point: Pos2, center: Pos2, angle: f32) -> Pos2 {
+    if angle == 0.0 {
+        return point;
+    }
+
+    let cos_a = angle.cos();
+    let sin_a = angle.sin();
+
+    // Translate to origin
+    let dx = point.x - center.x;
+    let dy = point.y - center.y;
+
+    // Rotate
+    let rotated_x = dx * cos_a - dy * sin_a;
+    let rotated_y = dx * sin_a + dy * cos_a;
+
+    // Translate back
+    pos2(center.x + rotated_x, center.y + rotated_y)
 }
 
 pub fn paint_tile_button_hoverlay(rect: Rect, painter: &Painter) {

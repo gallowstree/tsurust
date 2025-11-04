@@ -78,6 +78,8 @@ pub struct TemplateApp {
     current_room_id: Option<String>, // Track current room we're in
     #[serde(skip)]
     local_server_status: LocalServerStatus, // Status of locally launched server
+    #[serde(skip)]
+    last_rotated_tile: Option<(usize, bool)>, // (tile_index, clockwise) - for animation tracking
 }
 
 /// Tracks the status of a locally spawned server process.
@@ -98,6 +100,7 @@ impl Default for TemplateApp {
             label: "Tsurust".to_owned(),
             app_state: AppState::MainMenu,
             sender: Some(sender),
+            last_rotated_tile: None,
             receiver: Some(receiver),
             current_player_id: 1, // Default player ID
             game_client: None,
@@ -116,7 +119,7 @@ impl TemplateApp {
         Default::default()
     }
 
-    fn render_ui(ctx: &Context, app_state: &mut AppState, current_player_id: PlayerID, is_online: bool, server_status: &LocalServerStatus, sender: &mpsc::Sender<Message>) {
+    fn render_ui(ctx: &Context, app_state: &mut AppState, current_player_id: PlayerID, is_online: bool, server_status: &LocalServerStatus, sender: &mpsc::Sender<Message>, last_rotated_tile: Option<(usize, bool)>) {
         match app_state {
             AppState::MainMenu => screens::main_menu::render(ctx, server_status, sender),
             AppState::CreateLobbyForm { lobby_name, player_name } => {
@@ -131,9 +134,9 @@ impl TemplateApp {
             AppState::LobbyPlacingFor(lobby, placing_for_id) => {
                 screens::lobby::render_lobby_placing_ui(ctx, lobby, *placing_for_id, is_online, sender)
             }
-            AppState::Game(game) => screens::game::render_game_ui(ctx, game, current_player_id, false, sender),
+            AppState::Game(game) => screens::game::render_game_ui(ctx, game, current_player_id, false, sender, last_rotated_tile),
             AppState::OnlineGame { game, waiting_for_server, .. } => {
-                screens::game::render_game_ui(ctx, game, current_player_id, *waiting_for_server, sender)
+                screens::game::render_game_ui(ctx, game, current_player_id, *waiting_for_server, sender, last_rotated_tile)
             }
             AppState::GameOver(game) => screens::game_over::render_game_over_ui(ctx, game, current_player_id, sender),
         }
@@ -175,7 +178,10 @@ impl eframe::App for TemplateApp {
         // Render UI
         if let Some(tx) = &self.sender {
             let is_online = self.game_client.is_some();
-            Self::render_ui(ctx, &mut self.app_state, self.current_player_id, is_online, &self.local_server_status, tx);
+            Self::render_ui(ctx, &mut self.app_state, self.current_player_id, is_online, &self.local_server_status, tx, self.last_rotated_tile);
+
+            // Clear the rotation animation state after one frame
+            self.last_rotated_tile = None;
         }
     }
 
@@ -559,8 +565,7 @@ impl TemplateApp {
     }
 
     fn handle_tile_rotated(&mut self, tile_index: usize, clockwise: bool) {
-        // Determine which player's hand to rotate BEFORE getting mutable reference
-        let is_online = matches!(&self.app_state, AppState::OnlineGame { .. });
+        // Get the player whose tiles we're viewing (always client_player_id)
         let client_player_id = self.current_player_id;
 
         // Get mutable reference to the game, whether local or online
@@ -570,16 +575,13 @@ impl TemplateApp {
             _ => return,
         };
 
-        // In multiplayer, only allow rotating your own hand
-        let player_id = if is_online {
-            client_player_id
-        } else {
-            game.current_player_id  // In local games, use current player
-        };
-
-        if let Some(hand) = game.hands.get_mut(&player_id) {
+        // Always rotate the client player's tiles (the ones being displayed)
+        // This allows planning/previewing even when it's not your turn in local games
+        if let Some(hand) = game.hands.get_mut(&client_player_id) {
             if tile_index < hand.len() {
                 hand[tile_index] = hand[tile_index].rotated(clockwise);
+                // Track the rotation for animation
+                self.last_rotated_tile = Some((tile_index, clockwise));
             }
         }
     }

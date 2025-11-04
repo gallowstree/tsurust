@@ -17,7 +17,9 @@
       "Bash(powershell:*)",
       "Bash(netstat:*)",
       "Bash(timeout 2 tail:*)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(timeout 3 tail:*)",
+      "Bash(nul)"
     ],
     "deny": [],
     "ask": []

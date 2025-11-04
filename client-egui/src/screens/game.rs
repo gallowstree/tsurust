@@ -11,7 +11,14 @@ use crate::hand_renderer::HandRenderer;
 use crate::messaging::send_ui_message;
 use crate::player_card::PlayerCard;
 
-pub fn render_game_ui(ctx: &Context, game: &mut Game, client_player_id: PlayerID, waiting_for_server: bool, sender: &mpsc::Sender<Message>) {
+pub fn render_game_ui(
+    ctx: &Context,
+    game: &mut Game,
+    client_player_id: PlayerID,
+    waiting_for_server: bool,
+    sender: &mpsc::Sender<Message>,
+    last_rotated_tile: Option<(usize, bool)>
+) {
     egui::TopBottomPanel::top("top_panel")
         .resizable(true)
         .min_height(32.0)
@@ -105,6 +112,9 @@ pub fn render_game_ui(ctx: &Context, game: &mut Game, client_player_id: PlayerID
         let hand = game.hands.get(&client_player_id)
             .cloned()
             .unwrap_or_default();
-        ui.add(HandRenderer::new(hand, sender.clone()));
+        ui.add(
+            HandRenderer::new(hand, sender.clone())
+                .with_last_rotated(last_rotated_tile)
+        );
     });
 }
