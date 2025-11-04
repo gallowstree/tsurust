@@ -86,9 +86,13 @@ fn test_place_tile_accepts_valid_move() {
     // Player 1's turn
     assert_eq!(room.game.current_player_id, 1);
 
+    // Add tile to player 1's hand
+    let tile = create_test_tile();
+    room.game.hands.get_mut(&1).unwrap().push(tile);
+
     // Player 1 places a valid tile
     let mov = Move {
-        tile: create_test_tile(),
+        tile,
         cell: CellCoord { row: 0, col: 0 },
         player_id: 1,
     };

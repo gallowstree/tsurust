@@ -19,19 +19,13 @@
    - Implement heartbeat/ping-pong for connection health
    - Add proper error handling and validation
 
-3. **Client-Server State Sync**
-   - Wire up `GameStateUpdate` handler in client (`app.rs:194`)
-   - Implement actual game moves through server (currently local only)
-   - Synchronize lobby state between clients
-   - Handle server errors with user feedback
+3. **WASM Compilation**
+   - Enable WASM compilation for client-egui
+   - Test WASM build and browser deployment
+   - Ensure WebSocket client works in browser
+   - Add build scripts and documentation for WASM deployment
 
-4. **Multiplayer Game Flow**
-   - Send tile placement moves to server instead of handling locally
-   - Receive and apply game state updates from server
-   - Display other players' actions in real-time
-   - Handle turn management across clients
-
-5. **Testing & Polish**
+4. **Testing & Polish**
    - **[CRITICAL]** Add integration tests for online multiplayer (tile placement, state sync)
    - **[CRITICAL]** Add serialization tests for all protocol messages (prevent JSON key errors)
    - Test multiple clients in same game
@@ -75,17 +69,10 @@
 
 ### High Priority
 - **Serialization safety** - Add compile-time checks to prevent non-string HashMap keys in serializable structs
-  - Issue: `player_trails` and `tile_trails` fields broke online multiplayer due to JSON serialization failure
-  - Fix: Marked as `#[serde(skip)]` but need better safeguards
   - TODO: Add tests that serialize/deserialize all protocol messages
-- **Server error logging** - Improve error visibility in async handlers
-  - Issue: Serialization errors were silently failing until explicit logging added
-  - Fix: Always use `match` with explicit error logging, never `if let Ok(...)`
-  - TODO: Add structured logging with levels (error, warn, info, debug)
 
 ### Medium Priority
 - `common/src/lib.rs:14` - Rename TileEndpoint references to "entry point"
 - `common/src/board.rs:14` - Convert TileEndpoint from usize to enum
 - Trail system - Current tile-based approach should be replaced with TRAILS.md design
 - Unicode glyph rendering - Consider runtime detection if more rendering issues occur
-- Remove debug logging from `server/src/handler.rs` and `server/src/room.rs` once online multiplayer is stable

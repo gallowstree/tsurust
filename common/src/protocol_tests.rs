@@ -166,8 +166,53 @@ fn test_game_with_moves_serialization() {
     assert!(!json.is_empty());
 
     // Verify it can be deserialized
-    let _deserialized: Game = serde_json::from_str(&json)
+    let deserialized: Game = serde_json::from_str(&json)
         .expect("Game with moves must be deserializable");
+
+    // Verify tile_trails were preserved
+    assert!(!deserialized.tile_trails.is_empty(), "tile_trails should be preserved after serialization");
+    assert!(!deserialized.player_trails.is_empty(), "player_trails should be preserved after serialization");
+}
+
+/// Test that tile_trails (Vec of tuples) serializes correctly
+/// This was the specific bug that broke multiplayer - JSON requires string map keys
+#[test]
+fn test_tile_trails_vec_serialization() {
+    // Create game with player starting in a safe interior position
+    let players = vec![
+        Player::new(1, PlayerPos::new(2, 2, 4)), // Middle of board
+    ];
+    let mut game = Game::new(players);
+
+    // Place a single tile to populate tile_trails
+    let tile = create_test_tile();
+    game.hands.get_mut(&1).unwrap().push(tile);
+
+    let mov = Move {
+        tile,
+        cell: CellCoord { row: 2, col: 2 },
+        player_id: 1,
+    };
+
+    game.perform_move(mov).expect("Move should be valid");
+
+    // Verify tile_trails is populated
+    assert!(!game.tile_trails.is_empty(), "tile_trails should have entries");
+
+    // Critical: This must not fail with "key must be a string" error
+    let json = serde_json::to_string(&game)
+        .expect("tile_trails (Vec) must serialize to JSON");
+
+    // Verify the JSON doesn't contain problematic structures
+    assert!(json.contains("tile_trails"), "JSON should contain tile_trails field");
+
+    // Verify round-trip works
+    let deserialized: Game = serde_json::from_str(&json)
+        .expect("tile_trails must deserialize from JSON");
+
+    // Verify tile_trails structure is preserved
+    assert_eq!(deserialized.tile_trails.len(), game.tile_trails.len(),
+               "tile_trails length should be preserved");
 }
 
 // Helper function to create a test game

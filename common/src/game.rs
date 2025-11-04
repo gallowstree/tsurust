@@ -365,7 +365,11 @@ mod tests {
         assert!(result.is_ok());
 
         // Check that trail was recorded for the tile
-        let trail_entries = game.tile_trails.get(&CellCoord { row: 1, col: 1 }).unwrap();
+        let trail_entries = game.tile_trails
+            .iter()
+            .find(|(coord, _)| coord == &CellCoord { row: 1, col: 1 })
+            .map(|(_, entries)| entries)
+            .unwrap();
 
         // Player started at endpoint 0, tile connects 0-1, so segment key should be min(0,1) = 0
         assert_eq!(trail_entries.len(), 1);
@@ -409,7 +413,11 @@ mod tests {
         assert!(result.is_ok());
 
         // Check that trails were recorded for both players
-        let trail_entries = game.tile_trails.get(&CellCoord { row: 1, col: 1 }).unwrap();
+        let trail_entries = game.tile_trails
+            .iter()
+            .find(|(coord, _)| coord == &CellCoord { row: 1, col: 1 })
+            .map(|(_, entries)| entries)
+            .unwrap();
 
         // Should have exactly 2 entries: one for each player
         assert_eq!(trail_entries.len(), 2);
@@ -473,7 +481,10 @@ mod tests {
         assert!(result1.is_ok());
 
         // Check that player 1 moved to a different cell and trail was recorded
-        let trail_entries_1_1 = game.tile_trails.get(&CellCoord { row: 1, col: 1 });
+        let trail_entries_1_1 = game.tile_trails
+            .iter()
+            .find(|(coord, _)| coord == &CellCoord { row: 1, col: 1 })
+            .map(|(_, entries)| entries);
         if let Some(entries) = trail_entries_1_1 {
             assert!(entries.contains(&(1, 2))); // Player 1 used segment 2-3 (key=2)
         }
@@ -508,7 +519,11 @@ mod tests {
         assert!(result3.is_ok());
 
         // Verify that both players' trails are recorded at (1,2)
-        let trail_entries_1_2 = game.tile_trails.get(&CellCoord { row: 1, col: 2 }).unwrap();
+        let trail_entries_1_2 = game.tile_trails
+            .iter()
+            .find(|(coord, _)| coord == &CellCoord { row: 1, col: 2 })
+            .map(|(_, entries)| entries)
+            .unwrap();
         assert!(trail_entries_1_2.contains(&(1, 0))); // Player 1, segment 0-1
         assert!(trail_entries_1_2.contains(&(2, 4))); // Player 2, segment 4-5
 
