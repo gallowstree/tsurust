@@ -17,7 +17,13 @@
       "Bash(powershell:*)",
       "Bash(netstat:*)",
       "Bash(timeout 2 tail:*)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(rustup target add:*)",
+      "Bash(cargo install:*)",
+      "Bash(wasm-bindgen:*)",
+      "Bash(git fetch:*)",
+      "Bash(git merge:*)",
+      "Bash(git reset:*)"
     ],
     "deny": [],
     "ask": []

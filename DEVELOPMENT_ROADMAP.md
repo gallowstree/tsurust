@@ -19,13 +19,7 @@
    - Implement heartbeat/ping-pong for connection health
    - Add proper error handling and validation
 
-3. **WASM Compilation**
-   - Enable WASM compilation for client-egui
-   - Test WASM build and browser deployment
-   - Ensure WebSocket client works in browser
-   - Add build scripts and documentation for WASM deployment
-
-4. **Testing & Polish**
+3. **Testing & Polish**
    - **[CRITICAL]** Add integration tests for online multiplayer (tile placement, state sync)
    - **[CRITICAL]** Add serialization tests for all protocol messages (prevent JSON key errors)
    - Test multiple clients in same game
