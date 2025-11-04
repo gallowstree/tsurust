@@ -29,9 +29,7 @@ pub struct Game {
     pub board: Board,
     pub players: Vec<Player>,
     pub hands: HashMap<PlayerID, Vec<Tile>>,
-    #[serde(skip, default)]
-    pub tile_trails: HashMap<CellCoord, Vec<(PlayerID, TileEndpoint)>>, // tile -> list of (player, segment) pairs
-    #[serde(skip, default)]
+    pub tile_trails: Vec<(CellCoord, Vec<(PlayerID, TileEndpoint)>)>, // tile -> list of (player, segment) pairs
     pub player_trails: HashMap<PlayerID, crate::trail::Trail>, // Complete trail for each player
     pub current_player_id: PlayerID,
     pub dragon: Option<PlayerID>,
@@ -72,7 +70,7 @@ impl Game {
 
         Game {
             players, hands, deck, board,
-            tile_trails: HashMap::new(),
+            tile_trails: Vec::new(),
             player_trails,
             current_player_id,
             dragon: None,
@@ -207,10 +205,12 @@ impl Game {
                 let segment_key = std::cmp::min(segment.a, segment.b);
 
                 // Record that this player used this segment (every time they pass through)
-                self.tile_trails
-                    .entry(exit_pos.cell)
-                    .or_insert_with(Vec::new)
-                    .push((player_id, segment_key));
+                // Find existing entry for this cell or add a new one
+                if let Some((_, trail_entries)) = self.tile_trails.iter_mut().find(|(cell, _)| cell == &exit_pos.cell) {
+                    trail_entries.push((player_id, segment_key));
+                } else {
+                    self.tile_trails.push((exit_pos.cell, vec![(player_id, segment_key)]));
+                }
             }
         }
     }

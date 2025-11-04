@@ -559,6 +559,10 @@ impl TemplateApp {
     }
 
     fn handle_tile_rotated(&mut self, tile_index: usize, clockwise: bool) {
+        // Determine which player's hand to rotate BEFORE getting mutable reference
+        let is_online = matches!(&self.app_state, AppState::OnlineGame { .. });
+        let client_player_id = self.current_player_id;
+
         // Get mutable reference to the game, whether local or online
         let game = match &mut self.app_state {
             AppState::Game(game) => game,
@@ -566,9 +570,18 @@ impl TemplateApp {
             _ => return,
         };
 
-        let hand = game.hands.get_mut(&game.current_player_id)
-            .expect("current player should always have a hand");
-        hand[tile_index] = hand[tile_index].rotated(clockwise);
+        // In multiplayer, only allow rotating your own hand
+        let player_id = if is_online {
+            client_player_id
+        } else {
+            game.current_player_id  // In local games, use current player
+        };
+
+        if let Some(hand) = game.hands.get_mut(&player_id) {
+            if tile_index < hand.len() {
+                hand[tile_index] = hand[tile_index].rotated(clockwise);
+            }
+        }
     }
 
     fn handle_tile_placed(&mut self, tile_index: usize) {
@@ -594,27 +607,40 @@ impl TemplateApp {
                     return;
                 }
 
+                // Only allow placing tiles when it's this client's turn
+                if game.current_player_id != self.current_player_id {
+                    eprintln!("Not your turn! Current player: {}, Your player: {}",
+                             game.current_player_id, self.current_player_id);
+                    return;
+                }
+
                 let player_cell = game.players.iter()
-                    .find(|p| p.id == game.current_player_id && p.alive)
+                    .find(|p| p.id == self.current_player_id && p.alive)
                     .expect("current player should exist and be alive")
                     .pos.cell;
 
-                let hand = game.hands.get(&game.current_player_id)
-                    .expect("current player should always have a hand");
+                // Get the client's own hand (not the current player's hand)
+                let hand = game.hands.get(&self.current_player_id)
+                    .expect("client should have a hand");
+
+                if tile_index >= hand.len() {
+                    eprintln!("Invalid tile index: {} (hand size: {})", tile_index, hand.len());
+                    return;
+                }
 
                 let tile = hand[tile_index];
 
                 let mov = Move {
                     tile,
                     cell: player_cell,
-                    player_id: game.current_player_id,
+                    player_id: self.current_player_id,
                 };
 
                 // Send to server via mpsc
                 if let Some(sender) = &self.sender {
                     crate::messaging::send_server_message(sender, ClientMessage::PlaceTile {
                         room_id: room_id.clone(),
-                        player_id: game.current_player_id,
+                        player_id: self.current_player_id,
                         mov,
                     });
                     *waiting_for_server = true;

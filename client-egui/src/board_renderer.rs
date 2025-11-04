@@ -17,7 +17,7 @@ const PLAYER_RADIUS: f32 = TILE_LENGTH / 7.;
 pub struct BoardRenderer<'a> {
     history: &'a Vec<Move>,
     players: &'a Vec<Player>,
-    tile_trails: &'a HashMap<CellCoord, Vec<(PlayerID, TileEndpoint)>>,
+    tile_trails: &'a Vec<(CellCoord, Vec<(PlayerID, TileEndpoint)>)>,
     player_trails: &'a HashMap<PlayerID, Trail>,
 }
 
@@ -25,7 +25,7 @@ impl <'a> BoardRenderer<'a> {
     pub(crate) fn new(
         history: &'a Vec<Move>,
         players: &'a Vec<Player>,
-        tile_trails: &'a HashMap<CellCoord, Vec<(PlayerID, TileEndpoint)>>,
+        tile_trails: &'a Vec<(CellCoord, Vec<(PlayerID, TileEndpoint)>)>,
         player_trails: &'a HashMap<PlayerID, Trail>
     ) -> Self {
         Self { history, players, tile_trails, player_trails }
@@ -122,7 +122,7 @@ fn rect_at_coord(cell_coord: CellCoord, board_rect: Rect) -> Rect {
 fn render_board_tiles(
     ui: &mut Ui,
     history: &Vec<Move>,
-    tile_trails: &HashMap<CellCoord, Vec<(PlayerID, TileEndpoint)>>,
+    tile_trails: &Vec<(CellCoord, Vec<(PlayerID, TileEndpoint)>)>,
     players: &Vec<Player>,
     board_rect: Rect
 ) {
@@ -134,13 +134,17 @@ fn render_board_tiles(
 
             // Get player paths for this tile
             let mut player_paths = HashMap::new();
-            if let Some(trail_entries) = tile_trails.get(&mov.cell) {
-                for &(player_id, segment_key) in trail_entries {
-                    // Find player color
-                    if let Some(player) = players.iter().find(|p| p.id == player_id) {
-                        let player_color = Color32::from_rgb(player.color.0, player.color.1, player.color.2);
-                        player_paths.insert(segment_key, (player_id, player_color));
+            // Find trail entries for this cell coordinate
+            for (cell_coord, trail_entries) in tile_trails {
+                if cell_coord == &mov.cell {
+                    for &(player_id, segment_key) in trail_entries {
+                        // Find player color
+                        if let Some(player) = players.iter().find(|p| p.id == player_id) {
+                            let player_color = Color32::from_rgb(player.color.0, player.color.1, player.color.2);
+                            player_paths.insert(segment_key, (player_id, player_color));
+                        }
                     }
+                    break;
                 }
             }
 

@@ -101,8 +101,10 @@ pub fn render_game_ui(ctx: &Context, game: &mut Game, client_player_id: PlayerID
             ui.separator();
         });
 
-        // Hand section
-        let hand = game.curr_player_hand().clone();
+        // Hand section - show this client's hand, not the current player's hand
+        let hand = game.hands.get(&client_player_id)
+            .cloned()
+            .unwrap_or_default();
         ui.add(HandRenderer::new(hand, sender.clone()));
     });
 }
