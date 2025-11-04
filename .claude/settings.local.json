@@ -22,7 +22,8 @@
       "Bash(cargo install:*)",
       "Bash(wasm-bindgen:*)",
       "Bash(git fetch:*)",
-      "Bash(git merge:*)"
+      "Bash(git merge:*)",
+      "Bash(git reset:*)"
     ],
     "deny": [],
     "ask": []
