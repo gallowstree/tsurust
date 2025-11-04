@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::collections::HashMap;
 
 use eframe::egui::{
@@ -35,7 +36,7 @@ pub fn paint_tile_with_trails(
         .iter()
         .for_each(|&Segment { a: from, b: to }| {
             // Use min(from, to) as convention - only look up trails for endpoints 0-3
-            let segment_key = std::cmp::min(from, to);
+            let segment_key = min(from, to);
 
             let segment_color = if let Some((_, player_color)) = player_paths.get(&segment_key) {
                 // Make player trail semi-transparent but visible

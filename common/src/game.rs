@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::collections::HashMap;
 
 use crate::board::*;
@@ -202,7 +203,7 @@ impl Game {
 
             if let Some(segment) = segment {
                 // Use min(from, to) convention for segment key
-                let segment_key = std::cmp::min(segment.a, segment.b);
+                let segment_key = min(segment.a, segment.b);
 
                 // Record that this player used this segment (every time they pass through)
                 // Find existing entry for this cell or add a new one

@@ -56,9 +56,8 @@ impl GameRoom {
             room_id: self.id.clone(),
             state: self.game.clone(),
         };
-        match self.update_tx.send(state_update) {
-            Ok(receiver_count) => println!("[SERVER] Broadcast GameStateUpdate to {} receivers", receiver_count),
-            Err(e) => eprintln!("[SERVER] Failed to broadcast GameStateUpdate: {:?}", e),
+        if let Err(e) = self.update_tx.send(state_update) {
+            eprintln!("Failed to broadcast GameStateUpdate: {:?}", e);
         }
 
         Ok(result)
@@ -122,7 +121,6 @@ impl GameRoom {
         };
         self.broadcast(game_started);
 
-        println!("Game started in room {}", self.id);
         Ok(())
     }
 }

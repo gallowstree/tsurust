@@ -670,32 +670,11 @@ impl TemplateApp {
         };
 
         match game.perform_move(mov) {
-            Ok(turn_result) => {
-                println!("Tile placed successfully at {:?}!", player_cell);
-                println!("  Tile: {:?}", tile);
-
-                match &turn_result {
-                    TurnResult::TurnAdvanced { turn_number, next_player, eliminated } => {
-                        println!("Turn {} completed. Next player: {}", turn_number, next_player);
-                        if !eliminated.is_empty() {
-                            println!("  Players eliminated: {:?}", eliminated);
-                        }
-                    }
-                    TurnResult::PlayerWins { turn_number, winner, eliminated } => {
-                        println!("GAME OVER! Player {} wins on turn {}!", winner, turn_number);
-                        if !eliminated.is_empty() {
-                            println!("  Final eliminations: {:?}", eliminated);
-                        }
-                    }
-                    TurnResult::Extinction { turn_number, eliminated } => {
-                        println!("EXTINCTION! All players eliminated on turn {}!", turn_number);
-                        println!("  Final eliminations: {:?}", eliminated);
-                    }
-                }
+            Ok(_turn_result) => {
                 game
             }
             Err(error) => {
-                println!("Failed to place tile: {}", error);
+                eprintln!("Failed to place tile: {}", error);
                 game
             }
         }

@@ -59,18 +59,15 @@ pub async fn handle_connection(
                 }
             } => {
                 if let Some(update) = update {
-                    println!("[HANDLER] Connection {} received broadcast message: {:?}", connection_id, std::mem::discriminant(&update));
                     match serde_json::to_string(&update) {
                         Ok(json) => {
-                            println!("[HANDLER] Sending {} bytes to connection {}", json.len(), connection_id);
                             if let Err(e) = ws.send(Message::text(json)).await {
                                 eprintln!("Failed to send update to connection {}: {}", connection_id, e);
                                 break;
                             }
-                            println!("[HANDLER] Successfully sent to connection {}", connection_id);
                         }
                         Err(e) => {
-                            eprintln!("[HANDLER] Failed to serialize broadcast message for connection {}: {}", connection_id, e);
+                            eprintln!("Failed to serialize broadcast message for connection {}: {}", connection_id, e);
                         }
                     }
                 }
@@ -102,7 +99,7 @@ async fn handle_client_message(
 
     match client_msg {
         ClientMessage::CreateRoom { room_name, creator_name } => {
-            let (room_id, player_id) = server.create_room(room_name, creator_name).await?;
+            let (room_id, player_id) = server.create_room(creator_name).await?;
 
             // Subscribe to room updates and send initial lobby state
             let rooms = server.rooms.read().await;
@@ -177,17 +174,13 @@ async fn handle_client_message(
         }
 
         ClientMessage::PlaceTile { room_id, player_id, mov } => {
-            println!("[HANDLER] Received PlaceTile from player {} in room {}", player_id, room_id);
             let mut rooms = server.rooms.write().await;
             let room = rooms.get_mut(&room_id)
                 .ok_or_else(|| format!("Room '{}' not found", room_id))?;
 
-            println!("[HANDLER] Calling place_tile...");
             room.place_tile(player_id, mov)?;
-            println!("[HANDLER] place_tile completed successfully");
             // Updates are broadcast automatically by place_tile
             drop(rooms); // Explicitly drop the lock to allow broadcast messages to be received
-            println!("[HANDLER] Lock dropped, broadcast should be deliverable now");
         }
 
         ClientMessage::GetGameState { room_id } => {

@@ -30,22 +30,18 @@ impl GameClient {
 
     pub fn try_recv(&self) -> Option<ServerMessage> {
         while let Some(event) = self.ws_receiver.try_recv() {
-            println!("[WS_CLIENT] Received event: {:?}", std::mem::discriminant(&event));
             match event {
                 WsEvent::Opened => {
-                    println!("WebSocket connection opened");
+                    // Connection established
                 }
                 WsEvent::Message(WsMessage::Text(json)) => {
-                    println!("[WS_CLIENT] Received text message ({} bytes)", json.len());
-                    println!("[WS_CLIENT] Message preview: {}...", &json[..json.len().min(100)]);
                     match serde_json::from_str(&json) {
                         Ok(msg) => {
-                            println!("[WS_CLIENT] Successfully parsed message, returning it");
                             return Some(msg)
                         },
                         Err(e) => {
-                            eprintln!("[WS_CLIENT] Failed to parse server message: {}", e);
-                            eprintln!("[WS_CLIENT] Raw message: {}", json);
+                            eprintln!("Failed to parse server message: {}", e);
+                            eprintln!("Raw message: {}", json);
                         }
                     }
                 }

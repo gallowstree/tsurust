@@ -35,7 +35,7 @@ impl GameServer {
         current
     }
 
-    pub async fn create_room(&self, room_name: String, creator_name: String) -> Result<(RoomId, PlayerID), String> {
+    pub async fn create_room(&self, creator_name: String) -> Result<(RoomId, PlayerID), String> {
         // Generate a unique short room ID
         let room_id = loop {
             let id = next_lobby_id();
@@ -43,8 +43,6 @@ impl GameServer {
             if !rooms.contains_key(&id) {
                 break id;
             }
-            // Very unlikely collision, try again
-            println!("Room ID collision detected, generating new ID");
         };
 
         // Create initial player at default starting position
@@ -74,7 +72,6 @@ impl GameServer {
         let mut rooms = self.rooms.write().await;
         rooms.insert(room_id.clone(), room);
 
-        println!("Created room '{}' ({})", room_id, room_name);
         Ok((room_id, player_id))
     }
 
