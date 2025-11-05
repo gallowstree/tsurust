@@ -99,7 +99,7 @@ async fn handle_client_message(
 
     match client_msg {
         ClientMessage::CreateRoom { room_name, creator_name } => {
-            let (room_id, player_id) = server.create_room(creator_name).await?;
+            let (room_id, player_id) = server.create_room(room_name, creator_name).await?;
 
             // Subscribe to room updates and send initial lobby state
             let rooms = server.rooms.read().await;

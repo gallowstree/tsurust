@@ -52,6 +52,7 @@ pub enum AppState {
     OnlineGame {
         game: Game,                     // Server's authoritative state
         room_id: String,
+        lobby_name: String,             // Display name of the lobby/game
         waiting_for_server: bool,       // Show loading state during server round-trip
     },
     GameOver(Game),                     // Game ended - show statistics
@@ -157,8 +158,8 @@ impl TemplateApp {
         let now = std::time::Instant::now();
         let animation_speed = 2.0; // tiles per second
 
-        // Create animations for all players who have trails
-        for (player_id, trail) in &game.player_trails {
+        // Create animations for players who moved this turn (use current_turn_trails, not cumulative player_trails)
+        for (player_id, trail) in &game.current_turn_trails {
             if trail.segments.is_empty() {
                 continue; // No movement
             }
@@ -229,11 +230,14 @@ impl TemplateApp {
             AppState::LobbyPlacingFor(lobby, placing_for_id) => {
                 screens::lobby::render_lobby_placing_ui(ctx, lobby, *placing_for_id, is_online, sender)
             }
-            AppState::Game(game) => screens::game::render_game_ui(ctx, game, current_player_id, false, sender, last_rotated_tile, player_animations, tile_placement_animation),
-            AppState::OnlineGame { game, waiting_for_server, .. } => {
-                screens::game::render_game_ui(ctx, game, current_player_id, *waiting_for_server, sender, last_rotated_tile, player_animations, tile_placement_animation)
+            AppState::Game(game) => screens::game::render_game_ui(ctx, game, current_player_id, false, None, sender, last_rotated_tile, player_animations, tile_placement_animation),
+            AppState::OnlineGame { game, waiting_for_server, lobby_name, .. } => {
+                screens::game::render_game_ui(ctx, game, current_player_id, *waiting_for_server, Some(lobby_name.as_str()), sender, last_rotated_tile, player_animations, tile_placement_animation)
             }
-            AppState::GameOver(game) => screens::game_over::render_game_over_ui(ctx, game, current_player_id, sender),
+            AppState::GameOver(game) => {
+                // Keep GameOver state for backward compatibility but render as normal game with overlay
+                screens::game::render_game_ui(ctx, game, current_player_id, false, None, sender, last_rotated_tile, player_animations, tile_placement_animation)
+            }
         }
     }
 
@@ -374,19 +378,12 @@ impl TemplateApp {
                         });
                     }
 
-                    // Transition to GameOver if the game ended
-                    if state.is_game_over() {
-                        *app_state = AppState::GameOver(state);
-                    }
+                    // Stay in OnlineGame state even if game is over (overlay will show stats)
                 }
             }
-            ServerMessage::TurnCompleted { room_id: _, result } => {
-                // Check if the game is over and transition to GameOver state
-                if matches!(result, TurnResult::PlayerWins { .. } | TurnResult::Extinction { .. }) {
-                    if let AppState::OnlineGame { game, .. } = app_state {
-                        *app_state = AppState::GameOver(game.clone());
-                    }
-                }
+            ServerMessage::TurnCompleted { room_id: _, result: _ } => {
+                // Game over will be handled by GameStateUpdate
+                // No need to transition to GameOver state - overlay will show when game.is_game_over() is true
             }
             ServerMessage::Error { message } => {
                 eprintln!("Server error: {}", message);
@@ -414,10 +411,17 @@ impl TemplateApp {
                 }
             }
             ServerMessage::GameStarted { room_id, game } => {
+                // Get lobby name from current lobby state
+                let lobby_name = match app_state {
+                    AppState::Lobby(lobby) | AppState::LobbyPlacingFor(lobby, _) => lobby.name.clone(),
+                    _ => "Game".to_string(), // Fallback name
+                };
+
                 // Transition to online game mode with server's authoritative game state
                 *app_state = AppState::OnlineGame {
                     game,
                     room_id,
+                    lobby_name,
                     waiting_for_server: false,
                 };
             }
@@ -714,16 +718,13 @@ impl TemplateApp {
                     self.start_player_animations(&game);
                     self.start_tile_placement_animation(placed_cell);
 
-                    if game.is_game_over() {
-                        self.app_state = AppState::GameOver(game);
-                    } else {
-                        self.app_state = AppState::Game(game);
-                    }
+                    // Stay in Game state even if game is over (overlay will show stats)
+                    self.app_state = AppState::Game(game);
                 }
             }
 
             // Online game: send to server and wait for response (server authoritative)
-            AppState::OnlineGame { game, room_id, waiting_for_server } => {
+            AppState::OnlineGame { game, room_id, waiting_for_server, .. } => {
                 if *waiting_for_server {
                     eprintln!("Already waiting for server response");
                     return;

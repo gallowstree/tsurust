@@ -31,7 +31,8 @@ pub struct Game {
     pub players: Vec<Player>,
     pub hands: HashMap<PlayerID, Vec<Tile>>,
     pub tile_trails: Vec<(CellCoord, Vec<(PlayerID, TileEndpoint)>)>, // tile -> list of (player, segment) pairs
-    pub player_trails: HashMap<PlayerID, crate::trail::Trail>, // Complete trail for each player
+    pub player_trails: HashMap<PlayerID, crate::trail::Trail>, // Complete cumulative trail for each player
+    pub current_turn_trails: HashMap<PlayerID, crate::trail::Trail>, // Trails from just this turn (for animation)
     pub current_player_id: PlayerID,
     pub dragon: Option<PlayerID>,
     pub stats: HashMap<PlayerID, PlayerStats>, // Statistics for each player
@@ -73,6 +74,7 @@ impl Game {
             players, hands, deck, board,
             tile_trails: Vec::new(),
             player_trails,
+            current_turn_trails: HashMap::new(),
             current_player_id,
             dragon: None,
             stats,
@@ -140,6 +142,9 @@ impl Game {
         let mut eliminated = Vec::new();
         let mut trails_to_record = Vec::new();
 
+        // Clear current turn trails before processing new movements
+        self.current_turn_trails.clear();
+
         for player in alive_players(&mut self.players) {
             // Only update players who are in the cell where the tile was placed
             if player.pos.cell != placed_cell {
@@ -158,7 +163,10 @@ impl Game {
             if old_pos != new_pos {
                 trails_to_record.push((player.id, old_pos)); // Record where they came FROM
 
-                // Extend player's trail with new segments
+                // Store this turn's trail for animation (just the new movement)
+                self.current_turn_trails.insert(player.id, trail.clone());
+
+                // Extend player's cumulative trail with new segments
                 if let Some(player_trail) = self.player_trails.get_mut(&player.id) {
                     for segment in &trail.segments {
                         player_trail.add_segment(segment.clone());

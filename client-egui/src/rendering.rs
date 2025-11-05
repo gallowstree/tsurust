@@ -30,7 +30,7 @@ pub fn paint_tile_with_trails(
     painter: &Painter,
     player_paths: &HashMap<TileEndpoint, (PlayerID, Color32)>
 ) {
-    paint_tile_with_trails_and_rotation(tile, rect, painter, player_paths, 0.0);
+    paint_tile_with_trails_rotation_and_alpha(tile, rect, painter, player_paths, 0.0, 1.0);
 }
 
 pub fn paint_tile_with_trails_and_rotation(
@@ -40,9 +40,34 @@ pub fn paint_tile_with_trails_and_rotation(
     player_paths: &HashMap<TileEndpoint, (PlayerID, Color32)>,
     rotation_angle: f32
 ) {
+    paint_tile_with_trails_rotation_and_alpha(tile, rect, painter, player_paths, rotation_angle, 1.0);
+}
+
+pub fn paint_tile_with_trails_rotation_and_alpha(
+    tile: &Tile,
+    rect: Rect,
+    painter: &Painter,
+    player_paths: &HashMap<TileEndpoint, (PlayerID, Color32)>,
+    rotation_angle: f32,
+    alpha: f32
+) {
+    // Apply alpha to tile background
+    let bg_color = Color32::from_rgba_premultiplied(
+        TILE_BACKGROUND.r(),
+        TILE_BACKGROUND.g(),
+        TILE_BACKGROUND.b(),
+        (TILE_BACKGROUND.a() as f32 * alpha) as u8
+    );
+    let stroke_color = Color32::from_rgba_premultiplied(
+        80,
+        80,
+        80,
+        (255.0 * alpha) as u8
+    );
+
     // Draw tile background
-    painter.rect_filled(rect, 4.0, TILE_BACKGROUND);
-    painter.rect_stroke(rect, 4.0, Stroke::new(1.0, Color32::from_gray(80)));
+    painter.rect_filled(rect, 4.0, bg_color);
+    painter.rect_stroke(rect, 4.0, Stroke::new(1.0, stroke_color));
 
     let to_screen = tile_to_screen_transform(rect);
     let center = rect.center();
@@ -54,15 +79,21 @@ pub fn paint_tile_with_trails_and_rotation(
             let segment_key = min(from, to);
 
             let segment_color = if let Some((_, player_color)) = player_paths.get(&segment_key) {
-                // Make player trail semi-transparent but visible
+                // Make player trail semi-transparent but visible, with animation alpha
                 Color32::from_rgba_unmultiplied(
                     player_color.r(),
                     player_color.g(),
                     player_color.b(),
-                    180 // Semi-transparent but more opaque than current trail
+                    (180.0 * alpha) as u8
                 )
             } else {
-                TRANSPARENT_WHITE // Default tile color
+                // Apply alpha to default tile color
+                Color32::from_rgba_premultiplied(
+                    TRANSPARENT_WHITE.r(),
+                    TRANSPARENT_WHITE.g(),
+                    TRANSPARENT_WHITE.b(),
+                    (TRANSPARENT_WHITE.a() as f32 * alpha) as u8
+                )
             };
 
             let stroke = Stroke::new(2., segment_color);

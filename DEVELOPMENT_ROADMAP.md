@@ -39,16 +39,11 @@
 **Goal**: Code quality, type safety, and enhanced features
 
 #### High Priority:
-1. **Animation System**
-   - Add smooth animation when player follows trail after tile placement
-   - Implement configurable animation speed
-   - Add visual feedback during player movement
-
-2. **UI Enhancements**
-   - Game over screen with winner announcement UI
+1. **UI Enhancements**
    - Visual error messages for invalid moves
    - Connection status indicators
    - Loading states for network operations
+   - Improve animation timing configurability
 
 #### Lower Priority:
 1. **Type System Improvements**

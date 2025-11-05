@@ -176,6 +176,7 @@ fn render_board_tiles(
                 // Calculate animation parameters
                 let scale = 0.80 + eased_progress * 0.20; // Scale from 80% to 100%
                 let drop_offset = (1.0 - eased_progress) * 30.0; // Drop from 30px above
+                let alpha = eased_progress; // Fade in from 0 to 1
 
                 // Apply transformations
                 let center = rect.center();
@@ -185,7 +186,7 @@ fn render_board_tiles(
                     scaled_size
                 );
 
-                paint_tile_with_trails(&mov.tile, animated_rect, painter, &player_paths);
+                crate::rendering::paint_tile_with_trails_rotation_and_alpha(&mov.tile, animated_rect, painter, &player_paths, 0.0, alpha);
             } else {
                 // Normal rendering
                 paint_tile_with_trails(&mov.tile, rect, painter, &player_paths);

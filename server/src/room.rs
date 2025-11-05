@@ -15,11 +15,11 @@ pub struct GameRoom {
 }
 
 impl GameRoom {
-    pub fn new(id: RoomId, game: Game) -> Self {
+    pub fn new(id: RoomId, room_name: String, game: Game) -> Self {
         let (update_tx, _) = broadcast::channel(100);
 
-        // Create a lobby with the room ID
-        let lobby = Lobby::new(id.clone(), format!("Room {}", id));
+        // Create a lobby with the custom name
+        let lobby = Lobby::new(id.clone(), room_name);
 
         Self {
             id,
