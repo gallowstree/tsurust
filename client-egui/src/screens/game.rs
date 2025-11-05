@@ -6,7 +6,7 @@ use eframe::egui::{self, Context};
 use tsurust_common::board::{Player, PlayerID};
 use tsurust_common::game::Game;
 
-use crate::app::{Message, PlayerAnimation};
+use crate::app::{Message, PlayerAnimation, TilePlacementAnimation};
 use crate::board_renderer::BoardRenderer;
 use crate::hand_renderer::HandRenderer;
 use crate::messaging::send_ui_message;
@@ -20,6 +20,7 @@ pub fn render_game_ui(
     sender: &mpsc::Sender<Message>,
     last_rotated_tile: Option<(usize, bool)>,
     player_animations: &HashMap<PlayerID, PlayerAnimation>,
+    tile_placement_animation: &Option<TilePlacementAnimation>,
 ) {
     egui::TopBottomPanel::top("top_panel")
         .resizable(true)
@@ -47,7 +48,7 @@ pub fn render_game_ui(
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.horizontal(|ui| {
             ui.add_space(20.);
-            ui.add(BoardRenderer::new(&game.board.history, &game.players, &game.tile_trails, &game.player_trails, player_animations));
+            ui.add(BoardRenderer::new(&game.board.history, &game.players, &game.tile_trails, &game.player_trails, player_animations, tile_placement_animation));
         });
     });
 

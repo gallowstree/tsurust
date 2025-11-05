@@ -8,7 +8,7 @@ use egui::Pos2;
 use tsurust_common::board::*;
 use tsurust_common::trail::Trail;
 
-use crate::app::PlayerAnimation;
+use crate::app::{PlayerAnimation, TilePlacementAnimation};
 use crate::rendering::{endpoint_position, paint_tile_with_trails, trail_to_world_coords, PINK};
 
 const TILE_LENGTH: f32 = 120.0;
@@ -21,6 +21,7 @@ pub struct BoardRenderer<'a> {
     tile_trails: &'a Vec<(CellCoord, Vec<(PlayerID, TileEndpoint)>)>,
     player_trails: &'a HashMap<PlayerID, Trail>,
     player_animations: &'a HashMap<PlayerID, PlayerAnimation>,
+    tile_placement_animation: &'a Option<TilePlacementAnimation>,
 }
 
 impl <'a> BoardRenderer<'a> {
@@ -30,8 +31,9 @@ impl <'a> BoardRenderer<'a> {
         tile_trails: &'a Vec<(CellCoord, Vec<(PlayerID, TileEndpoint)>)>,
         player_trails: &'a HashMap<PlayerID, Trail>,
         player_animations: &'a HashMap<PlayerID, PlayerAnimation>,
+        tile_placement_animation: &'a Option<TilePlacementAnimation>,
     ) -> Self {
-        Self { history, players, tile_trails, player_trails, player_animations }
+        Self { history, players, tile_trails, player_trails, player_animations, tile_placement_animation }
     }
 
 }
@@ -47,7 +49,7 @@ impl Widget for BoardRenderer<'_> {
         background(ui, board_rect);
 
         ui.vertical_centered(|ui| {
-            render_board_tiles(ui, self.history, self.tile_trails, self.players, board_rect);
+            render_board_tiles(ui, self.history, self.tile_trails, self.players, board_rect, self.tile_placement_animation);
         });
 
         // Render player trails on top with higher opacity so tile paths don't show through as much
@@ -133,12 +135,19 @@ fn render_board_tiles(
     history: &Vec<Move>,
     tile_trails: &Vec<(CellCoord, Vec<(PlayerID, TileEndpoint)>)>,
     players: &Vec<Player>,
-    board_rect: Rect
+    board_rect: Rect,
+    tile_placement_animation: &Option<TilePlacementAnimation>,
 ) {
     Frame::canvas(ui.style()).show(ui, |ui| {
         let painter = ui.painter();
 
         for mov in history {
+            // Check if this tile is being animated
+            let is_animating = tile_placement_animation
+                .as_ref()
+                .map(|anim| anim.cell == mov.cell)
+                .unwrap_or(false);
+
             let rect = rect_at_coord(mov.cell, board_rect);
 
             // Get player paths for this tile
@@ -157,7 +166,30 @@ fn render_board_tiles(
                 }
             }
 
-            paint_tile_with_trails(&mov.tile, rect, painter, &player_paths);
+            if is_animating {
+                // Render with animation effects
+                let anim = tile_placement_animation.as_ref().unwrap();
+
+                // Ease-out cubic for smooth deceleration
+                let eased_progress = 1.0 - (1.0 - anim.progress).powi(3);
+
+                // Calculate animation parameters
+                let scale = 0.80 + eased_progress * 0.20; // Scale from 80% to 100%
+                let drop_offset = (1.0 - eased_progress) * 30.0; // Drop from 30px above
+
+                // Apply transformations
+                let center = rect.center();
+                let scaled_size = rect.size() * scale;
+                let animated_rect = Rect::from_center_size(
+                    center - Vec2::new(0.0, drop_offset),
+                    scaled_size
+                );
+
+                paint_tile_with_trails(&mov.tile, animated_rect, painter, &player_paths);
+            } else {
+                // Normal rendering
+                paint_tile_with_trails(&mov.tile, rect, painter, &player_paths);
+            }
         }
     });
 }

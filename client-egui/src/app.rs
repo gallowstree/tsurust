@@ -82,12 +82,23 @@ pub struct TemplateApp {
     last_rotated_tile: Option<(usize, bool)>, // (tile_index, clockwise) - for animation tracking
     #[serde(skip)]
     player_animations: std::collections::HashMap<PlayerID, PlayerAnimation>, // Active player movement animations
+    #[serde(skip)]
+    tile_placement_animation: Option<TilePlacementAnimation>, // Animation for the most recently placed tile
 }
 
 /// Tracks animation state for a player moving along their trail
 #[derive(Debug, Clone)]
 pub struct PlayerAnimation {
     pub trail: tsurust_common::trail::Trail,
+    pub progress: f32, // 0.0 = start, 1.0 = end
+    pub start_time: std::time::Instant,
+    pub duration_secs: f32,
+}
+
+/// Tracks animation state for a tile being placed on the board
+#[derive(Debug, Clone)]
+pub struct TilePlacementAnimation {
+    pub cell: tsurust_common::board::CellCoord,
     pub progress: f32, // 0.0 = start, 1.0 = end
     pub start_time: std::time::Instant,
     pub duration_secs: f32,
@@ -113,6 +124,7 @@ impl Default for TemplateApp {
             sender: Some(sender),
             last_rotated_tile: None,
             player_animations: std::collections::HashMap::new(),
+            tile_placement_animation: None,
             receiver: Some(receiver),
             current_player_id: 1, // Default player ID
             game_client: None,
@@ -186,7 +198,23 @@ impl TemplateApp {
         }
     }
 
-    fn render_ui(ctx: &Context, app_state: &mut AppState, current_player_id: PlayerID, is_online: bool, server_status: &LocalServerStatus, sender: &mpsc::Sender<Message>, last_rotated_tile: Option<(usize, bool)>, player_animations: &std::collections::HashMap<PlayerID, PlayerAnimation>) {
+    fn update_tile_placement_animation(&mut self, ctx: &Context) {
+        if let Some(animation) = &mut self.tile_placement_animation {
+            let now = std::time::Instant::now();
+            let elapsed = now.duration_since(animation.start_time).as_secs_f32();
+            animation.progress = (elapsed / animation.duration_secs).min(1.0);
+
+            if animation.progress >= 1.0 {
+                // Animation complete
+                self.tile_placement_animation = None;
+            } else {
+                // Request repaint for next frame
+                ctx.request_repaint();
+            }
+        }
+    }
+
+    fn render_ui(ctx: &Context, app_state: &mut AppState, current_player_id: PlayerID, is_online: bool, server_status: &LocalServerStatus, sender: &mpsc::Sender<Message>, last_rotated_tile: Option<(usize, bool)>, player_animations: &std::collections::HashMap<PlayerID, PlayerAnimation>, tile_placement_animation: &Option<TilePlacementAnimation>) {
         match app_state {
             AppState::MainMenu => screens::main_menu::render(ctx, server_status, sender),
             AppState::CreateLobbyForm { lobby_name, player_name } => {
@@ -201,9 +229,9 @@ impl TemplateApp {
             AppState::LobbyPlacingFor(lobby, placing_for_id) => {
                 screens::lobby::render_lobby_placing_ui(ctx, lobby, *placing_for_id, is_online, sender)
             }
-            AppState::Game(game) => screens::game::render_game_ui(ctx, game, current_player_id, false, sender, last_rotated_tile, player_animations),
+            AppState::Game(game) => screens::game::render_game_ui(ctx, game, current_player_id, false, sender, last_rotated_tile, player_animations, tile_placement_animation),
             AppState::OnlineGame { game, waiting_for_server, .. } => {
-                screens::game::render_game_ui(ctx, game, current_player_id, *waiting_for_server, sender, last_rotated_tile, player_animations)
+                screens::game::render_game_ui(ctx, game, current_player_id, *waiting_for_server, sender, last_rotated_tile, player_animations, tile_placement_animation)
             }
             AppState::GameOver(game) => screens::game_over::render_game_over_ui(ctx, game, current_player_id, sender),
         }
@@ -225,6 +253,7 @@ impl eframe::App for TemplateApp {
                     &mut self.current_player_id,
                     &mut self.app_state,
                     &mut self.player_animations,
+                    &mut self.tile_placement_animation,
                 );
             }
 
@@ -246,13 +275,14 @@ impl eframe::App for TemplateApp {
         // Render UI
         if let Some(tx) = &self.sender {
             let is_online = self.game_client.is_some();
-            Self::render_ui(ctx, &mut self.app_state, self.current_player_id, is_online, &self.local_server_status, tx, self.last_rotated_tile, &self.player_animations);
+            Self::render_ui(ctx, &mut self.app_state, self.current_player_id, is_online, &self.local_server_status, tx, self.last_rotated_tile, &self.player_animations, &self.tile_placement_animation);
 
             // Clear the rotation animation state after one frame
             self.last_rotated_tile = None;
 
-            // Update player animations
+            // Update animations
             self.update_player_animations(ctx);
+            self.update_tile_placement_animation(ctx);
         }
     }
 
@@ -296,6 +326,7 @@ impl TemplateApp {
         current_player_id: &mut PlayerID,
         app_state: &mut AppState,
         player_animations: &mut std::collections::HashMap<PlayerID, PlayerAnimation>,
+        tile_placement_animation: &mut Option<TilePlacementAnimation>,
     ) {
         match server_msg {
             ServerMessage::RoomCreated { room_id, player_id } => {
@@ -330,8 +361,18 @@ impl TemplateApp {
                     *game = state.clone();
                     *waiting_for_server = false;
 
-                    // Start player movement animations
+                    // Start animations
                     Self::start_player_animations_static(player_animations, &state);
+
+                    // Start tile placement animation for the most recent move
+                    if let Some(last_move) = state.board.history.last() {
+                        *tile_placement_animation = Some(TilePlacementAnimation {
+                            cell: last_move.cell,
+                            progress: 0.0,
+                            start_time: std::time::Instant::now(),
+                            duration_secs: 0.4,
+                        });
+                    }
 
                     // Transition to GameOver if the game ended
                     if state.is_game_over() {
@@ -667,10 +708,11 @@ impl TemplateApp {
             AppState::Game(_) => {
                 // Take ownership of the game state temporarily
                 if let AppState::Game(game) = std::mem::replace(&mut self.app_state, AppState::MainMenu) {
-                    let game = Self::perform_local_tile_placement(game, tile_index);
+                    let (game, placed_cell) = Self::perform_local_tile_placement(game, tile_index);
 
-                    // Start animations for players who moved
+                    // Start animations
                     self.start_player_animations(&game);
+                    self.start_tile_placement_animation(placed_cell);
 
                     if game.is_game_over() {
                         self.app_state = AppState::GameOver(game);
@@ -732,7 +774,8 @@ impl TemplateApp {
     }
 
     /// Perform a tile placement in a local game (client authoritative)
-    fn perform_local_tile_placement(mut game: Game, tile_index: usize) -> Game {
+    /// Returns the updated game and the cell where the tile was placed
+    fn perform_local_tile_placement(mut game: Game, tile_index: usize) -> (Game, tsurust_common::board::CellCoord) {
         let player_cell = game.players.iter()
             .find(|p| p.id == game.current_player_id && p.alive)
             .expect("current player should exist and be alive")
@@ -751,13 +794,22 @@ impl TemplateApp {
 
         match game.perform_move(mov) {
             Ok(_turn_result) => {
-                game
+                (game, player_cell)
             }
             Err(error) => {
                 eprintln!("Failed to place tile: {}", error);
-                game
+                (game, player_cell)
             }
         }
+    }
+
+    fn start_tile_placement_animation(&mut self, cell: tsurust_common::board::CellCoord) {
+        self.tile_placement_animation = Some(TilePlacementAnimation {
+            cell,
+            progress: 0.0,
+            start_time: std::time::Instant::now(),
+            duration_secs: 0.4,
+        });
     }
 
 
