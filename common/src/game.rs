@@ -131,7 +131,8 @@ impl Game {
 
     fn deduct_tile_from_hand(&mut self, mov: Move) -> Result<(), &'static str> {
         let hand = self.hands.get_mut(&mov.player_id).expect("Player should exist");
-        if let Some(pos) = hand.iter().position(|&tile| tile.eq(&mov.tile)) {
+        // Use rotation-invariant comparison: player may have rotated the tile before playing
+        if let Some(pos) = hand.iter().position(|tile| tile.is_same_tile(&mov.tile)) {
             hand.remove(pos);
             Ok(())
         } else {

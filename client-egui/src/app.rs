@@ -4,7 +4,7 @@ use eframe::egui;
 use egui::Context;
 
 use tsurust_common::board::*;
-use tsurust_common::game::{Game, TurnResult};
+use tsurust_common::game::Game;
 use tsurust_common::lobby::{Lobby, LobbyEvent};
 
 use tsurust_common::protocol::{ClientMessage, ServerMessage};
@@ -18,7 +18,7 @@ pub enum Message {
     TileRotated(usize, bool),         // tile index, clockwise
     RestartGame,                      // restart the game
     StartLobby,                       // start a local lobby (offline multiplayer)
-    StartSampleGame,                  // start sample game (current behavior)
+    StartSampleGame,                  // start sample game
     #[allow(dead_code)]
     JoinLobby(String),               // join lobby with player name
     PlacePawn(PlayerPos),            // place pawn at position in lobby
@@ -332,6 +332,7 @@ impl TemplateApp {
         player_animations: &mut std::collections::HashMap<PlayerID, PlayerAnimation>,
         tile_placement_animation: &mut Option<TilePlacementAnimation>,
     ) {
+        println!("[SERVER->CLIENT] Received: {:?}", server_msg);
         match server_msg {
             ServerMessage::RoomCreated { room_id, player_id } => {
                 *current_room_id = Some(room_id.clone());
@@ -872,6 +873,7 @@ impl TemplateApp {
 
     fn handle_send_to_server(&mut self, client_msg: ClientMessage) {
         if let Some(client) = &mut self.game_client {
+            println!("[CLIENT->SERVER] Sending: {:?}", client_msg);
             client.send(client_msg);
         } else {
             eprintln!("Cannot send message to server: not connected");

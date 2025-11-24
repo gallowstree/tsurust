@@ -52,6 +52,10 @@ impl GameRoom {
 
         // Broadcast game state update to all clients in this room
         // This contains all information clients need (game state, current player, etc.)
+        println!("[SERVER] Broadcasting GameStateUpdate - current_player: {}", self.game.current_player_id);
+        for (pid, hand) in &self.game.hands {
+            println!("[SERVER]   Player {} hand ({} tiles): {:?}", pid, hand.len(), hand);
+        }
         let state_update = ServerMessage::GameStateUpdate {
             room_id: self.id.clone(),
             state: self.game.clone(),
@@ -113,6 +117,13 @@ impl GameRoom {
 
         // Update the game state
         self.game = game.clone();
+
+        // Debug: show initial game state
+        println!("[SERVER] Game started! Players: {:?}", self.game.players.iter().map(|p| p.id).collect::<Vec<_>>());
+        println!("[SERVER] Current player: {}", self.game.current_player_id);
+        for (pid, hand) in &self.game.hands {
+            println!("[SERVER]   Player {} initial hand ({} tiles): {:?}", pid, hand.len(), hand);
+        }
 
         // Broadcast game started to all clients
         let game_started = ServerMessage::GameStarted {

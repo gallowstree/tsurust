@@ -4,7 +4,7 @@ use crate::server::GameServer;
 async fn test_create_room_assigns_player_id_1() {
     let server = GameServer::new();
 
-    let result = server.create_room("Alice".to_string()).await;
+    let result = server.create_room("Test Room".to_string(), "Alice".to_string()).await;
 
     assert!(result.is_ok());
     let (room_id, player_id) = result.unwrap();
@@ -19,7 +19,7 @@ async fn test_join_room_assigns_sequential_ids() {
 
     // Create room (first player gets ID 1)
     let (room_id, first_player_id) = server
-        .create_room("Alice".to_string())
+        .create_room("Test Room".to_string(), "Alice".to_string())
         .await
         .expect("Failed to create room");
 
@@ -48,7 +48,7 @@ async fn test_player_ids_use_max_plus_one() {
 
     // Create room
     let (room_id, _) = server
-        .create_room("Alice".to_string())
+        .create_room("Test Room".to_string(), "Alice".to_string())
         .await
         .expect("Failed to create room");
 
@@ -90,13 +90,13 @@ async fn test_create_multiple_rooms_generates_unique_ids() {
 
     // Create first room
     let (room_id1, _) = server
-        .create_room("Alice".to_string())
+        .create_room("Room 1".to_string(), "Alice".to_string())
         .await
         .expect("Failed to create first room");
 
     // Create second room
     let (room_id2, _) = server
-        .create_room("Bob".to_string())
+        .create_room("Room 2".to_string(), "Bob".to_string())
         .await
         .expect("Failed to create second room");
 
