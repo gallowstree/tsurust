@@ -41,7 +41,6 @@ fn render_lobby_top_panel(ctx: &Context, lobby: &Lobby, show_start_button: bool,
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if lobby.can_start() {
                             if ui.button("🚀 Start Game").clicked() {
-                                println!("[DEBUG] Start Game button clicked!");
                                 send_ui_message(sender, Message::StartGameFromLobby);
                             }
                         } else {

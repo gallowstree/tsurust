@@ -118,6 +118,20 @@ impl Tile {
             .collect();
         Tile::new(rotated_segments.into_inner().unwrap())
     }
+
+    /// Checks if this tile is the same as another tile, considering all rotations.
+    /// Two tiles are considered "the same" if one is a rotation of the other.
+    pub fn is_same_tile(&self, other: &Tile) -> bool {
+        // Check all 4 possible rotations (0°, 90°, 180°, 270°)
+        let mut rotated = *self;
+        for _ in 0..4 {
+            if rotated == *other {
+                return true;
+            }
+            rotated = rotated.rotated(true); // Rotate 90° clockwise
+        }
+        false
+    }
 }
 
 impl Segment {

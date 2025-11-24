@@ -15,11 +15,11 @@ pub struct GameRoom {
 }
 
 impl GameRoom {
-    pub fn new(id: RoomId, game: Game) -> Self {
+    pub fn new(id: RoomId, room_name: String, game: Game) -> Self {
         let (update_tx, _) = broadcast::channel(100);
 
-        // Create a lobby with the room ID
-        let lobby = Lobby::new(id.clone(), format!("Room {}", id));
+        // Create a lobby with the custom name
+        let lobby = Lobby::new(id.clone(), room_name);
 
         Self {
             id,
@@ -52,6 +52,10 @@ impl GameRoom {
 
         // Broadcast game state update to all clients in this room
         // This contains all information clients need (game state, current player, etc.)
+        println!("[SERVER] Broadcasting GameStateUpdate - current_player: {}", self.game.current_player_id);
+        for (pid, hand) in &self.game.hands {
+            println!("[SERVER]   Player {} hand ({} tiles): {:?}", pid, hand.len(), hand);
+        }
         let state_update = ServerMessage::GameStateUpdate {
             room_id: self.id.clone(),
             state: self.game.clone(),
@@ -113,6 +117,13 @@ impl GameRoom {
 
         // Update the game state
         self.game = game.clone();
+
+        // Debug: show initial game state
+        println!("[SERVER] Game started! Players: {:?}", self.game.players.iter().map(|p| p.id).collect::<Vec<_>>());
+        println!("[SERVER] Current player: {}", self.game.current_player_id);
+        for (pid, hand) in &self.game.hands {
+            println!("[SERVER]   Player {} initial hand ({} tiles): {:?}", pid, hand.len(), hand);
+        }
 
         // Broadcast game started to all clients
         let game_started = ServerMessage::GameStarted {

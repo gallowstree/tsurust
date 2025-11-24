@@ -8,6 +8,7 @@ use egui::Pos2;
 use tsurust_common::board::*;
 use tsurust_common::trail::Trail;
 
+use crate::app::{PlayerAnimation, TilePlacementAnimation};
 use crate::rendering::{endpoint_position, paint_tile_with_trails, trail_to_world_coords, PINK};
 
 const TILE_LENGTH: f32 = 120.0;
@@ -19,6 +20,8 @@ pub struct BoardRenderer<'a> {
     players: &'a Vec<Player>,
     tile_trails: &'a Vec<(CellCoord, Vec<(PlayerID, TileEndpoint)>)>,
     player_trails: &'a HashMap<PlayerID, Trail>,
+    player_animations: &'a HashMap<PlayerID, PlayerAnimation>,
+    tile_placement_animation: &'a Option<TilePlacementAnimation>,
 }
 
 impl <'a> BoardRenderer<'a> {
@@ -26,9 +29,11 @@ impl <'a> BoardRenderer<'a> {
         history: &'a Vec<Move>,
         players: &'a Vec<Player>,
         tile_trails: &'a Vec<(CellCoord, Vec<(PlayerID, TileEndpoint)>)>,
-        player_trails: &'a HashMap<PlayerID, Trail>
+        player_trails: &'a HashMap<PlayerID, Trail>,
+        player_animations: &'a HashMap<PlayerID, PlayerAnimation>,
+        tile_placement_animation: &'a Option<TilePlacementAnimation>,
     ) -> Self {
-        Self { history, players, tile_trails, player_trails }
+        Self { history, players, tile_trails, player_trails, player_animations, tile_placement_animation }
     }
 
 }
@@ -44,7 +49,7 @@ impl Widget for BoardRenderer<'_> {
         background(ui, board_rect);
 
         ui.vertical_centered(|ui| {
-            render_board_tiles(ui, self.history, self.tile_trails, self.players, board_rect);
+            render_board_tiles(ui, self.history, self.tile_trails, self.players, board_rect, self.tile_placement_animation);
         });
 
         // Render player trails on top with higher opacity so tile paths don't show through as much
@@ -72,14 +77,20 @@ impl Widget for BoardRenderer<'_> {
         for player in self.players.iter() {
             let player_color = Color32::from_rgb(player.color.0, player.color.1, player.color.2);
 
-            // Render current player position
-            let cell_rect = rect_at_coord(player.pos.cell, board_rect);
-            let endpoint_offset = path_index_position(player.pos.endpoint);
+            // Check if this player is animating
+            let player_pos = if let Some(animation) = self.player_animations.get(&player.id) {
+                // Interpolate position along the trail
+                interpolate_position_along_trail(&animation.trail, animation.progress, board_rect)
+            } else {
+                // Use current player position
+                let cell_rect = rect_at_coord(player.pos.cell, board_rect);
+                let endpoint_offset = path_index_position(player.pos.endpoint);
 
-            let player_pos = cell_rect.min + Vec2::new(
-                endpoint_offset.x * cell_rect.width(),
-                endpoint_offset.y * cell_rect.height()
-            );
+                cell_rect.min + Vec2::new(
+                    endpoint_offset.x * cell_rect.width(),
+                    endpoint_offset.y * cell_rect.height()
+                )
+            };
 
             if player.alive {
                 ui.painter().circle(player_pos, PLAYER_RADIUS, Color32::WHITE, Stroke::default());
@@ -124,12 +135,19 @@ fn render_board_tiles(
     history: &Vec<Move>,
     tile_trails: &Vec<(CellCoord, Vec<(PlayerID, TileEndpoint)>)>,
     players: &Vec<Player>,
-    board_rect: Rect
+    board_rect: Rect,
+    tile_placement_animation: &Option<TilePlacementAnimation>,
 ) {
     Frame::canvas(ui.style()).show(ui, |ui| {
         let painter = ui.painter();
 
         for mov in history {
+            // Check if this tile is being animated
+            let is_animating = tile_placement_animation
+                .as_ref()
+                .map(|anim| anim.cell == mov.cell)
+                .unwrap_or(false);
+
             let rect = rect_at_coord(mov.cell, board_rect);
 
             // Get player paths for this tile
@@ -148,7 +166,31 @@ fn render_board_tiles(
                 }
             }
 
-            paint_tile_with_trails(&mov.tile, rect, painter, &player_paths);
+            if is_animating {
+                // Render with animation effects
+                let anim = tile_placement_animation.as_ref().unwrap();
+
+                // Ease-out cubic for smooth deceleration
+                let eased_progress = 1.0 - (1.0 - anim.progress).powi(3);
+
+                // Calculate animation parameters
+                let scale = 0.80 + eased_progress * 0.20; // Scale from 80% to 100%
+                let drop_offset = (1.0 - eased_progress) * 30.0; // Drop from 30px above
+                let alpha = eased_progress; // Fade in from 0 to 1
+
+                // Apply transformations
+                let center = rect.center();
+                let scaled_size = rect.size() * scale;
+                let animated_rect = Rect::from_center_size(
+                    center - Vec2::new(0.0, drop_offset),
+                    scaled_size
+                );
+
+                crate::rendering::paint_tile_with_trails_rotation_and_alpha(&mov.tile, animated_rect, painter, &player_paths, 0.0, alpha);
+            } else {
+                // Normal rendering
+                paint_tile_with_trails(&mov.tile, rect, painter, &player_paths);
+            }
         }
     });
 }
@@ -175,4 +217,47 @@ fn background(ui: &mut Ui, rect: Rect) {
         ui.painter().line_segment([start, end], Stroke::new(0.2, Color32::LIGHT_YELLOW));
 
     }
+}
+
+/// Interpolate player position along a trail based on animation progress (0.0 to 1.0)
+fn interpolate_position_along_trail(trail: &Trail, progress: f32, board_rect: Rect) -> Pos2 {
+    // Convert trail to world coordinates
+    let line_segments = trail_to_world_coords(trail, TILE_LENGTH, board_rect.min);
+
+    if line_segments.is_empty() {
+        // No movement, return start position
+        let cell_rect = rect_at_coord(trail.start_pos.cell, board_rect);
+        let endpoint_offset = path_index_position(trail.start_pos.endpoint);
+        return cell_rect.min + Vec2::new(
+            endpoint_offset.x * cell_rect.width(),
+            endpoint_offset.y * cell_rect.height()
+        );
+    }
+
+    // Calculate total trail length
+    let total_length: f32 = line_segments.iter()
+        .map(|(start, end)| (*end - *start).length())
+        .sum();
+
+    // Find the target distance along the trail
+    let target_distance = total_length * progress;
+
+    // Walk along segments to find the interpolated position
+    let mut accumulated_distance = 0.0;
+    for (start, end) in line_segments.iter() {
+        let segment_vec = *end - *start;
+        let segment_length = segment_vec.length();
+
+        if accumulated_distance + segment_length >= target_distance {
+            // We're in this segment
+            let distance_in_segment = target_distance - accumulated_distance;
+            let t = distance_in_segment / segment_length;
+            return *start + segment_vec * t;
+        }
+
+        accumulated_distance += segment_length;
+    }
+
+    // If we got here, return the end position
+    line_segments.last().map(|(_, end)| *end).unwrap_or(Pos2::ZERO)
 }

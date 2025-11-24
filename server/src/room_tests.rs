@@ -20,7 +20,7 @@ fn test_place_tile_validates_turn() {
         Player::new(2, PlayerPos::new(2, 5, 2)),
     ];
     let game = Game::new(players);
-    let mut room = GameRoom::new("TEST".to_string(), game);
+    let mut room = GameRoom::new("TEST".to_string(), "Test Room".to_string(), game);
 
     // Start the game
     room.game.deck.take_up_to(3); // Simulate taking tiles for hands
@@ -52,7 +52,7 @@ fn test_place_tile_validates_move_player_id() {
         Player::new(2, PlayerPos::new(2, 5, 2)),
     ];
     let game = Game::new(players);
-    let mut room = GameRoom::new("TEST".to_string(), game);
+    let mut room = GameRoom::new("TEST".to_string(), "Test Room".to_string(), game);
 
     // Player 1's turn
     assert_eq!(room.game.current_player_id, 1);
@@ -81,7 +81,7 @@ fn test_place_tile_accepts_valid_move() {
         Player::new(2, PlayerPos::new(2, 5, 2)),
     ];
     let game = Game::new(players);
-    let mut room = GameRoom::new("TEST".to_string(), game);
+    let mut room = GameRoom::new("TEST".to_string(), "Test Room".to_string(), game);
 
     // Player 1's turn
     assert_eq!(room.game.current_player_id, 1);

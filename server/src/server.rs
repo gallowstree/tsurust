@@ -35,7 +35,7 @@ impl GameServer {
         current
     }
 
-    pub async fn create_room(&self, creator_name: String) -> Result<(RoomId, PlayerID), String> {
+    pub async fn create_room(&self, room_name: String, creator_name: String) -> Result<(RoomId, PlayerID), String> {
         // Generate a unique short room ID
         let room_id = loop {
             let id = next_lobby_id();
@@ -56,7 +56,7 @@ impl GameServer {
 
         // Create game with single player
         let game = Game::new(vec![player]);
-        let mut room = GameRoom::new(room_id.clone(), game);
+        let mut room = GameRoom::new(room_id.clone(), room_name, game);
 
         // Add creator to lobby
         if let Some(lobby) = &mut room.lobby {

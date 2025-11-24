@@ -4,7 +4,7 @@ use eframe::egui;
 use egui::Context;
 
 use tsurust_common::board::*;
-use tsurust_common::game::{Game, TurnResult};
+use tsurust_common::game::Game;
 use tsurust_common::lobby::{Lobby, LobbyEvent};
 
 use tsurust_common::protocol::{ClientMessage, ServerMessage};
@@ -18,7 +18,7 @@ pub enum Message {
     TileRotated(usize, bool),         // tile index, clockwise
     RestartGame,                      // restart the game
     StartLobby,                       // start a local lobby (offline multiplayer)
-    StartSampleGame,                  // start sample game (current behavior)
+    StartSampleGame,                  // start sample game
     #[allow(dead_code)]
     JoinLobby(String),               // join lobby with player name
     PlacePawn(PlayerPos),            // place pawn at position in lobby
@@ -52,6 +52,7 @@ pub enum AppState {
     OnlineGame {
         game: Game,                     // Server's authoritative state
         room_id: String,
+        lobby_name: String,             // Display name of the lobby/game
         waiting_for_server: bool,       // Show loading state during server round-trip
     },
     GameOver(Game),                     // Game ended - show statistics
@@ -78,6 +79,30 @@ pub struct TemplateApp {
     current_room_id: Option<String>, // Track current room we're in
     #[serde(skip)]
     local_server_status: LocalServerStatus, // Status of locally launched server
+    #[serde(skip)]
+    last_rotated_tile: Option<(usize, bool)>, // (tile_index, clockwise) - for animation tracking
+    #[serde(skip)]
+    player_animations: std::collections::HashMap<PlayerID, PlayerAnimation>, // Active player movement animations
+    #[serde(skip)]
+    tile_placement_animation: Option<TilePlacementAnimation>, // Animation for the most recently placed tile
+}
+
+/// Tracks animation state for a player moving along their trail
+#[derive(Debug, Clone)]
+pub struct PlayerAnimation {
+    pub trail: tsurust_common::trail::Trail,
+    pub progress: f32, // 0.0 = start, 1.0 = end
+    pub start_time: std::time::Instant,
+    pub duration_secs: f32,
+}
+
+/// Tracks animation state for a tile being placed on the board
+#[derive(Debug, Clone)]
+pub struct TilePlacementAnimation {
+    pub cell: tsurust_common::board::CellCoord,
+    pub progress: f32, // 0.0 = start, 1.0 = end
+    pub start_time: std::time::Instant,
+    pub duration_secs: f32,
 }
 
 /// Tracks the status of a locally spawned server process.
@@ -98,6 +123,9 @@ impl Default for TemplateApp {
             label: "Tsurust".to_owned(),
             app_state: AppState::MainMenu,
             sender: Some(sender),
+            last_rotated_tile: None,
+            player_animations: std::collections::HashMap::new(),
+            tile_placement_animation: None,
             receiver: Some(receiver),
             current_player_id: 1, // Default player ID
             game_client: None,
@@ -116,7 +144,78 @@ impl TemplateApp {
         Default::default()
     }
 
-    fn render_ui(ctx: &Context, app_state: &mut AppState, current_player_id: PlayerID, is_online: bool, server_status: &LocalServerStatus, sender: &mpsc::Sender<Message>) {
+    fn start_player_animations(&mut self, game: &Game) {
+        Self::start_player_animations_static(&mut self.player_animations, game);
+    }
+
+    fn start_player_animations_static(
+        player_animations: &mut std::collections::HashMap<PlayerID, PlayerAnimation>,
+        game: &Game
+    ) {
+        // Clear existing animations
+        player_animations.clear();
+
+        let now = std::time::Instant::now();
+        let animation_speed = 2.0; // tiles per second
+
+        // Create animations for players who moved this turn (use current_turn_trails, not cumulative player_trails)
+        for (player_id, trail) in &game.current_turn_trails {
+            if trail.segments.is_empty() {
+                continue; // No movement
+            }
+
+            // Calculate animation duration based on trail length
+            let duration = trail.length() as f32 / animation_speed;
+
+            player_animations.insert(*player_id, PlayerAnimation {
+                trail: trail.clone(),
+                progress: 0.0,
+                start_time: now,
+                duration_secs: duration.max(0.3), // Minimum 0.3 seconds
+            });
+        }
+    }
+
+    fn update_player_animations(&mut self, ctx: &Context) {
+        let now = std::time::Instant::now();
+        let mut completed_animations = Vec::new();
+
+        // Update progress for all active animations
+        for (player_id, animation) in self.player_animations.iter_mut() {
+            let elapsed = now.duration_since(animation.start_time).as_secs_f32();
+            animation.progress = (elapsed / animation.duration_secs).min(1.0);
+
+            if animation.progress >= 1.0 {
+                completed_animations.push(*player_id);
+            } else {
+                // Request repaint for next frame
+                ctx.request_repaint();
+            }
+        }
+
+        // Remove completed animations
+        for player_id in completed_animations {
+            self.player_animations.remove(&player_id);
+        }
+    }
+
+    fn update_tile_placement_animation(&mut self, ctx: &Context) {
+        if let Some(animation) = &mut self.tile_placement_animation {
+            let now = std::time::Instant::now();
+            let elapsed = now.duration_since(animation.start_time).as_secs_f32();
+            animation.progress = (elapsed / animation.duration_secs).min(1.0);
+
+            if animation.progress >= 1.0 {
+                // Animation complete
+                self.tile_placement_animation = None;
+            } else {
+                // Request repaint for next frame
+                ctx.request_repaint();
+            }
+        }
+    }
+
+    fn render_ui(ctx: &Context, app_state: &mut AppState, current_player_id: PlayerID, is_online: bool, server_status: &LocalServerStatus, sender: &mpsc::Sender<Message>, last_rotated_tile: Option<(usize, bool)>, player_animations: &std::collections::HashMap<PlayerID, PlayerAnimation>, tile_placement_animation: &Option<TilePlacementAnimation>) {
         match app_state {
             AppState::MainMenu => screens::main_menu::render(ctx, server_status, sender),
             AppState::CreateLobbyForm { lobby_name, player_name } => {
@@ -131,11 +230,14 @@ impl TemplateApp {
             AppState::LobbyPlacingFor(lobby, placing_for_id) => {
                 screens::lobby::render_lobby_placing_ui(ctx, lobby, *placing_for_id, is_online, sender)
             }
-            AppState::Game(game) => screens::game::render_game_ui(ctx, game, current_player_id, false, sender),
-            AppState::OnlineGame { game, waiting_for_server, .. } => {
-                screens::game::render_game_ui(ctx, game, current_player_id, *waiting_for_server, sender)
+            AppState::Game(game) => screens::game::render_game_ui(ctx, game, current_player_id, false, None, sender, last_rotated_tile, player_animations, tile_placement_animation),
+            AppState::OnlineGame { game, waiting_for_server, lobby_name, .. } => {
+                screens::game::render_game_ui(ctx, game, current_player_id, *waiting_for_server, Some(lobby_name.as_str()), sender, last_rotated_tile, player_animations, tile_placement_animation)
             }
-            AppState::GameOver(game) => screens::game_over::render_game_over_ui(ctx, game, current_player_id, sender),
+            AppState::GameOver(game) => {
+                // Keep GameOver state for backward compatibility but render as normal game with overlay
+                screens::game::render_game_ui(ctx, game, current_player_id, false, None, sender, last_rotated_tile, player_animations, tile_placement_animation)
+            }
         }
     }
 
@@ -154,6 +256,8 @@ impl eframe::App for TemplateApp {
                     &mut self.current_room_id,
                     &mut self.current_player_id,
                     &mut self.app_state,
+                    &mut self.player_animations,
+                    &mut self.tile_placement_animation,
                 );
             }
 
@@ -175,7 +279,14 @@ impl eframe::App for TemplateApp {
         // Render UI
         if let Some(tx) = &self.sender {
             let is_online = self.game_client.is_some();
-            Self::render_ui(ctx, &mut self.app_state, self.current_player_id, is_online, &self.local_server_status, tx);
+            Self::render_ui(ctx, &mut self.app_state, self.current_player_id, is_online, &self.local_server_status, tx, self.last_rotated_tile, &self.player_animations, &self.tile_placement_animation);
+
+            // Clear the rotation animation state after one frame
+            self.last_rotated_tile = None;
+
+            // Update animations
+            self.update_player_animations(ctx);
+            self.update_tile_placement_animation(ctx);
         }
     }
 
@@ -218,7 +329,10 @@ impl TemplateApp {
         current_room_id: &mut Option<String>,
         current_player_id: &mut PlayerID,
         app_state: &mut AppState,
+        player_animations: &mut std::collections::HashMap<PlayerID, PlayerAnimation>,
+        tile_placement_animation: &mut Option<TilePlacementAnimation>,
     ) {
+        println!("[SERVER->CLIENT] Received: {:?}", server_msg);
         match server_msg {
             ServerMessage::RoomCreated { room_id, player_id } => {
                 *current_room_id = Some(room_id.clone());
@@ -252,19 +366,25 @@ impl TemplateApp {
                     *game = state.clone();
                     *waiting_for_server = false;
 
-                    // Transition to GameOver if the game ended
-                    if state.is_game_over() {
-                        *app_state = AppState::GameOver(state);
+                    // Start animations
+                    Self::start_player_animations_static(player_animations, &state);
+
+                    // Start tile placement animation for the most recent move
+                    if let Some(last_move) = state.board.history.last() {
+                        *tile_placement_animation = Some(TilePlacementAnimation {
+                            cell: last_move.cell,
+                            progress: 0.0,
+                            start_time: std::time::Instant::now(),
+                            duration_secs: 0.4,
+                        });
                     }
+
+                    // Stay in OnlineGame state even if game is over (overlay will show stats)
                 }
             }
-            ServerMessage::TurnCompleted { room_id: _, result } => {
-                // Check if the game is over and transition to GameOver state
-                if matches!(result, TurnResult::PlayerWins { .. } | TurnResult::Extinction { .. }) {
-                    if let AppState::OnlineGame { game, .. } = app_state {
-                        *app_state = AppState::GameOver(game.clone());
-                    }
-                }
+            ServerMessage::TurnCompleted { room_id: _, result: _ } => {
+                // Game over will be handled by GameStateUpdate
+                // No need to transition to GameOver state - overlay will show when game.is_game_over() is true
             }
             ServerMessage::Error { message } => {
                 eprintln!("Server error: {}", message);
@@ -292,10 +412,17 @@ impl TemplateApp {
                 }
             }
             ServerMessage::GameStarted { room_id, game } => {
+                // Get lobby name from current lobby state
+                let lobby_name = match app_state {
+                    AppState::Lobby(lobby) | AppState::LobbyPlacingFor(lobby, _) => lobby.name.clone(),
+                    _ => "Game".to_string(), // Fallback name
+                };
+
                 // Transition to online game mode with server's authoritative game state
                 *app_state = AppState::OnlineGame {
                     game,
                     room_id,
+                    lobby_name,
                     waiting_for_server: false,
                 };
             }
@@ -559,8 +686,7 @@ impl TemplateApp {
     }
 
     fn handle_tile_rotated(&mut self, tile_index: usize, clockwise: bool) {
-        // Determine which player's hand to rotate BEFORE getting mutable reference
-        let is_online = matches!(&self.app_state, AppState::OnlineGame { .. });
+        // Get the player whose tiles we're viewing (always client_player_id)
         let client_player_id = self.current_player_id;
 
         // Get mutable reference to the game, whether local or online
@@ -570,16 +696,13 @@ impl TemplateApp {
             _ => return,
         };
 
-        // In multiplayer, only allow rotating your own hand
-        let player_id = if is_online {
-            client_player_id
-        } else {
-            game.current_player_id  // In local games, use current player
-        };
-
-        if let Some(hand) = game.hands.get_mut(&player_id) {
+        // Always rotate the client player's tiles (the ones being displayed)
+        // This allows planning/previewing even when it's not your turn in local games
+        if let Some(hand) = game.hands.get_mut(&client_player_id) {
             if tile_index < hand.len() {
                 hand[tile_index] = hand[tile_index].rotated(clockwise);
+                // Track the rotation for animation
+                self.last_rotated_tile = Some((tile_index, clockwise));
             }
         }
     }
@@ -590,18 +713,19 @@ impl TemplateApp {
             AppState::Game(_) => {
                 // Take ownership of the game state temporarily
                 if let AppState::Game(game) = std::mem::replace(&mut self.app_state, AppState::MainMenu) {
-                    let game = Self::perform_local_tile_placement(game, tile_index);
+                    let (game, placed_cell) = Self::perform_local_tile_placement(game, tile_index);
 
-                    if game.is_game_over() {
-                        self.app_state = AppState::GameOver(game);
-                    } else {
-                        self.app_state = AppState::Game(game);
-                    }
+                    // Start animations
+                    self.start_player_animations(&game);
+                    self.start_tile_placement_animation(placed_cell);
+
+                    // Stay in Game state even if game is over (overlay will show stats)
+                    self.app_state = AppState::Game(game);
                 }
             }
 
             // Online game: send to server and wait for response (server authoritative)
-            AppState::OnlineGame { game, room_id, waiting_for_server } => {
+            AppState::OnlineGame { game, room_id, waiting_for_server, .. } => {
                 if *waiting_for_server {
                     eprintln!("Already waiting for server response");
                     return;
@@ -652,7 +776,8 @@ impl TemplateApp {
     }
 
     /// Perform a tile placement in a local game (client authoritative)
-    fn perform_local_tile_placement(mut game: Game, tile_index: usize) -> Game {
+    /// Returns the updated game and the cell where the tile was placed
+    fn perform_local_tile_placement(mut game: Game, tile_index: usize) -> (Game, tsurust_common::board::CellCoord) {
         let player_cell = game.players.iter()
             .find(|p| p.id == game.current_player_id && p.alive)
             .expect("current player should exist and be alive")
@@ -671,13 +796,22 @@ impl TemplateApp {
 
         match game.perform_move(mov) {
             Ok(_turn_result) => {
-                game
+                (game, player_cell)
             }
             Err(error) => {
                 eprintln!("Failed to place tile: {}", error);
-                game
+                (game, player_cell)
             }
         }
+    }
+
+    fn start_tile_placement_animation(&mut self, cell: tsurust_common::board::CellCoord) {
+        self.tile_placement_animation = Some(TilePlacementAnimation {
+            cell,
+            progress: 0.0,
+            start_time: std::time::Instant::now(),
+            duration_secs: 0.4,
+        });
     }
 
 
@@ -739,6 +873,7 @@ impl TemplateApp {
 
     fn handle_send_to_server(&mut self, client_msg: ClientMessage) {
         if let Some(client) = &mut self.game_client {
+            println!("[CLIENT->SERVER] Sending: {:?}", client_msg);
             client.send(client_msg);
         } else {
             eprintln!("Cannot send message to server: not connected");

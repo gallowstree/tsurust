@@ -97,9 +97,11 @@ async fn handle_client_message(
     let client_msg: ClientMessage = serde_json::from_str(&text)
         .map_err(|e| format!("Failed to parse client message: {}", e))?;
 
+    println!("[SERVER] Received from client: {:?}", client_msg);
+
     match client_msg {
         ClientMessage::CreateRoom { room_name, creator_name } => {
-            let (room_id, player_id) = server.create_room(creator_name).await?;
+            let (room_id, player_id) = server.create_room(room_name, creator_name).await?;
 
             // Subscribe to room updates and send initial lobby state
             let rooms = server.rooms.read().await;
@@ -178,7 +180,26 @@ async fn handle_client_message(
             let room = rooms.get_mut(&room_id)
                 .ok_or_else(|| format!("Room '{}' not found", room_id))?;
 
-            room.place_tile(player_id, mov)?;
+            // Debug: show game state before placement
+            println!("[SERVER] PlaceTile request - player_id: {}, current_player: {}", player_id, room.game.current_player_id);
+            println!("[SERVER] Tile being placed: {:?}", mov.tile);
+            if let Some(hand) = room.game.hands.get(&player_id) {
+                println!("[SERVER] Player {} hand: {:?}", player_id, hand);
+                let has_tile = hand.iter().any(|t| t.is_same_tile(&mov.tile));
+                println!("[SERVER] Player has tile in hand (rotation-invariant): {}", has_tile);
+            } else {
+                println!("[SERVER] WARNING: Player {} has no hand!", player_id);
+            }
+
+            match room.place_tile(player_id, mov.clone()) {
+                Ok(result) => {
+                    println!("[SERVER] PlaceTile success: {:?}", result);
+                }
+                Err(e) => {
+                    println!("[SERVER] PlaceTile error: {}", e);
+                    return Err(e);
+                }
+            }
             // Updates are broadcast automatically by place_tile
             drop(rooms); // Explicitly drop the lock to allow broadcast messages to be received
         }

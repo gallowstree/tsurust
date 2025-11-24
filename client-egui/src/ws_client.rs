@@ -58,7 +58,6 @@ impl GameClient {
                 }
             }
         }
-        println!("[WS_CLIENT] No more events, returning None");
         None
     }
 
