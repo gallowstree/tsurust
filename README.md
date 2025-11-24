@@ -4,9 +4,11 @@ A multiplayer implementation of the [Tsuro](https://en.wikipedia.org/wiki/Tsuro)
 
 ## Features
 
+- **Browser Support**: Play directly in your web browser via WebAssembly (WASM)
 - **Local Multiplayer**: Play offline with multiple players on the same machine
 - **Online Multiplayer**: Host or join games via WebSocket server
 - **Server With Lobby System**: Create rooms, invite players, and configure starting positions
+- **Cross-Platform**: Native desktop apps (Windows, macOS, Linux) and web browsers
 
 ## Architecture
 
@@ -34,13 +36,32 @@ cargo build --workspace --release
 
 ### Running
 
-**Local Game (Offline Multiplayer)**
+**Web Browser (WASM)**
+
+1. Build for WASM:
+```bash
+cd client-egui
+./build_wasm.sh         # Unix/Linux/macOS
+# or
+.\build_wasm.ps1        # Windows
+```
+
+2. Start a local web server:
+```bash
+python3 -m http.server 8000
+```
+
+3. Open http://localhost:8000/web/ in your browser
+
+See `client-egui/web/README.md` for deployment options.
+
+**Native Desktop - Local Game**
 ```bash
 cargo run --bin client-egui_bin
 ```
 Click "Local Game" in the main menu to start an offline multiplayer session.
 
-**Online Multiplayer**
+**Native Desktop - Online Multiplayer**
 
 1. Start the server:
 ```bash
@@ -134,7 +155,6 @@ See `DEVELOPMENT_ROADMAP.md` for detailed development plans and technical debt t
 
 Current priorities:
 - Server-side improvements (disconnect handling, room cleanup)
-- WASM compilation for browser deployment
 - Comprehensive integration tests
 - Animation system for player movement
 
