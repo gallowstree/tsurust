@@ -153,6 +153,10 @@ impl<'a> LobbyBoard<'a> {
         ui.painter().circle_filled(spawn_center, 4.0, color);
 
         if spawn_response.clicked() {
+            #[cfg(target_arch = "wasm32")]
+            {
+                web_sys::console::log_1(&format!("Pawn placement clicked at position: {:?}", pos).into());
+            }
             send_ui_message(sender, Message::PlacePawn(pos));
         }
     }

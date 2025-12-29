@@ -9,6 +9,25 @@ use crate::app::Message;
 use crate::components::LobbyBoard;
 use crate::messaging::send_ui_message;
 
+/// Copy text to clipboard using browser API
+#[cfg(target_arch = "wasm32")]
+fn copy_to_clipboard(text: &str) {
+    use wasm_bindgen::prelude::*;
+
+    #[wasm_bindgen(inline_js = "export function copy_to_clipboard_js(text) { navigator.clipboard.writeText(text); }")]
+    extern "C" {
+        fn copy_to_clipboard_js(text: &str);
+    }
+
+    copy_to_clipboard_js(text);
+}
+
+/// Copy text to clipboard (no-op on native, use egui's built-in)
+#[cfg(not(target_arch = "wasm32"))]
+fn copy_to_clipboard(_text: &str) {
+    // On native, egui's clipboard works fine
+}
+
 /// Helper function to render a player color indicator circle
 fn render_player_color_circle(ui: &mut egui::Ui, color: (u8, u8, u8), radius: f32) {
     let player_color_ui = egui::Color32::from_rgb(color.0, color.1, color.2);
@@ -31,7 +50,15 @@ fn render_lobby_top_panel(ctx: &Context, lobby: &Lobby, show_start_button: bool,
 
                 // Only show Room ID for online lobbies
                 if is_online {
-                    ui.label(format!("Room ID: {}", lobby.id));
+                    ui.label("Room ID:");
+                    // Clickable room ID that copies to clipboard
+                    if ui.selectable_label(false, &lobby.id).clicked() {
+                        copy_to_clipboard(&lobby.id);
+                    }
+                    // Copy button
+                    if ui.button("📋").on_hover_text("Copy room ID").clicked() {
+                        copy_to_clipboard(&lobby.id);
+                    }
                     ui.separator();
                 }
 

@@ -38,6 +38,7 @@
    - Connection status indicators
    - Loading states for network operations
    - Improve animation timing configurability
+   - URL-based room joining: navigating to `http://hostname:port/<roomID>` should attempt to join that room
 
 #### Lower Priority:
 1. **Type System Improvements**

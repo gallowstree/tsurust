@@ -23,7 +23,16 @@
       "Bash(wasm-bindgen:*)",
       "Bash(git fetch:*)",
       "Bash(git merge:*)",
-      "Bash(git reset:*)"
+      "Bash(git reset:*)",
+      "Bash(docker --version:*)",
+      "Bash(docker-compose:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(trunk:*)",
+      "Bash(PORT=8081 cargo run:*)",
+      "Bash(cargo clean:*)",
+      "Bash(timeout 10 tail:*)",
+      "Bash(set PORT=8082:*)",
+      "Bash(set PORT=8081)"
     ],
     "deny": [],
     "ask": []

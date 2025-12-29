@@ -51,34 +51,20 @@
 
     <canvas id="the_canvas_id"></canvas>
 
-    <script type="module">
-        import init, { start } from './client_egui.js';
-
-        async function run() {
-            try {
-                // Initialize the WASM module
-                await init();
-
-                // Hide loading message
-                document.getElementById('loading').style.display = 'none';
-
-                // Start the app
-                await start('the_canvas_id');
-
-                console.log("Tsurust WASM module loaded successfully");
-            } catch (error) {
-                console.error("Failed to load WASM module:", error);
-                document.getElementById('loading').innerHTML = `
-                    <div class="error">
-                        <h2>Failed to Load</h2>
-                        <p>Error: ${error.message}</p>
-                        <p>Please make sure you're running this page from a web server (not file://)</p>
-                    </div>
-                `;
-            }
-        }
-
-        run();
+    <!-- Load environment-specific configuration -->
+    <script>
+        // Configuration for different environments
+        // For GitHub Pages, this can be set via build-time env vars
+        // For local development, uses default
+        window.TSURUST_CONFIG = window.TSURUST_CONFIG || {
+            // Default to localhost for development
+            // GitHub Actions will inject production URL via config.js
+            wsServerUrl: "ws://127.0.0.1:8081"
+        };
     </script>
+
+    <!-- Trunk will compile Rust to WASM and inject loading code here -->
+    <link data-trunk rel="rust" href="../Cargo.toml" data-bin="client-egui_bin" data-wasm-opt="z"/>
+    <!-- The canvas ID 'the_canvas_id' is used by eframe automatically -->
 </body>
 </html>

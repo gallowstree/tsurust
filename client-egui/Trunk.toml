@@ -1,0 +1,33 @@
+[build]
+# The index HTML file to use
+target = "web/index.html"
+# Output directory for the built assets
+dist = "dist"
+# Public URL path (will be overridden by GitHub Actions for production)
+public_url = "/"
+
+[watch]
+# Watch for changes in these directories
+watch = ["src", "web"]
+
+[serve]
+# Local development server configuration
+addresses = ["127.0.0.1"]
+port = 8080
+# Open browser automatically on `trunk serve`
+open = false
+
+[clean]
+# Clean build artifacts
+cargo = false
+
+# Copy static assets
+[[hooks]]
+stage = "pre_build"
+command = "echo"
+command_arguments = ["Building Tsurust WASM client..."]
+
+[[hooks]]
+stage = "post_build"
+command = "echo"
+command_arguments = ["Build complete! Output in dist/"]

@@ -16,8 +16,12 @@ use crate::handler::handle_connection;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "127.0.0.1:8080";
-    let listener = TcpListener::bind(addr).await
+    // Read configuration from environment variables with defaults
+    let host = std::env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let port = std::env::var("PORT").unwrap_or_else(|_| "8081".to_string());
+    let addr = format!("{}:{}", host, port);
+
+    let listener = TcpListener::bind(&addr).await
         .expect("Failed to bind to address");
 
     println!("Tsurust WebSocket server listening on {}", addr);

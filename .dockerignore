@@ -1,0 +1,47 @@
+# Git files
+.git
+.gitignore
+.github
+
+# Rust build artifacts
+target/
+**/target/
+**/*.rs.bk
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Documentation
+*.md
+!README.md
+docs/
+
+# Test files
+**/tests/
+
+# WASM build output (we rebuild in Docker)
+client-egui/web/*.wasm
+client-egui/web/*.js
+
+# Temporary files
+*.tmp
+*.log
+nul
+tile_now.ps1
+tile_windows.ps1
+
+# Docker files
+docker-compose.yml
+docker-compose.*.yml
+Dockerfile
+**/ Dockerfile
+.dockerignore

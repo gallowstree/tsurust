@@ -76,9 +76,10 @@ pub fn render_game_ui(
                 let alive_count = game.players.iter().filter(|p| p.alive).count();
                 if alive_count == 1 {
                     let winner = game.players.iter().find(|p| p.alive).expect("Should have exactly one alive player");
-                    ui.label(egui::RichText::new(format!("🎉 {} Wins!", color_to_name(winner.color))).size(18.0).strong());
+                    let winner_color = egui::Color32::from_rgb(winner.color.0, winner.color.1, winner.color.2);
+                    ui.label(egui::RichText::new(format!("🎉 {} Wins!", winner.name)).size(18.0).strong().color(winner_color));
                 } else {
-                    ui.label(egui::RichText::new("All Players Eliminated").size(16.0));
+                    ui.label(egui::RichText::new("All Players Eliminated").size(16.0).color(egui::Color32::from_rgb(255, 200, 0)));
                 }
 
                 ui.add_space(15.0);
@@ -235,13 +236,14 @@ fn render_game_over_overlay(ctx: &Context, game: &Game, client_player_id: Player
                 let alive_count = game.players.iter().filter(|p| p.alive).count();
                 if alive_count == 1 {
                     let winner = game.players.iter().find(|p| p.alive).expect("Should have exactly one alive player");
-                    ui.heading(egui::RichText::new(format!("🎉 {} Wins! 🎉", color_to_name(winner.color))).size(24.0));
+                    let winner_color = egui::Color32::from_rgb(winner.color.0, winner.color.1, winner.color.2);
+                    ui.heading(egui::RichText::new(format!("🎉 {} Wins! 🎉", winner.name)).size(24.0).color(winner_color));
                 } else {
-                    ui.heading(egui::RichText::new("Game Over - All Players Eliminated").size(24.0));
+                    ui.heading(egui::RichText::new("Game Over - All Players Eliminated").size(24.0).color(egui::Color32::from_rgb(255, 200, 0)));
                 }
 
                 ui.add_space(20.0);
-                ui.label(egui::RichText::new("Final Statistics").size(18.0).strong());
+                ui.label(egui::RichText::new("Final Statistics").size(18.0).strong().color(egui::Color32::from_rgb(200, 200, 255)));
                 ui.add_space(15.0);
 
                 // Sort players by performance

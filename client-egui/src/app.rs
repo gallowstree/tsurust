@@ -12,6 +12,45 @@ use tsurust_common::protocol::{ClientMessage, ServerMessage};
 use crate::screens;
 use crate::ws_client::GameClient;
 
+// Cross-platform time support
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
+
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
+
+/// Get WebSocket server URL from browser configuration or use default
+#[cfg(target_arch = "wasm32")]
+fn get_websocket_url() -> String {
+    // Try to get config from window.TSURUST_CONFIG.wsServerUrl
+    if let Ok(window) = web_sys::window().ok_or("No window object") {
+        if let Ok(config) = js_sys::Reflect::get(&window, &JsValue::from_str("TSURUST_CONFIG")) {
+            if !config.is_undefined() {
+                if let Ok(ws_url) = js_sys::Reflect::get(&config, &JsValue::from_str("wsServerUrl")) {
+                    if let Some(url_str) = ws_url.as_string() {
+                        web_sys::console::log_1(&format!("Using WebSocket URL from config: {}", url_str).into());
+                        return url_str;
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback to default
+    let default_url = "ws://127.0.0.1:8080".to_string();
+    web_sys::console::log_1(&format!("Using default WebSocket URL: {}", default_url).into());
+    default_url
+}
+
+/// Get WebSocket server URL for native builds
+#[cfg(not(target_arch = "wasm32"))]
+fn get_websocket_url() -> String {
+    std::env::var("WS_SERVER_URL").unwrap_or_else(|_| "ws://127.0.0.1:8080".to_string())
+}
+
 #[derive(Debug, Clone)]
 pub enum Message {
     TilePlaced(usize),                // tile index - place at current player position
@@ -92,7 +131,7 @@ pub struct TemplateApp {
 pub struct PlayerAnimation {
     pub trail: tsurust_common::trail::Trail,
     pub progress: f32, // 0.0 = start, 1.0 = end
-    pub start_time: std::time::Instant,
+    pub start_time: Instant,
     pub duration_secs: f32,
 }
 
@@ -101,7 +140,7 @@ pub struct PlayerAnimation {
 pub struct TilePlacementAnimation {
     pub cell: tsurust_common::board::CellCoord,
     pub progress: f32, // 0.0 = start, 1.0 = end
-    pub start_time: std::time::Instant,
+    pub start_time: Instant,
     pub duration_secs: f32,
 }
 
@@ -155,7 +194,7 @@ impl TemplateApp {
         // Clear existing animations
         player_animations.clear();
 
-        let now = std::time::Instant::now();
+        let now = Instant::now();
         let animation_speed = 2.0; // tiles per second
 
         // Create animations for players who moved this turn (use current_turn_trails, not cumulative player_trails)
@@ -177,7 +216,7 @@ impl TemplateApp {
     }
 
     fn update_player_animations(&mut self, ctx: &Context) {
-        let now = std::time::Instant::now();
+        let now = Instant::now();
         let mut completed_animations = Vec::new();
 
         // Update progress for all active animations
@@ -201,7 +240,7 @@ impl TemplateApp {
 
     fn update_tile_placement_animation(&mut self, ctx: &Context) {
         if let Some(animation) = &mut self.tile_placement_animation {
-            let now = std::time::Instant::now();
+            let now = Instant::now();
             let elapsed = now.duration_since(animation.start_time).as_secs_f32();
             animation.progress = (elapsed / animation.duration_secs).min(1.0);
 
@@ -374,7 +413,7 @@ impl TemplateApp {
                         *tile_placement_animation = Some(TilePlacementAnimation {
                             cell: last_move.cell,
                             progress: 0.0,
-                            start_time: std::time::Instant::now(),
+                            start_time: Instant::now(),
                             duration_secs: 0.4,
                         });
                     }
@@ -465,7 +504,8 @@ impl TemplateApp {
     }
 
     fn handle_create_and_join_lobby(&mut self, lobby_name: String, player_name: String) {
-        match GameClient::connect("ws://127.0.0.1:8080") {
+        let ws_url = get_websocket_url();
+        match GameClient::connect(&ws_url) {
             Ok(client) => {
                 self.game_client = Some(client);
 
@@ -491,7 +531,8 @@ impl TemplateApp {
     }
 
     fn handle_join_lobby_with_id(&mut self, lobby_id: String, player_name: String) {
-        match GameClient::connect("ws://127.0.0.1:8080") {
+        let ws_url = get_websocket_url();
+        match GameClient::connect(&ws_url) {
             Ok(client) => {
                 self.game_client = Some(client);
 
@@ -540,6 +581,12 @@ impl TemplateApp {
     fn handle_place_pawn(&mut self, position: PlayerPos) {
         let is_online = self.game_client.is_some();
 
+        #[cfg(target_arch = "wasm32")]
+        {
+            web_sys::console::log_1(&format!("handle_place_pawn: is_online={}, sender={}, room_id={}",
+                is_online, self.sender.is_some(), self.current_room_id.is_some()).into());
+        }
+
         match &mut self.app_state {
             AppState::Lobby(lobby) => {
                 let player_id = self.current_player_id;
@@ -547,11 +594,21 @@ impl TemplateApp {
                 // For online lobbies, send to server instead of handling locally
                 if is_online {
                     if let (Some(sender), Some(room_id)) = (&self.sender, &self.current_room_id) {
+                        #[cfg(target_arch = "wasm32")]
+                        {
+                            web_sys::console::log_1(&format!("Sending PlacePawn to server: room={}, player={}, pos={:?}",
+                                room_id, player_id, position).into());
+                        }
                         crate::messaging::send_server_message(sender, ClientMessage::PlacePawn {
                             room_id: room_id.clone(),
                             player_id,
                             position,
                         });
+                    } else {
+                        #[cfg(target_arch = "wasm32")]
+                        {
+                            web_sys::console::log_1(&"PlacePawn NOT sent: sender or room_id is None".into());
+                        }
                     }
                 } else {
                     // Local lobby - handle locally
@@ -809,7 +866,7 @@ impl TemplateApp {
         self.tile_placement_animation = Some(TilePlacementAnimation {
             cell,
             progress: 0.0,
-            start_time: std::time::Instant::now(),
+            start_time: Instant::now(),
             duration_secs: 0.4,
         });
     }

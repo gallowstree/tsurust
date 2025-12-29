@@ -25,6 +25,14 @@ impl GameClient {
     pub fn send(&mut self, msg: ClientMessage) {
         let json = serde_json::to_string(&msg)
             .expect("Failed to serialize client message");
+        #[cfg(target_arch = "wasm32")]
+        {
+            web_sys::console::log_1(&format!("[WS_CLIENT] Sending message: {}", json).into());
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            println!("[WS_CLIENT] Sending message: {}", json);
+        }
         self.ws_sender.send(WsMessage::Text(json));
     }
 
@@ -32,29 +40,70 @@ impl GameClient {
         while let Some(event) = self.ws_receiver.try_recv() {
             match event {
                 WsEvent::Opened => {
-                    // Connection established
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        web_sys::console::log_1(&"[WS_CLIENT] WebSocket connection opened".into());
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        println!("[WS_CLIENT] WebSocket connection opened");
+                    }
                 }
                 WsEvent::Message(WsMessage::Text(json)) => {
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        web_sys::console::log_1(&format!("[WS_CLIENT] Received message: {}", json).into());
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        println!("[WS_CLIENT] Received message: {}", json);
+                    }
                     match serde_json::from_str(&json) {
                         Ok(msg) => {
                             return Some(msg)
                         },
                         Err(e) => {
-                            eprintln!("Failed to parse server message: {}", e);
-                            eprintln!("Raw message: {}", json);
+                            #[cfg(target_arch = "wasm32")]
+                            {
+                                web_sys::console::error_1(&format!("Failed to parse server message: {}\nRaw: {}", e, json).into());
+                            }
+                            #[cfg(not(target_arch = "wasm32"))]
+                            {
+                                eprintln!("Failed to parse server message: {}", e);
+                                eprintln!("Raw message: {}", json);
+                            }
                         }
                     }
                 }
                 WsEvent::Error(e) => {
-                    eprintln!("WebSocket error: {}", e);
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        web_sys::console::error_1(&format!("WebSocket error: {}", e).into());
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        eprintln!("WebSocket error: {}", e);
+                    }
                 }
                 WsEvent::Closed => {
-                    println!("WebSocket connection closed");
-                    // Note: We don't set self.connected = false here because
-                    // self is immutable. Caller should handle this.
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        web_sys::console::warn_1(&"[WS_CLIENT] WebSocket connection closed".into());
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        println!("WebSocket connection closed");
+                    }
                 }
                 _ => {
-                    println!("[WS_CLIENT] Other event type");
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        web_sys::console::log_1(&"[WS_CLIENT] Other event type".into());
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        println!("[WS_CLIENT] Other event type");
+                    }
                 }
             }
         }

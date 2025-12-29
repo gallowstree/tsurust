@@ -710,6 +710,7 @@ dependencies = [
  "egui",
  "ewebsock",
  "getrandom 0.2.12",
+ "js-sys",
  "serde",
  "serde_json",
  "tracing-subscriber",
@@ -717,6 +718,8 @@ dependencies = [
  "tsurust_common",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
 ]
 
 [[package]]

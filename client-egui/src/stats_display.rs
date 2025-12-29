@@ -39,21 +39,21 @@ impl<'a> Widget for PlayerStatsDisplay<'a> {
         if ui.is_rect_visible(rect) {
             let visuals = ui.style().interact(&response);
 
-            // Background with winner highlight
+            // Background with winner highlight - darker for better contrast
             let bg_color = if self.is_winner {
-                Color32::from_rgba_unmultiplied(255, 215, 0, 60) // Gold highlight for winner
+                Color32::from_rgba_unmultiplied(60, 50, 0, 220) // Dark gold background for winner
             } else {
-                Color32::from_rgba_unmultiplied(240, 240, 245, 40) // Light background
+                Color32::from_rgba_unmultiplied(40, 40, 50, 220) // Dark background
             };
             ui.painter().rect_filled(rect, 6.0, bg_color);
 
             // Border
             let border_color = if self.is_winner {
-                Color32::GOLD
+                Color32::from_rgb(255, 215, 0) // Bright gold border
             } else {
-                Color32::from_gray(150)
+                Color32::from_gray(100)
             };
-            ui.painter().rect_stroke(rect, 6.0, (1.5, border_color));
+            ui.painter().rect_stroke(rect, 6.0, (2.0, border_color));
 
             // Player color circle
             let circle_center = rect.min + Vec2::new(20.0, 25.0);
@@ -80,7 +80,7 @@ impl<'a> Widget for PlayerStatsDisplay<'a> {
 
             // Player name with crown and "(You)" indicator
             let mut name_pos = rect.min + Vec2::new(42.0, 16.0);
-            let name = color_to_name(self.player.color);
+            let name = &self.player.name;
             let display_name = if self.is_you {
                 format!("{} (You)", name)
             } else {
@@ -94,14 +94,14 @@ impl<'a> Widget for PlayerStatsDisplay<'a> {
             }
 
             let font_id = egui::FontId::proportional(18.0);
-            ui.painter().text(name_pos, egui::Align2::LEFT_TOP, display_name, font_id.clone(), visuals.text_color());
+            ui.painter().text(name_pos, egui::Align2::LEFT_TOP, display_name, font_id.clone(), Color32::WHITE);
 
             // Statistics display
             let stats_start = rect.min + Vec2::new(10.0, 50.0);
             let line_height = 18.0;
             let stats_font = egui::FontId::proportional(14.0);
-            let label_color = Color32::from_gray(120);
-            let value_color = visuals.text_color();
+            let label_color = Color32::from_gray(180); // Brighter grey for labels
+            let value_color = Color32::WHITE; // White for values
 
             // Row 1: Turns Survived | Path Length
             ui.painter().text(
@@ -199,7 +199,7 @@ impl<'a> Widget for PlayerStatsDisplay<'a> {
                 ui.painter().text(
                     stats_start + Vec2::new(0.0, line_height * 3.0),
                     egui::Align2::LEFT_TOP,
-                    "WINNER!",
+                    "WINNER",
                     egui::FontId::proportional(16.0),
                     Color32::GOLD
                 );
