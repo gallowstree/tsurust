@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tsurust - Multiplayer Tsuro Game</title>
+
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #1e1e1e;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        #the_canvas_id {
+            width: 100%;
+            height: 100%;
+        }
+
+        .centered {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: #ffffff;
+        }
+
+        #loading {
+            font-size: 1.2em;
+        }
+
+        .error {
+            color: #ff6b6b;
+            padding: 20px;
+            max-width: 600px;
+            text-align: center;
+        }
+    </style>
+<link rel="modulepreload" href="https://gallowstree.github.io/tsurust/client-egui_bin-4d6165d53c0c9156.js" crossorigin="anonymous" integrity="sha384-s5ffkv0xPDukNIvMzNIthpoVXwm9HtQuMaki4TXKj2vewyCx37Y/c9PhDWYOAQuX"><link rel="modulepreload" href="https://gallowstree.github.io/tsurust/snippets/client-egui-9edd77b714be94d8/inline0.js" crossorigin="anonymous" integrity="sha384-O08BBaAoSEnEfpVbDHWa+YnQYkeZGjblpPJhxzFEk2iZdaOAXuVyIFCIUsjKkO97"><link rel="preload" href="https://gallowstree.github.io/tsurust/client-egui_bin-4d6165d53c0c9156_bg.wasm" crossorigin="anonymous" integrity="sha384-epILRWWkg7/Tyq4J5mUaqXY+Tu83Eh+ezxvLk08BRw9t8VrnBjnfV+zMOvzgJGGY" as="fetch" type="application/wasm"></head>
+<body>
+    <div id="loading" class="centered">
+        <div>
+            <h2>Loading Tsurust...</h2>
+            <p>Initializing WebAssembly module</p>
+        </div>
+    </div>
+
+    <canvas id="the_canvas_id"></canvas>
+
+    <!-- Load environment-specific configuration -->
+    <script>
+        // Configuration for different environments
+        // For GitHub Pages, this can be set via build-time env vars
+        // For local development, uses default
+        window.TSURUST_CONFIG = window.TSURUST_CONFIG || {
+            // Default to localhost for development
+            // GitHub Actions will inject production URL via config.js
+            wsServerUrl: "ws://127.0.0.1:8081"
+        };
+    </script>
+
+    <!-- Trunk will compile Rust to WASM and inject loading code here -->
+    
+<script type="module">
+import init, * as bindings from 'https://gallowstree.github.io/tsurust/client-egui_bin-4d6165d53c0c9156.js';
+const wasm = await init('https://gallowstree.github.io/tsurust/client-egui_bin-4d6165d53c0c9156_bg.wasm');
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script>
+    <!-- The canvas ID 'the_canvas_id' is used by eframe automatically -->
+</body>
+</html>
