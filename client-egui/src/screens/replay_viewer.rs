@@ -188,14 +188,28 @@ pub fn render_replay_viewer_ui(
                     }
                 });
 
-                // Show hand count if available
-                if let Some(&count) = replay_state.export.hand_counts.get(&player.id) {
-                    ui.label(egui::RichText::new(format!("  {} tiles in hand", count)).weak().small());
-                }
+                // Show hand count
+                // For in-progress games exported from a player's perspective, use static counts
+                // For completed games, players maintain 3 tiles unless eliminated
+                let hand_count = if replay_state.export.metadata.completed {
+                    if player.alive { 3 } else { 0 }
+                } else {
+                    replay_state.export.hand_counts.get(&player.id).copied().unwrap_or(0)
+                };
+                ui.label(egui::RichText::new(format!("  {} tiles in hand", hand_count)).weak().small());
             }
 
             // Show deck count
             ui.add_space(10.0);
-            ui.label(egui::RichText::new(format!("Deck: {} tiles", replay_state.export.deck_count)).weak());
+            let deck_count = if replay_state.export.metadata.completed {
+                // For completed games, calculate deck based on total tiles - initial hands - tiles played
+                let total_tiles: usize = 35; // Standard Tsuro deck
+                let initial_hands = replay_state.export.game_state.players.len() * 3;
+                let tiles_played = replay_state.current_move_index;
+                total_tiles.saturating_sub(initial_hands).saturating_sub(tiles_played)
+            } else {
+                replay_state.export.deck_count
+            };
+            ui.label(egui::RichText::new(format!("Deck: {} tiles", deck_count)).weak());
         });
 }
