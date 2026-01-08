@@ -1,4 +1,3 @@
-use std::time::Instant;
 use tsurust_common::board::Player;
 use tsurust_common::game::{Game, GameExport};
 
@@ -17,7 +16,7 @@ pub struct ReplayState {
     pub current_move_index: usize,
     pub playback_status: PlaybackStatus,
     pub playback_speed: f32,
-    pub last_step_time: Option<Instant>,
+    pub last_step_time: Option<f64>, // Timestamp in seconds (works on all platforms including WASM)
 }
 
 impl ReplayState {
@@ -111,12 +110,14 @@ impl ReplayState {
             return None;
         }
 
+        let current_time = ctx.input(|i| i.time);
+
         if let Some(last_time) = self.last_step_time {
-            let elapsed = Instant::now().duration_since(last_time).as_secs_f32();
+            let elapsed = (current_time - last_time) as f32;
             let step_interval = 1.0 / self.playback_speed;
 
             if elapsed >= step_interval {
-                self.last_step_time = Some(Instant::now());
+                self.last_step_time = Some(current_time);
                 ctx.request_repaint(); // Ensure continuous updates
 
                 if self.can_step_forward() {
@@ -129,7 +130,7 @@ impl ReplayState {
             }
         } else {
             // First update after starting playback
-            self.last_step_time = Some(Instant::now());
+            self.last_step_time = Some(current_time);
             ctx.request_repaint();
         }
 
@@ -139,7 +140,7 @@ impl ReplayState {
     /// Start playback
     pub fn play(&mut self) {
         self.playback_status = PlaybackStatus::Playing;
-        self.last_step_time = Some(Instant::now());
+        self.last_step_time = None; // Will be initialized on first update
     }
 
     /// Pause playback
