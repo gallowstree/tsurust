@@ -24,6 +24,38 @@ pub enum TurnResult {
     Extinction { turn_number: usize, eliminated: Vec<PlayerID> },
 }
 
+/// Game mode type for export metadata
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum GameMode {
+    Local,
+    Online,
+}
+
+/// Metadata about an exported game
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GameMetadata {
+    pub game_mode: GameMode,
+    pub room_id: Option<String>,
+    pub room_name: Option<String>,
+    pub completed: bool,
+    pub winner_id: Option<PlayerID>,
+    pub total_turns: usize,
+    pub player_names: Vec<(PlayerID, String)>,
+}
+
+/// Complete game export with metadata for saving/loading replays
+/// For in-progress games, only the exporting player's hand is included (other hands show counts only)
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GameExport {
+    pub version: String,
+    pub timestamp: String,
+    pub metadata: GameMetadata,
+    pub game_state: Game,
+    pub player_perspective: Option<PlayerID>, // Whose perspective this export is from (for partial info)
+    pub hand_counts: std::collections::HashMap<PlayerID, usize>, // Tile counts for each player
+    pub deck_count: usize, // Number of tiles remaining in deck
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Game {
     pub deck: Deck,
@@ -305,6 +337,67 @@ impl Game {
             }
         }
     }
+
+    /// Export the game with metadata for saving as a replay file
+    /// For in-progress games, only the specified player's hand is included (others show empty)
+    pub fn export(&self, metadata: GameMetadata, player_perspective: Option<PlayerID>) -> GameExport {
+        let mut game_state = self.clone();
+
+        // Capture counts before filtering
+        let hand_counts: HashMap<PlayerID, usize> = self.hands.iter()
+            .map(|(id, hand)| (*id, hand.len()))
+            .collect();
+        let deck_count = self.deck.remaining();
+
+        // If game is not completed and a player perspective is specified, filter hands
+        if !metadata.completed {
+            if let Some(player_id) = player_perspective {
+                // Clear all hands except the exporting player's hand
+                for (id, hand) in game_state.hands.iter_mut() {
+                    if *id != player_id {
+                        hand.clear(); // Other players' hands are hidden
+                    }
+                }
+            }
+
+            // Clear deck tiles (keep the Deck struct but empty it for in-progress games)
+            game_state.deck = Deck::new_empty();
+        }
+
+        GameExport {
+            version: "1.0".to_string(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            metadata,
+            game_state,
+            player_perspective,
+            hand_counts,
+            deck_count,
+        }
+    }
+
+    /// Rebuild a game state from move history
+    /// This is used for replay functionality - reconstructs the game by replaying all moves
+    pub fn rebuild_from_history(initial_players: Vec<Player>, moves: &[Move]) -> Result<Game, &'static str> {
+        let mut game = Game::new(initial_players);
+
+        for mov in moves {
+            // For replay, we need to ensure the tile is in the player's hand
+            // Add it temporarily if not present (since we don't know original deck order)
+            let has_tile = game.hands.get(&mov.player_id)
+                .map(|hand| hand.iter().any(|t| t.is_same_tile(&mov.tile)))
+                .unwrap_or(false);
+
+            if !has_tile {
+                if let Some(hand) = game.hands.get_mut(&mov.player_id) {
+                    hand.push(mov.tile);
+                }
+            }
+
+            game.perform_move(*mov)?;
+        }
+
+        Ok(game)
+    }
 }
 
 fn alive_players(players: &mut Vec<Player>) -> Vec<&mut Player> {
@@ -536,5 +629,141 @@ mod tests {
         // The test is complete - we've verified that multiple players can have their
         // trails recorded when passing through the same tile. Testing a second pass
         // through would require placing a tile at the same location which is invalid.
+    }
+
+    #[test]
+    fn test_game_export_serialization() {
+        let players = vec![
+            Player {
+                id: 1,
+                name: "Player 1".to_string(),
+                pos: PlayerPos { cell: CellCoord { row: 0, col: 2 }, endpoint: 4 },
+                alive: true,
+                has_moved: false,
+                color: (255, 0, 0),
+            },
+            Player {
+                id: 2,
+                name: "Player 2".to_string(),
+                pos: PlayerPos { cell: CellCoord { row: 5, col: 3 }, endpoint: 0 },
+                alive: true,
+                has_moved: false,
+                color: (0, 255, 0),
+            },
+        ];
+        let game = Game::new(players);
+
+        let metadata = GameMetadata {
+            game_mode: GameMode::Local,
+            room_id: None,
+            room_name: Some("Test Game".to_string()),
+            completed: false,
+            winner_id: None,
+            total_turns: 0,
+            player_names: vec![(1, "Player 1".to_string()), (2, "Player 2".to_string())],
+        };
+
+        let export = game.export(metadata, Some(1));
+
+        // Test serialization
+        let json = serde_json::to_string_pretty(&export).expect("Failed to serialize");
+        let deserialized: GameExport = serde_json::from_str(&json).expect("Failed to deserialize");
+
+        assert_eq!(deserialized.version, "1.0");
+        assert_eq!(deserialized.metadata.total_turns, 0);
+        assert_eq!(deserialized.game_state.players.len(), 2);
+        assert_eq!(deserialized.player_perspective, Some(1));
+        assert_eq!(deserialized.hand_counts.get(&1), Some(&3)); // 3 tiles in hand
+        assert_eq!(deserialized.hand_counts.get(&2), Some(&3));
+    }
+
+    #[test]
+    fn test_export_hides_other_players_hands() {
+        let players = vec![
+            Player {
+                id: 1,
+                name: "Player 1".to_string(),
+                pos: PlayerPos { cell: CellCoord { row: 0, col: 2 }, endpoint: 4 },
+                alive: true,
+                has_moved: false,
+                color: (255, 0, 0),
+            },
+            Player {
+                id: 2,
+                name: "Player 2".to_string(),
+                pos: PlayerPos { cell: CellCoord { row: 5, col: 3 }, endpoint: 0 },
+                alive: true,
+                has_moved: false,
+                color: (0, 255, 0),
+            },
+        ];
+        let game = Game::new(players);
+
+        let metadata = GameMetadata {
+            game_mode: GameMode::Local,
+            room_id: None,
+            room_name: None,
+            completed: false, // In-progress game
+            winner_id: None,
+            total_turns: 0,
+            player_names: vec![(1, "Player 1".to_string()), (2, "Player 2".to_string())],
+        };
+
+        let export = game.export(metadata, Some(1)); // Export from player 1's perspective
+
+        // Player 1's hand should be visible
+        assert_eq!(export.game_state.hands.get(&1).unwrap().len(), 3);
+
+        // Player 2's hand should be hidden (empty)
+        assert_eq!(export.game_state.hands.get(&2).unwrap().len(), 0);
+
+        // But counts should still be available
+        assert_eq!(export.hand_counts.get(&1), Some(&3));
+        assert_eq!(export.hand_counts.get(&2), Some(&3));
+    }
+
+    #[test]
+    fn test_game_rebuild_from_history() {
+        // Create a game and make some moves
+        let players = vec![
+            Player {
+                id: 1,
+                name: "Player 1".to_string(),
+                pos: PlayerPos { cell: CellCoord { row: 1, col: 1 }, endpoint: 0 },
+                alive: true,
+                has_moved: false,
+                color: (255, 0, 0),
+            },
+            Player {
+                id: 2,
+                name: "Player 2".to_string(),
+                pos: PlayerPos { cell: CellCoord { row: 2, col: 2 }, endpoint: 0 },
+                alive: true,
+                has_moved: false,
+                color: (0, 255, 0),
+            },
+        ];
+        let mut game = Game::new(players.clone());
+
+        // Place a tile
+        let tile = create_straight_tile();
+        game.hands.get_mut(&1).unwrap().push(tile);
+
+        let mov = Move {
+            tile,
+            cell: CellCoord { row: 1, col: 1 },
+            player_id: 1,
+        };
+
+        game.perform_move(mov).expect("Move should succeed");
+
+        // Now rebuild from history
+        let rebuilt = Game::rebuild_from_history(players, &game.board.history)
+            .expect("Rebuild should succeed");
+
+        // Verify the rebuilt state matches
+        assert_eq!(rebuilt.board.history.len(), game.board.history.len());
+        assert_eq!(rebuilt.players.len(), game.players.len());
+        assert_eq!(rebuilt.board.history[0].player_id, 1);
     }
 }

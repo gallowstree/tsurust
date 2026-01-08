@@ -26,6 +26,14 @@ impl Deck {
         self.tiles.is_empty()
     }
 
+    pub fn remaining(&self) -> usize {
+        self.tiles.len()
+    }
+
+    pub fn new_empty() -> Deck {
+        Deck { tiles: Vec::new() }
+    }
+
     pub fn new() -> Deck {
         let mut tiles = vec![
             Tile::new([seg(0, 1), seg(2, 3), seg(4, 5), seg(6, 7)]),

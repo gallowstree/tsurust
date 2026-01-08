@@ -10,6 +10,8 @@ mod screens;
 mod components;
 mod messaging;
 mod stats_display;
+mod replay_state;
+mod file_io;
 pub mod ws_client;
 
 pub use app::TemplateApp;
