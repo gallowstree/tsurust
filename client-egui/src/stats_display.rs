@@ -33,7 +33,7 @@ impl<'a> PlayerStatsDisplay<'a> {
 
 impl<'a> Widget for PlayerStatsDisplay<'a> {
     fn ui(self, ui: &mut Ui) -> egui::Response {
-        let desired_size = Vec2::new(280.0, 140.0);
+        let desired_size = Vec2::new(280.0, 170.0); // Increased height for more stats
         let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
 
         if ui.is_rect_visible(rect) {
@@ -165,31 +165,78 @@ impl<'a> Widget for PlayerStatsDisplay<'a> {
                 value_color
             );
 
-            // Row 3: Efficiency
-            let efficiency = if self.stats.tiles_placed > 0 {
-                self.stats.path_length as f32 / self.stats.tiles_placed as f32
-            } else {
-                0.0
-            };
+            // Row 3: Players Eliminated | Tiles Visited %
             ui.painter().text(
                 stats_start + Vec2::new(0.0, line_height * 2.0),
                 egui::Align2::LEFT_TOP,
-                "Efficiency:",
+                "Elims:",
                 stats_font.clone(),
                 label_color
             );
             ui.painter().text(
                 stats_start + Vec2::new(80.0, line_height * 2.0),
                 egui::Align2::LEFT_TOP,
+                format!("{}", self.stats.players_eliminated),
+                stats_font.clone(),
+                value_color
+            );
+
+            let coverage_pct = (self.stats.unique_tiles_visited as f32 / 36.0) * 100.0; // 6x6 board
+            ui.painter().text(
+                stats_start + Vec2::new(140.0, line_height * 2.0),
+                egui::Align2::LEFT_TOP,
+                "Coverage:",
+                stats_font.clone(),
+                label_color
+            );
+            ui.painter().text(
+                stats_start + Vec2::new(217.0, line_height * 2.0),
+                egui::Align2::LEFT_TOP,
+                format!("{:.1}%", coverage_pct),
+                stats_font.clone(),
+                value_color
+            );
+
+            // Row 4: Max Revisits | Efficiency
+            ui.painter().text(
+                stats_start + Vec2::new(0.0, line_height * 3.0),
+                egui::Align2::LEFT_TOP,
+                "Revisit:",
+                stats_font.clone(),
+                label_color
+            );
+            ui.painter().text(
+                stats_start + Vec2::new(80.0, line_height * 3.0),
+                egui::Align2::LEFT_TOP,
+                format!("{}", self.stats.max_visits_to_single_tile),
+                stats_font.clone(),
+                value_color
+            );
+
+            let efficiency = if self.stats.tiles_placed > 0 {
+                self.stats.path_length as f32 / self.stats.tiles_placed as f32
+            } else {
+                0.0
+            };
+            ui.painter().text(
+                stats_start + Vec2::new(140.0, line_height * 3.0),
+                egui::Align2::LEFT_TOP,
+                "Efficiency:",
+                stats_font.clone(),
+                label_color
+            );
+            ui.painter().text(
+                stats_start + Vec2::new(217.0, line_height * 3.0),
+                egui::Align2::LEFT_TOP,
                 format!("{:.2}", efficiency),
                 stats_font.clone(),
                 value_color
             );
 
-            // Row 4: Elimination info
+            // Row 5: Elimination info
             if let Some(elim_turn) = self.stats.elimination_turn {
                 ui.painter().text(
-                    stats_start + Vec2::new(0.0, line_height * 3.0),
+                    stats_start + Vec2::new(0.0, line_height * 4.0),
                     egui::Align2::LEFT_TOP,
                     format!("Eliminated on turn {}", elim_turn),
                     stats_font.clone(),
@@ -197,7 +244,7 @@ impl<'a> Widget for PlayerStatsDisplay<'a> {
                 );
             } else if self.is_winner {
                 ui.painter().text(
-                    stats_start + Vec2::new(0.0, line_height * 3.0),
+                    stats_start + Vec2::new(0.0, line_height * 4.0),
                     egui::Align2::LEFT_TOP,
                     "WINNER",
                     egui::FontId::proportional(16.0),

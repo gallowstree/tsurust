@@ -15,6 +15,11 @@ pub struct PlayerStats {
     pub dragon_turns: usize,          // Number of turns holding the dragon
     pub hand_tiles_remaining: usize,  // Tiles in hand when eliminated
     pub elimination_turn: Option<usize>, // Turn number when eliminated (None if winner)
+    pub players_eliminated: usize,    // Number of other players this player eliminated
+    pub unique_tiles_visited: usize,  // Number of distinct board tiles visited
+    pub max_visits_to_single_tile: usize, // Highest visit count to any single tile
+    #[serde(skip)]
+    pub cells_visited: std::collections::HashMap<CellCoord, usize>, // Visit count per cell (not exported)
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -91,6 +96,9 @@ impl Game {
         // Initialize stats for each player
         let mut stats = HashMap::new();
         for player in &players {
+            let mut cells_visited = std::collections::HashMap::new();
+            cells_visited.insert(player.pos.cell, 1); // Start position visited once
+
             stats.insert(player.id, PlayerStats {
                 player_id: player.id,
                 turns_survived: 0,
@@ -99,6 +107,10 @@ impl Game {
                 dragon_turns: 0,
                 hand_tiles_remaining: 3, // Starting hand size
                 elimination_turn: None,
+                players_eliminated: 0,
+                unique_tiles_visited: 1, // Start with 1 for starting position
+                max_visits_to_single_tile: 1,
+                cells_visited,
             });
         }
 
@@ -151,6 +163,14 @@ impl Game {
 
         // Update player positions and record trails for players who actually move
         let eliminated = self.update_players_and_trails(mov.cell);
+
+        // Credit current player with eliminations (excluding self-elimination)
+        if !eliminated.is_empty() {
+            if let Some(stats) = self.stats.get_mut(&mov.player_id) {
+                let self_eliminations = eliminated.iter().filter(|&&id| id == mov.player_id).count();
+                stats.players_eliminated += eliminated.len() - self_eliminations;
+            }
+        }
 
         // Refill hands (basic implementation for now)
         self.fill_hands();
@@ -209,6 +229,16 @@ impl Game {
                 if old_pos.cell != new_pos.cell {
                     if let Some(stats) = self.stats.get_mut(&player.id) {
                         stats.path_length += 1;
+
+                        // Track cell visits
+                        let visit_count = *stats.cells_visited.entry(new_pos.cell).or_insert(0) + 1;
+                        stats.cells_visited.insert(new_pos.cell, visit_count);
+
+                        // Update unique tiles visited
+                        stats.unique_tiles_visited = stats.cells_visited.len();
+
+                        // Update max visits to single tile
+                        stats.max_visits_to_single_tile = stats.max_visits_to_single_tile.max(visit_count);
                     }
                 }
             }
