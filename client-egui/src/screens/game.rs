@@ -35,6 +35,9 @@ pub fn render_game_ui(
                 if ui.button("⬅ Back to Menu").clicked() {
                     send_ui_message(sender, Message::BackToMainMenu);
                 }
+                if ui.button("💾 Export Game").clicked() {
+                    send_ui_message(sender, Message::ExportGame);
+                }
 
                 // Show lobby name and/or waiting indicator on the right
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

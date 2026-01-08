@@ -72,6 +72,19 @@ pub enum Message {
     DebugCyclePlayer(bool),          // debug: cycle active player (true = next, false = prev)
     StartLocalServer,                // start a local server process
     SendToServer(ClientMessage),     // send a message to the server via WebSocket
+    // Export/Import
+    ExportGame,                      // Export current game to JSON file
+    ImportReplay,                    // Import replay from JSON file
+    // Replay controls
+    ReplayPlay,                      // Start replay playback
+    ReplayPause,                     // Pause replay playback
+    ReplayStepForward,               // Step forward one move
+    ReplayStepBackward,              // Step backward one move
+    ReplaySetSpeed(f32),             // Set playback speed (moves per second)
+    ReplayJumpToMove(usize),         // Jump to specific move index
+    ReplayJumpToStart,               // Jump to start of replay
+    ReplayJumpToEnd,                 // Jump to end of replay
+    ExitReplay,                      // Exit replay viewer and return to main menu
 }
 
 #[derive(Debug)]
@@ -95,6 +108,10 @@ pub enum AppState {
         waiting_for_server: bool,       // Show loading state during server round-trip
     },
     GameOver(Game),                     // Game ended - show statistics
+    ReplayViewer {
+        replay_state: crate::replay_state::ReplayState,
+        current_game: Game,             // Cached game state at current move index
+    },
 }
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -277,6 +294,9 @@ impl TemplateApp {
                 // Keep GameOver state for backward compatibility but render as normal game with overlay
                 screens::game::render_game_ui(ctx, game, current_player_id, false, None, sender, last_rotated_tile, player_animations, tile_placement_animation)
             }
+            AppState::ReplayViewer { replay_state, current_game } => {
+                screens::replay_viewer::render_replay_viewer_ui(ctx, replay_state, current_game, sender)
+            }
         }
     }
 
@@ -313,6 +333,13 @@ impl eframe::App for TemplateApp {
         }
         for message in messages {
             self.handle_ui_message(message);
+        }
+
+        // Handle replay auto-advance
+        if let AppState::ReplayViewer { replay_state, current_game } = &mut self.app_state {
+            if let Some(new_game) = replay_state.update(ctx) {
+                *current_game = new_game;
+            }
         }
 
         // Render UI
@@ -358,6 +385,19 @@ impl TemplateApp {
             Message::RestartGame => self.handle_restart_game(),
             Message::StartLocalServer => self.handle_start_local_server(),
             Message::SendToServer(client_msg) => self.handle_send_to_server(client_msg),
+            // Export/Import
+            Message::ExportGame => self.handle_export_game(),
+            Message::ImportReplay => self.handle_import_replay(),
+            // Replay controls
+            Message::ReplayPlay => self.handle_replay_play(),
+            Message::ReplayPause => self.handle_replay_pause(),
+            Message::ReplayStepForward => self.handle_replay_step_forward(),
+            Message::ReplayStepBackward => self.handle_replay_step_backward(),
+            Message::ReplaySetSpeed(speed) => self.handle_replay_set_speed(speed),
+            Message::ReplayJumpToMove(index) => self.handle_replay_jump_to_move(index),
+            Message::ReplayJumpToStart => self.handle_replay_jump_to_start(),
+            Message::ReplayJumpToEnd => self.handle_replay_jump_to_end(),
+            Message::ExitReplay => self.handle_exit_replay(),
         }
     }
 
@@ -935,5 +975,144 @@ impl TemplateApp {
         } else {
             eprintln!("Cannot send message to server: not connected");
         }
+    }
+
+    // ========== Export/Import Handlers ==========
+
+    fn handle_export_game(&mut self) {
+        use tsurust_common::game::{GameMetadata, GameMode};
+
+        let (game, metadata) = match &self.app_state {
+            AppState::Game(game) => {
+                let metadata = GameMetadata {
+                    game_mode: GameMode::Local,
+                    room_id: None,
+                    room_name: None,
+                    completed: game.is_game_over(),
+                    winner_id: if game.is_game_over() {
+                        game.players.iter().find(|p| p.alive).map(|p| p.id)
+                    } else {
+                        None
+                    },
+                    total_turns: game.board.history.len(),
+                    player_names: game.players.iter()
+                        .map(|p| (p.id, p.name.clone()))
+                        .collect(),
+                };
+                (game, metadata)
+            }
+            AppState::OnlineGame { game, room_id, lobby_name, .. } => {
+                let metadata = GameMetadata {
+                    game_mode: GameMode::Online,
+                    room_id: Some(room_id.clone()),
+                    room_name: Some(lobby_name.clone()),
+                    completed: game.is_game_over(),
+                    winner_id: if game.is_game_over() {
+                        game.players.iter().find(|p| p.alive).map(|p| p.id)
+                    } else {
+                        None
+                    },
+                    total_turns: game.board.history.len(),
+                    player_names: game.players.iter()
+                        .map(|p| (p.id, p.name.clone()))
+                        .collect(),
+                };
+                (game, metadata)
+            }
+            _ => {
+                eprintln!("Cannot export: not in a game");
+                return;
+            }
+        };
+
+        let export = game.export(metadata, Some(self.current_player_id));
+        crate::file_io::save_game_export(&export);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn handle_import_replay(&mut self) {
+        if let Some(export) = crate::file_io::load_game_export() {
+            let replay_state = crate::replay_state::ReplayState::new(export);
+            let current_game = replay_state.current_game_state();
+
+            self.app_state = AppState::ReplayViewer {
+                replay_state,
+                current_game,
+            };
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn handle_import_replay(&mut self) {
+        // For WASM, we need to handle the async file loading differently
+        // The callback approach doesn't work well with the app structure,
+        // so we'll need to trigger the file picker and handle it via a different mechanism
+        // For now, show a console message
+        web_sys::console::log_1(&"Import replay not yet implemented for WASM".into());
+        // TODO: Implement WASM file loading with proper state management
+    }
+
+    // ========== Replay Control Handlers ==========
+
+    fn handle_replay_play(&mut self) {
+        if let AppState::ReplayViewer { replay_state, .. } = &mut self.app_state {
+            replay_state.play();
+        }
+    }
+
+    fn handle_replay_pause(&mut self) {
+        if let AppState::ReplayViewer { replay_state, .. } = &mut self.app_state {
+            replay_state.pause();
+        }
+    }
+
+    fn handle_replay_step_forward(&mut self) {
+        if let AppState::ReplayViewer { replay_state, current_game } = &mut self.app_state {
+            if let Some(new_game) = replay_state.step_forward() {
+                *current_game = new_game;
+            }
+        }
+    }
+
+    fn handle_replay_step_backward(&mut self) {
+        if let AppState::ReplayViewer { replay_state, current_game } = &mut self.app_state {
+            if let Some(new_game) = replay_state.step_backward() {
+                *current_game = new_game;
+            }
+        }
+    }
+
+    fn handle_replay_set_speed(&mut self, speed: f32) {
+        if let AppState::ReplayViewer { replay_state, .. } = &mut self.app_state {
+            replay_state.set_speed(speed);
+        }
+    }
+
+    fn handle_replay_jump_to_move(&mut self, index: usize) {
+        if let AppState::ReplayViewer { replay_state, current_game } = &mut self.app_state {
+            if let Some(new_game) = replay_state.set_move_index(index) {
+                *current_game = new_game;
+            }
+        }
+    }
+
+    fn handle_replay_jump_to_start(&mut self) {
+        if let AppState::ReplayViewer { replay_state, current_game } = &mut self.app_state {
+            if let Some(new_game) = replay_state.jump_to_start() {
+                *current_game = new_game;
+            }
+        }
+    }
+
+    fn handle_replay_jump_to_end(&mut self) {
+        if let AppState::ReplayViewer { replay_state, current_game } = &mut self.app_state {
+            if let Some(new_game) = replay_state.jump_to_end() {
+                *current_game = new_game;
+            }
+        }
+    }
+
+    fn handle_exit_replay(&mut self) {
+        self.app_state = AppState::MainMenu;
     }
 }

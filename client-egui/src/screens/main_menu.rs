@@ -54,6 +54,12 @@ pub fn render(ctx: &Context, server_status: &LocalServerStatus, sender: &mpsc::S
             if ui.add_sized([button_width, 30.0], egui::Button::new("🎮 Sample Game")).clicked() {
                 send_ui_message(sender, Message::StartSampleGame);
             }
+
+            ui.add_space(10.0);
+
+            if ui.add_sized([button_width, 30.0], egui::Button::new("📂 Load Replay")).clicked() {
+                send_ui_message(sender, Message::ImportReplay);
+            }
         });
     });
 }

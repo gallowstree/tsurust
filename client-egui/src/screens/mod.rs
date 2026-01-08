@@ -7,6 +7,7 @@ pub mod lobby_forms;
 pub mod lobby;
 pub mod game;
 pub mod game_over;
+pub mod replay_viewer;
 
 /// Trait for UI screens that can be rendered
 /// Placeholder trait for future screen abstraction
