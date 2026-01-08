@@ -75,6 +75,7 @@ pub enum Message {
     // Export/Import
     ExportGame,                      // Export current game to JSON file
     ImportReplay,                    // Import replay from JSON file
+    ReplayLoaded(Box<tsurust_common::game::GameExport>), // Replay file loaded (WASM async callback)
     // Replay controls
     ReplayPlay,                      // Start replay playback
     ReplayPause,                     // Pause replay playback
@@ -388,6 +389,15 @@ impl TemplateApp {
             // Export/Import
             Message::ExportGame => self.handle_export_game(),
             Message::ImportReplay => self.handle_import_replay(),
+            Message::ReplayLoaded(export) => {
+                // Replay file loaded asynchronously (WASM only)
+                let replay_state = crate::replay_state::ReplayState::new(*export);
+                let current_game = replay_state.current_game_state();
+                self.app_state = AppState::ReplayViewer {
+                    replay_state,
+                    current_game,
+                };
+            }
             // Replay controls
             Message::ReplayPlay => self.handle_replay_play(),
             Message::ReplayPause => self.handle_replay_pause(),
@@ -1044,12 +1054,21 @@ impl TemplateApp {
 
     #[cfg(target_arch = "wasm32")]
     fn handle_import_replay(&mut self) {
-        // For WASM, we need to handle the async file loading differently
-        // The callback approach doesn't work well with the app structure,
-        // so we'll need to trigger the file picker and handle it via a different mechanism
-        // For now, show a console message
-        web_sys::console::log_1(&"Import replay not yet implemented for WASM".into());
-        // TODO: Implement WASM file loading with proper state management
+        // For WASM, we use a callback that sends a message when the file is loaded
+        let sender = match &self.sender {
+            Some(s) => s.clone(),
+            None => {
+                web_sys::console::error_1(&"No sender available for replay import".into());
+                return;
+            }
+        };
+
+        crate::file_io::load_game_export(move |export| {
+            // Send the loaded export via the message channel
+            if let Err(e) = sender.send(Message::ReplayLoaded(Box::new(export))) {
+                web_sys::console::error_1(&format!("Failed to send ReplayLoaded message: {}", e).into());
+            }
+        });
     }
 
     // ========== Replay Control Handlers ==========
