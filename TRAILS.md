@@ -1,8 +1,19 @@
 # Trail-Based Path Tracking Implementation
 
-## Current Problem
+**Implementation Status**: ✅ **IMPLEMENTED**
+- `Trail` and `TrailSegment` structs in `common/src/trail.rs`
+- `Board::traverse_from()` returns full Trail with segments (board.rs:208)
+- Game logic stores `player_trails` (cumulative) and `current_turn_trails` per move (game.rs:156-169)
+- Rendering: `trail_to_world_coords()` and `paint_tile_with_trails()` in rendering.rs
+- BoardRenderer visualizes player trails on the game board
 
-The current `traverse_from` function in `common/src/game.rs` only tracks which tiles a player has passed through, but doesn't capture the complete path information. This limits our ability to:
+**Note**: This document was originally a design document. Most features described below are now implemented. Remaining TODO items are noted in DEVELOPMENT_ROADMAP.md.
+
+## Original Problem (Now Solved)
+
+~~The current `traverse_from` function in `common/src/game.rs` only tracks which tiles a player has passed through, but doesn't capture the complete path information.~~
+
+**Update**: This has been implemented. `traverse_from()` now returns a complete `Trail` object with full segment information. The original design goals were:
 
 - Render visual trails showing player movement paths
 - Animate player movement along their trails

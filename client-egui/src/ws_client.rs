@@ -7,6 +7,7 @@ pub struct GameClient {
     ws_sender: WsSender,
     ws_receiver: WsReceiver,
     pub connected: bool,
+    pending_messages: Vec<ClientMessage>,
 }
 
 impl GameClient {
@@ -18,11 +19,25 @@ impl GameClient {
         Ok(Self {
             ws_sender,
             ws_receiver,
-            connected: true,
+            connected: false,
+            pending_messages: Vec::new(),
         })
     }
 
     pub fn send(&mut self, msg: ClientMessage) {
+        if !self.connected {
+            #[cfg(target_arch = "wasm32")]
+            {
+                web_sys::console::log_1(&format!("[WS_CLIENT] Queuing message (not connected yet): {:?}", msg).into());
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                println!("[WS_CLIENT] Queuing message (not connected yet): {:?}", msg);
+            }
+            self.pending_messages.push(msg);
+            return;
+        }
+
         let json = serde_json::to_string(&msg)
             .expect("Failed to serialize client message");
         #[cfg(target_arch = "wasm32")]
@@ -36,7 +51,7 @@ impl GameClient {
         self.ws_sender.send(WsMessage::Text(json));
     }
 
-    pub fn try_recv(&self) -> Option<ServerMessage> {
+    pub fn try_recv(&mut self) -> Option<ServerMessage> {
         while let Some(event) = self.ws_receiver.try_recv() {
             match event {
                 WsEvent::Opened => {
@@ -47,6 +62,21 @@ impl GameClient {
                     #[cfg(not(target_arch = "wasm32"))]
                     {
                         println!("[WS_CLIENT] WebSocket connection opened");
+                    }
+                    self.connected = true;
+
+                    // Send all queued messages
+                    let pending = std::mem::take(&mut self.pending_messages);
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        web_sys::console::log_1(&format!("[WS_CLIENT] Flushing {} pending messages", pending.len()).into());
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        println!("[WS_CLIENT] Flushing {} pending messages", pending.len());
+                    }
+                    for msg in pending {
+                        self.send(msg);
                     }
                 }
                 WsEvent::Message(WsMessage::Text(json)) => {

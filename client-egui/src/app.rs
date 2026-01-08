@@ -288,7 +288,7 @@ impl eframe::App for TemplateApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         // Poll for server messages
-        if let Some(client) = &self.game_client {
+        if let Some(client) = &mut self.game_client {
             while let Some(server_msg) = client.try_recv() {
                 Self::handle_server_message(
                     server_msg,

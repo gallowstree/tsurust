@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::broadcast;
-use tokio_websockets::{Message, WebSocketStream};
+use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 
 use tsurust_common::protocol::{ClientMessage, RoomId, ServerMessage};
 
@@ -13,7 +13,6 @@ pub async fn handle_connection(
     connection_id: ConnectionId,
     server: Arc<GameServer>,
 ) {
-    println!("New WebSocket connection: {}", connection_id);
 
     let mut update_rx: Option<broadcast::Receiver<ServerMessage>> = None;
     let mut current_room: Option<RoomId> = None;
@@ -36,7 +35,7 @@ pub async fn handle_connection(
                                 message: e.to_string(),
                             };
                             if let Ok(json) = serde_json::to_string(&error_msg) {
-                                let _ = ws.send(Message::text(json)).await;
+                                let _ = ws.send(Message::Text(json)).await;
                             }
                         }
                     }
@@ -61,7 +60,7 @@ pub async fn handle_connection(
                 if let Some(update) = update {
                     match serde_json::to_string(&update) {
                         Ok(json) => {
-                            if let Err(e) = ws.send(Message::text(json)).await {
+                            if let Err(e) = ws.send(Message::Text(json)).await {
                                 eprintln!("Failed to send update to connection {}: {}", connection_id, e);
                                 break;
                             }
@@ -89,11 +88,10 @@ async fn handle_client_message(
     update_rx: &mut Option<broadcast::Receiver<ServerMessage>>,
     current_room: &mut Option<RoomId>,
 ) -> Result<(), String> {
-    if !msg.is_text() {
-        return Ok(());
-    }
-
-    let text = msg.as_text().ok_or("Failed to get text from message")?;
+    let text = match msg {
+        Message::Text(text) => text,
+        _ => return Ok(()), // Ignore non-text messages
+    };
     let client_msg: ClientMessage = serde_json::from_str(&text)
         .map_err(|e| format!("Failed to parse client message: {}", e))?;
 
@@ -117,7 +115,7 @@ async fn handle_client_message(
                     };
                     let json = serde_json::to_string(&lobby_state)
                         .map_err(|e| format!("Failed to serialize lobby state: {}", e))?;
-                    ws.send(Message::text(json)).await
+                    ws.send(Message::Text(json)).await
                         .map_err(|e| format!("Failed to send lobby state: {}", e))?;
                 }
             }
@@ -130,7 +128,7 @@ async fn handle_client_message(
             };
             let json = serde_json::to_string(&response)
                 .map_err(|e| format!("Failed to serialize response: {}", e))?;
-            ws.send(Message::text(json)).await
+            ws.send(Message::Text(json)).await
                 .map_err(|e| format!("Failed to send response: {}", e))?;
         }
 
@@ -151,7 +149,7 @@ async fn handle_client_message(
                     };
                     let json = serde_json::to_string(&lobby_state)
                         .map_err(|e| format!("Failed to serialize lobby state: {}", e))?;
-                    ws.send(Message::text(json)).await
+                    ws.send(Message::Text(json)).await
                         .map_err(|e| format!("Failed to send lobby state: {}", e))?;
                 }
             }
@@ -165,7 +163,7 @@ async fn handle_client_message(
             };
             let json = serde_json::to_string(&response)
                 .map_err(|e| format!("Failed to serialize response: {}", e))?;
-            ws.send(Message::text(json)).await
+            ws.send(Message::Text(json)).await
                 .map_err(|e| format!("Failed to send response: {}", e))?;
         }
 
@@ -215,7 +213,7 @@ async fn handle_client_message(
             };
             let json = serde_json::to_string(&response)
                 .map_err(|e| format!("Failed to serialize response: {}", e))?;
-            ws.send(Message::text(json)).await
+            ws.send(Message::Text(json)).await
                 .map_err(|e| format!("Failed to send response: {}", e))?;
         }
 

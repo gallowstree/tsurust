@@ -9,7 +9,7 @@ mod room_tests;
 
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tokio_websockets::ServerBuilder;
+use tokio_tungstenite::accept_async;
 
 use crate::server::GameServer;
 use crate::handler::handle_connection;
@@ -18,7 +18,7 @@ use crate::handler::handle_connection;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Read configuration from environment variables with defaults
     let host = std::env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
-    let port = std::env::var("PORT").unwrap_or_else(|_| "8081".to_string());
+    let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
     let addr = format!("{}:{}", host, port);
 
     let listener = TcpListener::bind(&addr).await
@@ -33,9 +33,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let game_server = Arc::clone(&game_server);
         tokio::spawn(async move {
-            match ServerBuilder::new().accept(stream).await {
+            match accept_async(stream).await {
                 Ok(ws_stream) => {
                     let connection_id = game_server.next_connection_id().await;
+                    println!("New WebSocket connection: {}", connection_id);
                     handle_connection(ws_stream, connection_id, game_server).await;
                 }
                 Err(e) => {

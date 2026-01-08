@@ -4,17 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Tsurust is a Rust implementation of the Tsuro board game with an egui-based GUI client. The project is structured as a Cargo workspace with two main crates:
+Tsurust is a Rust implementation of the Tsuro board game with an egui-based GUI client and WebSocket multiplayer server. The project is structured as a Cargo workspace with three main crates:
 
-- `common/`: Core game logic, data structures, and game rules
-- `client-egui/`: GUI client using egui with hand-drawn rendering primitives
+- `common/`: Core game logic, data structures, game rules, and networking protocol
+- `client-egui/`: GUI client using egui with hand-drawn rendering primitives (native and WASM)
+- `server/`: WebSocket server for online multiplayer
 
 ## Build and Run Commands
 
 ### Development
 - `cargo run --bin client-egui_bin` - Run the GUI client
+- `cargo run --bin server` - Run the WebSocket server
 - `cargo check --workspace` - Check compilation across all crates
-- `cargo test --workspace` - Run all tests (currently 7 tests in common crate)
+- `cargo test --workspace` - Run all tests (70+ tests across all crates)
 - `cargo build --workspace` - Build all crates
 
 ### Debugging
@@ -88,4 +90,12 @@ The UI uses mpsc channels for event passing. TileButton components send messages
 
 ## Current Status
 
-This is a work-in-progress implementation. The basic UI and data structures are in place, but core game loop functionality needs completion (see DEVELOPMENT_ROADMAP.md for details).
+The game is fully playable with both local and online multiplayer modes:
+- ✅ Core game logic and rules implementation
+- ✅ Local multiplayer with lobby system
+- ✅ Online multiplayer via WebSocket server
+- ✅ Native (desktop) and WASM (browser) support
+- 🚧 Server improvements (disconnect handling, reconnection)
+- 🚧 UI polish and animations
+
+See DEVELOPMENT_ROADMAP.md for detailed current priorities and technical debt.

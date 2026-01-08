@@ -139,6 +139,7 @@ impl Game {
             Err("Player does not have this tile in hand")
         }
     }
+
     fn update_players_and_trails(&mut self, placed_cell: CellCoord) -> Vec<PlayerID> {
         let mut eliminated = Vec::new();
         let mut trails_to_record = Vec::new();
@@ -155,13 +156,9 @@ impl Game {
             let trail = self.board.traverse_from(player.pos);
             let new_pos = trail.end_pos;
 
-            // Mark that this player has moved if position changed
-            if old_pos != new_pos {
-                player.has_moved = true;
-            }
+            player.has_moved = old_pos != new_pos;
 
-            // Collect trail information if player moved (either to different cell or different endpoint)
-            if old_pos != new_pos {
+            if player.has_moved {
                 trails_to_record.push((player.id, old_pos)); // Record where they came FROM
 
                 // Store this turn's trail for animation (just the new movement)

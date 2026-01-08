@@ -1,6 +1,6 @@
 # Multi-stage build for Tsurust WebSocket Server
 # Stage 1: Build the Rust application with musl for static binary
-FROM rust:1.75-alpine as builder
+FROM rust:1.83-alpine as builder
 
 WORKDIR /app
 
@@ -18,6 +18,12 @@ RUN rustup target add x86_64-unknown-linux-musl
 COPY Cargo.toml Cargo.lock ./
 COPY common ./common
 COPY server ./server
+
+# Create stubs for client-egui to satisfy workspace requirements
+RUN mkdir -p client-egui/src && \
+    echo '// Stub library for Docker build' > client-egui/src/lib.rs && \
+    echo 'fn main() {}' > client-egui/src/main.rs
+COPY client-egui/Cargo.toml ./client-egui/Cargo.toml
 
 # Build the server as a static musl binary
 ENV RUSTFLAGS='-C target-feature=+crt-static'

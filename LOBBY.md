@@ -4,7 +4,12 @@
 
 A simple pre-game lobby system that allows players to join, select spawn positions, and start the game. Core game logic remains separate from rendering.
 
-**Implementation Status**: Basic lobby system implemented in `common/src/lobby.rs` with comprehensive tests. UI integration completed in `client-egui/src/app.rs` with MainMenu, Lobby, and Game states.
+**Implementation Status**: ✅ **COMPLETE**
+- Lobby system implemented in `common/src/lobby.rs` with comprehensive tests
+- Full UI integration in `client-egui/src/app.rs` with MainMenu, Lobby, and Game states
+- Room creation, joining, and player management functional
+- Both local (offline) and online (WebSocket) lobby modes supported
+- Remaining work: See design documents below for planned enhancements (not yet implemented)
 
 ## Server Logic (Future)
 - A room: allows players to keep playing among themselves in between games. It manages Lobby -> Game -> Result -> Lobby.
