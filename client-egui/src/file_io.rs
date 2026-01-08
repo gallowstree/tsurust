@@ -153,9 +153,13 @@ pub fn load_game_export<F>(callback: F)
 where
     F: Fn(GameExport) + 'static,
 {
+    use std::rc::Rc;
     use wasm_bindgen::JsCast;
     use wasm_bindgen::closure::Closure;
     use web_sys::{HtmlInputElement, FileReader, Event};
+
+    // Wrap callback in Rc so it can be shared between closures
+    let callback = Rc::new(callback);
 
     // Get window and document
     let window = match web_sys::window() {
@@ -193,6 +197,7 @@ where
     input.set_accept(".json");
 
     // Set up file reader callback
+    let callback = callback.clone();
     let on_change = Closure::wrap(Box::new(move |event: Event| {
         let target = match event.target() {
             Some(target) => target,
@@ -235,6 +240,7 @@ where
         };
 
         let reader_clone = reader.clone();
+        let callback = callback.clone();
         let on_load = Closure::wrap(Box::new(move |_event: Event| {
             let result = match reader_clone.result() {
                 Ok(result) => result,
