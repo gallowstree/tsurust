@@ -5,13 +5,51 @@ use crate::board::*;
 use crate::deck::Deck;
 use crate::trail::Trail;
 
+/// Calculate the geometric distance of a path segment between two endpoints on a tile
+/// Entry points are positioned on a normalized 3x3 grid:
+/// - 0 (Bottom left): (1, 3), 1 (Bottom right): (2, 3)
+/// - 2 (Right top): (3, 2), 3 (Right bottom): (3, 1)
+/// - 4 (Top right): (2, 0), 5 (Top left): (1, 0)
+/// - 6 (Left bottom): (0, 1), 7 (Left top): (0, 2)
+fn calculate_segment_distance(entry: TileEndpoint, exit: TileEndpoint) -> f32 {
+    let entry_pos = match entry {
+        0 => (1.0, 3.0),
+        1 => (2.0, 3.0),
+        2 => (3.0, 2.0),
+        3 => (3.0, 1.0),
+        4 => (2.0, 0.0),
+        5 => (1.0, 0.0),
+        6 => (0.0, 1.0),
+        7 => (0.0, 2.0),
+        _ => panic!("Invalid entry endpoint: {}", entry),
+    };
+
+    let exit_pos = match exit {
+        0 => (1.0, 3.0),
+        1 => (2.0, 3.0),
+        2 => (3.0, 2.0),
+        3 => (3.0, 1.0),
+        4 => (2.0, 0.0),
+        5 => (1.0, 0.0),
+        6 => (0.0, 1.0),
+        7 => (0.0, 2.0),
+        _ => panic!("Invalid exit endpoint: {}", exit),
+    };
+
+    // Calculate Euclidean distance
+    let dx = exit_pos.0 - entry_pos.0;
+    let dy = exit_pos.1 - entry_pos.1;
+    ((dx * dx + dy * dy) as f32).sqrt()
+}
+
 /// Statistics tracked for each player during a game
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PlayerStats {
     pub player_id: PlayerID,
     pub turns_survived: usize,        // Number of turns the player stayed alive
     pub tiles_placed: usize,          // Number of tiles placed before elimination
-    pub path_length: usize,           // Number of unique tiles traversed
+    pub path_length: usize,           // Number of cells traversed (counts revisits)
+    pub trail_distance: f32,          // Actual geometric distance traveled along paths
     pub dragon_turns: usize,          // Number of turns holding the dragon
     pub hand_tiles_remaining: usize,  // Tiles in hand when eliminated
     pub elimination_turn: Option<usize>, // Turn number when eliminated (None if winner)
@@ -104,6 +142,7 @@ impl Game {
                 turns_survived: 0,
                 tiles_placed: 0,
                 path_length: 1, // Start with 1 for their starting position
+                trail_distance: 0.0, // No distance traveled yet
                 dragon_turns: 0,
                 hand_tiles_remaining: 3, // Starting hand size
                 elimination_turn: None,
@@ -216,10 +255,16 @@ impl Game {
                 // Store this turn's trail for animation (just the new movement)
                 self.current_turn_trails.insert(player.id, trail.clone());
 
-                // Extend player's cumulative trail with new segments
+                // Extend player's cumulative trail with new segments and calculate distance
                 if let Some(player_trail) = self.player_trails.get_mut(&player.id) {
                     for segment in &trail.segments {
                         player_trail.add_segment(segment.clone());
+
+                        // Calculate and add geometric distance for this segment
+                        if let Some(stats) = self.stats.get_mut(&player.id) {
+                            let distance = calculate_segment_distance(segment.entry_point, segment.exit_point);
+                            stats.trail_distance += distance;
+                        }
                     }
                     player_trail.end_pos = new_pos;
                     player_trail.completed = trail.completed;

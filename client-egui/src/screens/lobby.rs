@@ -45,6 +45,13 @@ fn render_lobby_top_panel(ctx: &Context, lobby: &Lobby, show_start_button: bool,
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.add_space(10.0);
+
+                // Back to menu button
+                if ui.button("⬅ Back to Menu").clicked() {
+                    send_ui_message(sender, Message::BackToMainMenu);
+                }
+
+                ui.separator();
                 ui.heading(format!("Lobby: {}", lobby.name));
                 ui.separator();
 

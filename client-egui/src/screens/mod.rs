@@ -6,7 +6,6 @@ pub mod main_menu;
 pub mod lobby_forms;
 pub mod lobby;
 pub mod game;
-pub mod game_over;
 pub mod replay_viewer;
 
 /// Trait for UI screens that can be rendered

@@ -108,7 +108,6 @@ pub enum AppState {
         lobby_name: String,             // Display name of the lobby/game
         waiting_for_server: bool,       // Show loading state during server round-trip
     },
-    GameOver(Game),                     // Game ended - show statistics
     ReplayViewer {
         replay_state: crate::replay_state::ReplayState,
         current_game: Game,             // Cached game state at current move index
@@ -290,10 +289,6 @@ impl TemplateApp {
             AppState::Game(game) => screens::game::render_game_ui(ctx, game, current_player_id, false, None, sender, last_rotated_tile, player_animations, tile_placement_animation),
             AppState::OnlineGame { game, waiting_for_server, lobby_name, .. } => {
                 screens::game::render_game_ui(ctx, game, current_player_id, *waiting_for_server, Some(lobby_name.as_str()), sender, last_rotated_tile, player_animations, tile_placement_animation)
-            }
-            AppState::GameOver(game) => {
-                // Keep GameOver state for backward compatibility but render as normal game with overlay
-                screens::game::render_game_ui(ctx, game, current_player_id, false, None, sender, last_rotated_tile, player_animations, tile_placement_animation)
             }
             AppState::ReplayViewer { replay_state, current_game } => {
                 screens::replay_viewer::render_replay_viewer_ui(ctx, replay_state, current_game, sender)
@@ -924,7 +919,7 @@ impl TemplateApp {
 
     fn handle_restart_game(&mut self) {
         match &mut self.app_state {
-            AppState::Game(game) | AppState::GameOver(game) => {
+            AppState::Game(game) => {
                 let players = vec![
                     Player::new(1, PlayerPos::new(0, 2, 5)),
                     Player::new(2, PlayerPos::new(2, 5, 2)),

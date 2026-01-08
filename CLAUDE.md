@@ -57,6 +57,21 @@ The UI uses mpsc channels for event passing. TileButton components send messages
 - On each turn: place a tile, move along paths, refill hand
 - Players eliminated when they reach board edge
 
+### Statistics System
+The game tracks comprehensive player statistics during gameplay:
+- **Turns Survived**: Number of turns before elimination
+- **Tiles Placed**: Total tiles placed during the game
+- **Path Length**: Total cells traversed (including revisits)
+- **Trail Distance**: Actual geometric distance traveled along tile paths, calculated using Euclidean distance between entry/exit points on a 3×3 coordinate grid
+- **Dragon Turns**: Number of turns holding the dragon tile
+- **Players Eliminated**: Count of other players eliminated by this player
+- **Unique Tiles Visited**: Number of distinct board cells visited
+- **Board Coverage**: Percentage of the 6×6 board explored
+- **Max Revisits**: Highest visit count to any single cell
+- **Efficiency**: Path length divided by tiles placed
+
+All statistics are automatically included in game exports for replay analysis.
+
 ## Development Practices
 
 - **Code Organization**: Move code between `common/` and `client-egui/` as it makes sense
@@ -95,6 +110,9 @@ The game is fully playable with both local and online multiplayer modes:
 - ✅ Local multiplayer with lobby system
 - ✅ Online multiplayer via WebSocket server
 - ✅ Native (desktop) and WASM (browser) support
+- ✅ Comprehensive statistics tracking and display
+- ✅ Game export/import with JSON serialization
+- ✅ Replay system with playback controls
 - 🚧 Server improvements (disconnect handling, reconnection)
 - 🚧 UI polish and animations
 

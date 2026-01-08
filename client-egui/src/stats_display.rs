@@ -33,11 +33,10 @@ impl<'a> PlayerStatsDisplay<'a> {
 
 impl<'a> Widget for PlayerStatsDisplay<'a> {
     fn ui(self, ui: &mut Ui) -> egui::Response {
-        let desired_size = Vec2::new(280.0, 170.0); // Increased height for more stats
+        let desired_size = Vec2::new(280.0, 188.0); // Increased height for trail distance stat
         let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
 
         if ui.is_rect_visible(rect) {
-            let visuals = ui.style().interact(&response);
 
             // Background with winner highlight - darker for better contrast
             let bg_color = if self.is_winner {
@@ -233,10 +232,26 @@ impl<'a> Widget for PlayerStatsDisplay<'a> {
                 value_color
             );
 
-            // Row 5: Elimination info
+            // Row 5: Trail Distance
+            ui.painter().text(
+                stats_start + Vec2::new(0.0, line_height * 4.0),
+                egui::Align2::LEFT_TOP,
+                "Distance:",
+                stats_font.clone(),
+                label_color
+            );
+            ui.painter().text(
+                stats_start + Vec2::new(80.0, line_height * 4.0),
+                egui::Align2::LEFT_TOP,
+                format!("{:.1}", self.stats.trail_distance),
+                stats_font.clone(),
+                value_color
+            );
+
+            // Row 6: Elimination info
             if let Some(elim_turn) = self.stats.elimination_turn {
                 ui.painter().text(
-                    stats_start + Vec2::new(0.0, line_height * 4.0),
+                    stats_start + Vec2::new(0.0, line_height * 5.0),
                     egui::Align2::LEFT_TOP,
                     format!("Eliminated on turn {}", elim_turn),
                     stats_font.clone(),
@@ -244,7 +259,7 @@ impl<'a> Widget for PlayerStatsDisplay<'a> {
                 );
             } else if self.is_winner {
                 ui.painter().text(
-                    stats_start + Vec2::new(0.0, line_height * 4.0),
+                    stats_start + Vec2::new(0.0, line_height * 5.0),
                     egui::Align2::LEFT_TOP,
                     "WINNER",
                     egui::FontId::proportional(16.0),
@@ -254,19 +269,5 @@ impl<'a> Widget for PlayerStatsDisplay<'a> {
         }
 
         response
-    }
-}
-
-fn color_to_name(color: (u8, u8, u8)) -> &'static str {
-    match color {
-        (255, 0, 0) => "Red",
-        (0, 255, 0) => "Green",
-        (0, 0, 255) => "Blue",
-        (255, 255, 0) => "Yellow",
-        (255, 0, 255) => "Magenta",
-        (0, 255, 255) => "Cyan",
-        (255, 128, 0) => "Orange",
-        (128, 0, 128) => "Purple",
-        _ => "Unknown",
     }
 }

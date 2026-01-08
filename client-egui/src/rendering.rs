@@ -16,10 +16,6 @@ pub const TILE_BACKGROUND: Color32 = Color32::from_rgba_premultiplied(45, 45, 55
 #[allow(dead_code)]
 pub fn paint_board(_board: &Board) {}
 
-pub fn paint_tile(tile: &Tile, rect: Rect, painter: &Painter) {
-    paint_tile_with_trails(tile, rect, painter, &HashMap::new());
-}
-
 pub fn paint_tile_with_rotation(tile: &Tile, rect: Rect, painter: &Painter, rotation_angle: f32) {
     paint_tile_with_trails_and_rotation(tile, rect, painter, &HashMap::new(), rotation_angle);
 }
