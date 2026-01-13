@@ -1,15 +1,15 @@
 #!/bin/sh
 set -e
 
-# Generate config.js with environment variables
-cat > /usr/share/nginx/html/config.js <<EOF
+# Create a config.js file with environment variables
+cat > /usr/share/nginx/html/config.js <<CONFIGEOF
 // Auto-generated configuration from environment variables
 window.TSURUST_CONFIG = {
     wsServerUrl: "${WS_SERVER_URL:-ws://localhost:8080}"
 };
-EOF
+CONFIGEOF
 
-echo "Generated config.js with WS_SERVER_URL=${WS_SERVER_URL:-ws://localhost:8080}"
+echo "WebSocket server URL configured as: ${WS_SERVER_URL:-ws://localhost:8080}"
 
-# Execute the main command
+# Execute the CMD
 exec "$@"

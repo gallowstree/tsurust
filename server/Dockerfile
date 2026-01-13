@@ -11,8 +11,8 @@ RUN apk add --no-cache \
     openssl-dev \
     openssl-libs-static
 
-# Add musl target
-RUN rustup target add x86_64-unknown-linux-musl
+# Add musl target for the current architecture
+RUN rustup target add $(uname -m)-unknown-linux-musl
 
 # Copy workspace files
 COPY Cargo.toml Cargo.lock ./
@@ -27,7 +27,8 @@ COPY client-egui/Cargo.toml ./client-egui/Cargo.toml
 
 # Build the server as a static musl binary
 ENV RUSTFLAGS='-C target-feature=+crt-static'
-RUN cargo build --release --target x86_64-unknown-linux-musl --bin server
+RUN TARGET_ARCH=$(uname -m)-unknown-linux-musl && \
+    cargo build --release --target $TARGET_ARCH --bin server
 
 # Stage 2: Create minimal runtime image
 FROM alpine:3.19
@@ -43,7 +44,7 @@ RUN adduser -D -u 1001 tsurust
 WORKDIR /app
 
 # Copy the static binary from builder
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/server /app/server
+COPY --from=builder /app/target/*/release/server /app/server
 
 # Change ownership to non-root user
 RUN chown -R tsurust:tsurust /app

@@ -13,7 +13,7 @@ watch = ["src", "web"]
 [serve]
 # Local development server configuration
 addresses = ["127.0.0.1"]
-port = 8080
+port = 8081
 # Open browser automatically on `trunk serve`
 open = false
 
