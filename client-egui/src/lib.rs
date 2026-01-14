@@ -20,7 +20,7 @@ pub use app::TemplateApp;
 // When compiling for web:
 
 #[cfg(target_arch = "wasm32")]
-use eframe::wasm_bindgen::{self, prelude::*};
+use eframe::wasm_bindgen::{self, prelude::*, JsCast};
 
 /// This is the entry-point for all the web-assembly.
 /// This is called once from the HTML.
@@ -37,11 +37,23 @@ pub async fn start(canvas_id: &str) -> Result<(), eframe::wasm_bindgen::JsValue>
 
     let web_options = eframe::WebOptions::default();
 
+    // Get the canvas element from the document
+    let document = web_sys::window()
+        .expect("no window")
+        .document()
+        .expect("no document");
+    let canvas = document
+        .get_element_by_id(canvas_id)
+        .unwrap_or_else(|| panic!("no canvas element with id '{}'", canvas_id));
+    let canvas: web_sys::HtmlCanvasElement = canvas
+        .dyn_into::<web_sys::HtmlCanvasElement>()
+        .expect("element is not a canvas");
+
     eframe::WebRunner::new()
         .start(
-            canvas_id,
+            canvas,
             web_options,
-            Box::new(|cc| Box::new(TemplateApp::new(cc))),
+            Box::new(|cc| Ok(Box::new(TemplateApp::new(cc)))),
         )
         .await
 }

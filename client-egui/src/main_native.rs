@@ -9,6 +9,6 @@ pub fn main() {
     let _ = eframe::run_native(
         "Tsurust",
         native_options,
-        Box::new(|cc| Box::new(client_egui::TemplateApp::new(cc))),
+        Box::new(|cc| Ok(Box::new(client_egui::TemplateApp::new(cc)))),
     );
 }
