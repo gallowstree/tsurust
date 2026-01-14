@@ -231,81 +231,113 @@ fn draw_spinning_border_glow(ui: &mut Ui, rect: Rect) {
     let rotation_speed = 0.25; // rotations per second
     let t = ((time * rotation_speed) % 1.0) as f32; // 0.0 to 1.0 around the perimeter
 
-    // Calculate perimeter segments
+    // Calculate perimeter
     let width = rect.width();
     let height = rect.height();
     let perimeter = 2.0 * (width + height);
-    let distance_along_perimeter = t * perimeter;
 
-    // Determine which edge and position along that edge
-    let (start_pos, end_pos, position_t) = if distance_along_perimeter < width {
-        // Top edge (left to right)
-        let t = distance_along_perimeter / width;
-        (rect.left_top(), rect.right_top(), t)
-    } else if distance_along_perimeter < width + height {
-        // Right edge (top to bottom)
-        let t = (distance_along_perimeter - width) / height;
-        (rect.right_top(), rect.right_bottom(), t)
-    } else if distance_along_perimeter < 2.0 * width + height {
-        // Bottom edge (right to left)
-        let t = (distance_along_perimeter - width - height) / width;
-        (rect.right_bottom(), rect.left_bottom(), t)
-    } else {
-        // Left edge (bottom to top)
-        let t = (distance_along_perimeter - 2.0 * width - height) / height;
-        (rect.left_bottom(), rect.left_top(), t)
-    };
+    // Glow length is 90% of perimeter
+    let glow_length = perimeter * 0.9;
 
-    // Interpolate position along the current edge
-    let glow_center = Pos2::new(
-        start_pos.x + (end_pos.x - start_pos.x) * position_t,
-        start_pos.y + (end_pos.y - start_pos.y) * position_t,
-    );
+    // Current head position (0.0 to perimeter)
+    let head_distance = t * perimeter;
 
-    // Direction vector along the edge
-    let edge_dir = (end_pos - start_pos).normalized();
+    // Number of segments to draw the gradient smoothly
+    let num_segments = 100;
 
-    // Draw glowing effect with multiple layers
-    let glow_length = 60.0; // Length of the glow trail
-    let num_segments = 20;
-
+    // Draw gradient from head (bright) to tail (transparent)
     for i in 0..num_segments {
         let segment_t = i as f32 / num_segments as f32;
-        let offset = segment_t * glow_length;
 
-        // Calculate opacity (brightest at center, fading out)
-        let opacity = ((1.0 - segment_t) * 255.0) as u8;
+        // Distance along perimeter for this segment (going backwards from head)
+        let segment_distance = (head_distance - segment_t * glow_length + perimeter) % perimeter;
 
-        // Calculate color intensity
-        let base_color = PINK;
-        let glow_color = Color32::from_rgba_unmultiplied(
-            base_color.r(),
-            base_color.g(),
-            base_color.b(),
-            opacity,
-        );
+        // Get position on border for this distance
+        let pos = position_at_perimeter_distance(rect, segment_distance);
+        let next_distance = (segment_distance + glow_length / num_segments as f32) % perimeter;
+        let next_pos = position_at_perimeter_distance(rect, next_distance);
 
-        // Calculate positions for this segment
-        let segment_start = glow_center - edge_dir * offset;
-        let segment_end = glow_center - edge_dir * (offset + glow_length / num_segments as f32);
+        // Create gradient: bright at head (segment_t = 0), transparent at tail (segment_t = 1)
+        // Use smooth falloff curve
+        let falloff = 1.0 - segment_t;
+        let smooth_falloff = falloff * falloff; // Quadratic falloff for smoother gradient
 
-        // Draw with varying width (thicker at center)
-        let width = 8.0 * (1.0 - segment_t * 0.7);
+        // Multi-color gradient from white -> pink -> purple -> transparent
+        let (r, g, b, opacity) = if segment_t < 0.3 {
+            // White to bright pink (head)
+            let local_t = segment_t / 0.3;
+            let r = (255.0 * (1.0 - local_t * 0.1)) as u8;
+            let g = (255.0 * (1.0 - local_t * 0.4)) as u8;
+            let b = (255.0 * (1.0 - local_t * 0.1)) as u8;
+            let opacity = (smooth_falloff * 255.0) as u8;
+            (r, g, b, opacity)
+        } else if segment_t < 0.6 {
+            // Bright pink to purple
+            let local_t = (segment_t - 0.3) / 0.3;
+            let r = (230.0 * (1.0 - local_t * 0.2)) as u8;
+            let g = (150.0 * (1.0 - local_t * 0.5)) as u8;
+            let b = (230.0 + local_t * 25.0) as u8;
+            let opacity = (smooth_falloff * 255.0) as u8;
+            (r, g, b, opacity)
+        } else {
+            // Purple to transparent (tail)
+            let local_t = (segment_t - 0.6) / 0.4;
+            let r = (180.0 * (1.0 - local_t * 0.5)) as u8;
+            let g = (80.0 * (1.0 - local_t * 0.8)) as u8;
+            let b = 255;
+            let opacity = (smooth_falloff * 255.0 * (1.0 - local_t * 0.5)) as u8;
+            (r, g, b, opacity)
+        };
+
+        let glow_color = Color32::from_rgba_unmultiplied(r, g, b, opacity);
+
+        // Width tapers from thick at head to thin at tail
+        let width = 12.0 * (1.0 - segment_t * 0.8);
+
         ui.painter().line_segment(
-            [segment_start, segment_end],
+            [pos, next_pos],
             Stroke::new(width, glow_color),
         );
     }
 
-    // Add bright core
-    let core_length = 20.0;
-    ui.painter().line_segment(
-        [glow_center - edge_dir * core_length, glow_center],
-        Stroke::new(10.0, Color32::from_rgb(255, 200, 255)),
-    );
-
     // Request repaint for continuous animation
     ui.ctx().request_repaint();
+}
+
+/// Helper function to get position on board border at a given distance along perimeter
+fn position_at_perimeter_distance(rect: Rect, distance: f32) -> Pos2 {
+    let width = rect.width();
+    let height = rect.height();
+
+    if distance < width {
+        // Top edge (left to right)
+        let t = distance / width;
+        Pos2::new(
+            rect.left_top().x + t * width,
+            rect.left_top().y,
+        )
+    } else if distance < width + height {
+        // Right edge (top to bottom)
+        let t = (distance - width) / height;
+        Pos2::new(
+            rect.right_top().x,
+            rect.right_top().y + t * height,
+        )
+    } else if distance < 2.0 * width + height {
+        // Bottom edge (right to left)
+        let t = (distance - width - height) / width;
+        Pos2::new(
+            rect.right_bottom().x - t * width,
+            rect.right_bottom().y,
+        )
+    } else {
+        // Left edge (bottom to top)
+        let t = (distance - 2.0 * width - height) / height;
+        Pos2::new(
+            rect.left_bottom().x,
+            rect.left_bottom().y - t * height,
+        )
+    }
 }
 
 /// Interpolate player position along a trail based on animation progress (0.0 to 1.0)
