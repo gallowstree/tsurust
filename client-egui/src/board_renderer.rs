@@ -204,6 +204,9 @@ fn background(ui: &mut Ui, rect: Rect) {
     ui.painter().rect_filled(rect, 0.6, Color32::BLACK);
     ui.painter().rect_stroke(rect, 0.5, Stroke::new(4.0, PINK));
 
+    // Draw animated glowing light spinning around the border
+    draw_spinning_border_glow(ui, rect);
+
     for x in 0..= 6 {
         let x = x as f32 * TILE_SIZE.x;
         let start = Pos2::new(x , 0.) + rect.min.to_vec2();
@@ -217,6 +220,92 @@ fn background(ui: &mut Ui, rect: Rect) {
         ui.painter().line_segment([start, end], Stroke::new(0.2, Color32::LIGHT_YELLOW));
 
     }
+}
+
+/// Draw an animated glowing light that spins around the board border
+fn draw_spinning_border_glow(ui: &mut Ui, rect: Rect) {
+    // Get time for animation (seconds since some arbitrary point)
+    let time = ui.input(|i| i.time);
+
+    // Animation speed: complete one rotation every 4 seconds
+    let rotation_speed = 0.25; // rotations per second
+    let t = ((time * rotation_speed) % 1.0) as f32; // 0.0 to 1.0 around the perimeter
+
+    // Calculate perimeter segments
+    let width = rect.width();
+    let height = rect.height();
+    let perimeter = 2.0 * (width + height);
+    let distance_along_perimeter = t * perimeter;
+
+    // Determine which edge and position along that edge
+    let (start_pos, end_pos, position_t) = if distance_along_perimeter < width {
+        // Top edge (left to right)
+        let t = distance_along_perimeter / width;
+        (rect.left_top(), rect.right_top(), t)
+    } else if distance_along_perimeter < width + height {
+        // Right edge (top to bottom)
+        let t = (distance_along_perimeter - width) / height;
+        (rect.right_top(), rect.right_bottom(), t)
+    } else if distance_along_perimeter < 2.0 * width + height {
+        // Bottom edge (right to left)
+        let t = (distance_along_perimeter - width - height) / width;
+        (rect.right_bottom(), rect.left_bottom(), t)
+    } else {
+        // Left edge (bottom to top)
+        let t = (distance_along_perimeter - 2.0 * width - height) / height;
+        (rect.left_bottom(), rect.left_top(), t)
+    };
+
+    // Interpolate position along the current edge
+    let glow_center = Pos2::new(
+        start_pos.x + (end_pos.x - start_pos.x) * position_t,
+        start_pos.y + (end_pos.y - start_pos.y) * position_t,
+    );
+
+    // Direction vector along the edge
+    let edge_dir = (end_pos - start_pos).normalized();
+
+    // Draw glowing effect with multiple layers
+    let glow_length = 60.0; // Length of the glow trail
+    let num_segments = 20;
+
+    for i in 0..num_segments {
+        let segment_t = i as f32 / num_segments as f32;
+        let offset = segment_t * glow_length;
+
+        // Calculate opacity (brightest at center, fading out)
+        let opacity = ((1.0 - segment_t) * 255.0) as u8;
+
+        // Calculate color intensity
+        let base_color = PINK;
+        let glow_color = Color32::from_rgba_unmultiplied(
+            base_color.r(),
+            base_color.g(),
+            base_color.b(),
+            opacity,
+        );
+
+        // Calculate positions for this segment
+        let segment_start = glow_center - edge_dir * offset;
+        let segment_end = glow_center - edge_dir * (offset + glow_length / num_segments as f32);
+
+        // Draw with varying width (thicker at center)
+        let width = 8.0 * (1.0 - segment_t * 0.7);
+        ui.painter().line_segment(
+            [segment_start, segment_end],
+            Stroke::new(width, glow_color),
+        );
+    }
+
+    // Add bright core
+    let core_length = 20.0;
+    ui.painter().line_segment(
+        [glow_center - edge_dir * core_length, glow_center],
+        Stroke::new(10.0, Color32::from_rgb(255, 200, 255)),
+    );
+
+    // Request repaint for continuous animation
+    ui.ctx().request_repaint();
 }
 
 /// Interpolate player position along a trail based on animation progress (0.0 to 1.0)
