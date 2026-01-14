@@ -95,6 +95,12 @@ impl Lobby {
     pub fn handle_event(&mut self, event: LobbyEvent) -> Result<(), LobbyError> {
         match event {
             LobbyEvent::PlayerJoined { player_id, player_name } => {
+                // If player already exists, treat as idempotent (no-op)
+                // This prevents color changes on duplicate join events
+                if self.players.contains_key(&player_id) {
+                    return Ok(());
+                }
+
                 if self.players.len() >= self.max_players {
                     return Err(LobbyError::LobbyFull);
                 }
@@ -518,6 +524,31 @@ mod tests {
         // In a real system, you might want to prevent this
         assert!(result.is_ok());
         assert_eq!(lobby.players.len(), 1);
+    }
+
+    #[test]
+    fn test_duplicate_join_preserves_color() {
+        // FIXED: When a player joins twice, their color should be preserved (idempotent)
+        let mut lobby = Lobby::new("TEST".to_string(), "Test".to_string());
+
+        // Player 1 joins
+        lobby.handle_event(LobbyEvent::PlayerJoined {
+            player_id: 1,
+            player_name: "Alice".to_string(),
+        }).unwrap();
+
+        let original_color = lobby.players[&1].color;
+        let original_name = lobby.players[&1].name.clone();
+
+        // Player 1 "joins" again (duplicate event) with different name
+        lobby.handle_event(LobbyEvent::PlayerJoined {
+            player_id: 1,
+            player_name: "Alice2".to_string(),
+        }).unwrap();
+
+        // Color and name should be preserved (idempotent behavior)
+        assert_eq!(lobby.players[&1].color, original_color, "Color should not change on duplicate join");
+        assert_eq!(lobby.players[&1].name, original_name, "Name should not change on duplicate join (idempotent)");
     }
 
     #[test]
