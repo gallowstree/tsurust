@@ -1,2 +1,8 @@
 /target
 .idea/
+
+# Build artifacts
+client-egui/dist/
+
+# Claude Code local settings
+.claude/settings.local.json
