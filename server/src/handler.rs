@@ -1,13 +1,19 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::broadcast;
-use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
+use tokio::time;
+use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::WebSocketStream;
 
 use tsurust_common::board::PlayerID;
 use tsurust_common::protocol::{ClientMessage, RoomId, ServerMessage};
 
 use crate::server::{ConnectionId, GameServer};
+
+const PING_INTERVAL: Duration = Duration::from_secs(30);
+const PING_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub async fn handle_connection(
     mut ws: WebSocketStream<tokio::net::TcpStream>,
@@ -17,12 +23,22 @@ pub async fn handle_connection(
     let mut update_rx: Option<broadcast::Receiver<ServerMessage>> = None;
     let mut current_room: Option<RoomId> = None;
     let mut current_player_id: Option<PlayerID> = None;
+    let mut ping_interval = time::interval(PING_INTERVAL);
+    ping_interval.tick().await; // consume the immediate first tick
+    let mut waiting_for_pong = false;
 
     loop {
         tokio::select! {
             // Receive messages from client
             msg_result = ws.next() => {
                 match msg_result {
+                    Some(Ok(Message::Ping(data))) => {
+                        // Respond to client-initiated pings
+                        let _ = ws.send(Message::Pong(data)).await;
+                    }
+                    Some(Ok(Message::Pong(_))) => {
+                        waiting_for_pong = false;
+                    }
                     Some(Ok(msg)) => {
                         if let Err(e) = handle_client_message(
                             &mut ws,
@@ -72,6 +88,25 @@ pub async fn handle_connection(
                         }
                     }
                 }
+            }
+
+            // Send periodic pings; close connection if pong not received
+            _ = ping_interval.tick() => {
+                if waiting_for_pong {
+                    eprintln!(
+                        "Connection {} timed out (no pong in {}s), closing",
+                        connection_id, PING_TIMEOUT.as_secs()
+                    );
+                    break;
+                }
+                if let Err(e) = ws.send(Message::Ping(vec![].into())).await {
+                    eprintln!("Failed to send ping to connection {}: {}", connection_id, e);
+                    break;
+                }
+                waiting_for_pong = true;
+                // Reset interval to PING_TIMEOUT so we detect the missing pong promptly
+                ping_interval = time::interval(PING_TIMEOUT);
+                ping_interval.tick().await; // consume immediate tick
             }
         }
     }
