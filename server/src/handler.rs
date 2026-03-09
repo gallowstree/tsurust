@@ -34,7 +34,7 @@ pub async fn handle_connection(
                                 message: e.to_string(),
                             };
                             if let Ok(json) = serde_json::to_string(&error_msg) {
-                                let _ = ws.send(Message::Text(json)).await;
+                                let _ = ws.send(Message::Text(json.into())).await;
                             }
                         }
                     }
@@ -59,7 +59,7 @@ pub async fn handle_connection(
                 if let Some(update) = update {
                     match serde_json::to_string(&update) {
                         Ok(json) => {
-                            if let Err(e) = ws.send(Message::Text(json)).await {
+                            if let Err(e) = ws.send(Message::Text(json.into())).await {
                                 eprintln!("Failed to send update to connection {}: {}", connection_id, e);
                                 break;
                             }
@@ -120,7 +120,7 @@ async fn handle_client_message(
                     };
                     let json = serde_json::to_string(&lobby_state)
                         .map_err(|e| format!("Failed to serialize lobby state: {}", e))?;
-                    ws.send(Message::Text(json))
+                    ws.send(Message::Text(json.into()))
                         .await
                         .map_err(|e| format!("Failed to send lobby state: {}", e))?;
                 }
@@ -131,7 +131,7 @@ async fn handle_client_message(
             let response = ServerMessage::RoomCreated { room_id, player_id };
             let json = serde_json::to_string(&response)
                 .map_err(|e| format!("Failed to serialize response: {}", e))?;
-            ws.send(Message::Text(json))
+            ws.send(Message::Text(json.into()))
                 .await
                 .map_err(|e| format!("Failed to send response: {}", e))?;
         }
@@ -158,7 +158,7 @@ async fn handle_client_message(
                     };
                     let json = serde_json::to_string(&lobby_state)
                         .map_err(|e| format!("Failed to serialize lobby state: {}", e))?;
-                    ws.send(Message::Text(json))
+                    ws.send(Message::Text(json.into()))
                         .await
                         .map_err(|e| format!("Failed to send lobby state: {}", e))?;
                 }
@@ -173,7 +173,7 @@ async fn handle_client_message(
             };
             let json = serde_json::to_string(&response)
                 .map_err(|e| format!("Failed to serialize response: {}", e))?;
-            ws.send(Message::Text(json))
+            ws.send(Message::Text(json.into()))
                 .await
                 .map_err(|e| format!("Failed to send response: {}", e))?;
         }
@@ -236,7 +236,7 @@ async fn handle_client_message(
             };
             let json = serde_json::to_string(&response)
                 .map_err(|e| format!("Failed to serialize response: {}", e))?;
-            ws.send(Message::Text(json))
+            ws.send(Message::Text(json.into()))
                 .await
                 .map_err(|e| format!("Failed to send response: {}", e))?;
         }

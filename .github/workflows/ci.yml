@@ -46,7 +46,8 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit
       - name: Run audit
-        run: cargo audit
+        # RUSTSEC-2024-0421 (idna): in eframe->webbrowser transitive dep, cannot fix without major eframe upgrade
+        run: cargo audit --ignore RUSTSEC-2024-0421
 
   # ============================================================
   # TESTS
