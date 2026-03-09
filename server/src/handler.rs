@@ -72,7 +72,8 @@ pub async fn handle_connection(
             update = async {
                 match &mut update_rx {
                     Some(rx) => rx.recv().await.ok(),
-                    None => None,
+                    // pending() never resolves — prevents a busy-spin when no room is joined
+                    None => std::future::pending().await,
                 }
             } => {
                 if let Some(update) = update {

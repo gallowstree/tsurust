@@ -1,18 +1,20 @@
+mod handler;
 mod room;
 mod server;
-mod handler;
 
 #[cfg(test)]
-mod server_tests;
+mod integration_tests;
 #[cfg(test)]
 mod room_tests;
+#[cfg(test)]
+mod server_tests;
 
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio_tungstenite::accept_async;
 
-use crate::server::GameServer;
 use crate::handler::handle_connection;
+use crate::server::GameServer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -21,7 +23,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
     let addr = format!("{}:{}", host, port);
 
-    let listener = TcpListener::bind(&addr).await
+    let listener = TcpListener::bind(&addr)
+        .await
         .expect("Failed to bind to address");
 
     println!("Tsurust WebSocket server listening on {}", addr);
