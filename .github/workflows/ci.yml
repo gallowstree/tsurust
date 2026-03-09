@@ -190,13 +190,41 @@ jobs:
       - name: Build WASM client
         run: |
           cd client-egui
-          trunk build --release
+          trunk build --release --public-url /tsurust/
+
+      - name: Inject WebSocket server URL
+        if: vars.WS_SERVER_URL != ''
+        run: |
+          sed -i "s|wsServerUrl: \"ws://127.0.0.1:8080\"|wsServerUrl: \"${{ vars.WS_SERVER_URL }}\"|g" client-egui/dist/index.html
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: tsurust-wasm
           path: client-egui/dist/
+
+  # ============================================================
+  # DEPLOY TO GITHUB PAGES (only on master push)
+  # ============================================================
+  deploy-pages:
+    name: Deploy to GitHub Pages
+    needs: [build-wasm]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download WASM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tsurust-wasm
+          path: dist
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
 
   # ============================================================
   # BUILD & PUSH DOCKER IMAGES (only on main/tags)
