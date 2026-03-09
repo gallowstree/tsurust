@@ -46,15 +46,15 @@ fn calculate_segment_distance(entry: TileEndpoint, exit: TileEndpoint) -> f32 {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PlayerStats {
     pub player_id: PlayerID,
-    pub turns_survived: usize,        // Number of turns the player stayed alive
-    pub tiles_placed: usize,          // Number of tiles placed before elimination
-    pub path_length: usize,           // Number of cells traversed (counts revisits)
-    pub trail_distance: f32,          // Actual geometric distance traveled along paths
-    pub dragon_turns: usize,          // Number of turns holding the dragon
-    pub hand_tiles_remaining: usize,  // Tiles in hand when eliminated
+    pub turns_survived: usize, // Number of turns the player stayed alive
+    pub tiles_placed: usize,   // Number of tiles placed before elimination
+    pub path_length: usize,    // Number of cells traversed (counts revisits)
+    pub trail_distance: f32,   // Actual geometric distance traveled along paths
+    pub dragon_turns: usize,   // Number of turns holding the dragon
+    pub hand_tiles_remaining: usize, // Tiles in hand when eliminated
     pub elimination_turn: Option<usize>, // Turn number when eliminated (None if winner)
-    pub players_eliminated: usize,    // Number of other players this player eliminated
-    pub unique_tiles_visited: usize,  // Number of distinct board tiles visited
+    pub players_eliminated: usize, // Number of other players this player eliminated
+    pub unique_tiles_visited: usize, // Number of distinct board tiles visited
     pub max_visits_to_single_tile: usize, // Highest visit count to any single tile
     #[serde(skip)]
     pub cells_visited: std::collections::HashMap<CellCoord, usize>, // Visit count per cell (not exported)
@@ -62,9 +62,20 @@ pub struct PlayerStats {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum TurnResult {
-    TurnAdvanced { turn_number: usize, next_player: PlayerID, eliminated: Vec<PlayerID> },
-    PlayerWins { turn_number: usize, winner: PlayerID, eliminated: Vec<PlayerID> },
-    Extinction { turn_number: usize, eliminated: Vec<PlayerID> },
+    TurnAdvanced {
+        turn_number: usize,
+        next_player: PlayerID,
+        eliminated: Vec<PlayerID>,
+    },
+    PlayerWins {
+        turn_number: usize,
+        winner: PlayerID,
+        eliminated: Vec<PlayerID>,
+    },
+    Extinction {
+        turn_number: usize,
+        eliminated: Vec<PlayerID>,
+    },
 }
 
 /// Game mode type for export metadata
@@ -96,7 +107,7 @@ pub struct GameExport {
     pub game_state: Game,
     pub player_perspective: Option<PlayerID>, // Whose perspective this export is from (for partial info)
     pub hand_counts: std::collections::HashMap<PlayerID, usize>, // Tile counts for each player
-    pub deck_count: usize, // Number of tiles remaining in deck
+    pub deck_count: usize,                    // Number of tiles remaining in deck
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -137,24 +148,30 @@ impl Game {
             let mut cells_visited = std::collections::HashMap::new();
             cells_visited.insert(player.pos.cell, 1); // Start position visited once
 
-            stats.insert(player.id, PlayerStats {
-                player_id: player.id,
-                turns_survived: 0,
-                tiles_placed: 0,
-                path_length: 1, // Start with 1 for their starting position
-                trail_distance: 0.0, // No distance traveled yet
-                dragon_turns: 0,
-                hand_tiles_remaining: 3, // Starting hand size
-                elimination_turn: None,
-                players_eliminated: 0,
-                unique_tiles_visited: 1, // Start with 1 for starting position
-                max_visits_to_single_tile: 1,
-                cells_visited,
-            });
+            stats.insert(
+                player.id,
+                PlayerStats {
+                    player_id: player.id,
+                    turns_survived: 0,
+                    tiles_placed: 0,
+                    path_length: 1,      // Start with 1 for their starting position
+                    trail_distance: 0.0, // No distance traveled yet
+                    dragon_turns: 0,
+                    hand_tiles_remaining: 3, // Starting hand size
+                    elimination_turn: None,
+                    players_eliminated: 0,
+                    unique_tiles_visited: 1, // Start with 1 for starting position
+                    max_visits_to_single_tile: 1,
+                    cells_visited,
+                },
+            );
         }
 
         Game {
-            players, hands, deck, board,
+            players,
+            hands,
+            deck,
+            board,
             tile_trails: Vec::new(),
             player_trails,
             current_turn_trails: HashMap::new(),
@@ -180,7 +197,11 @@ impl Game {
         }
 
         // Basic validation
-        if !self.players.iter().any(|p| p.id == mov.player_id && p.alive) {
+        if !self
+            .players
+            .iter()
+            .any(|p| p.id == mov.player_id && p.alive)
+        {
             return Err("Invalid player or player is eliminated");
         }
 
@@ -206,7 +227,8 @@ impl Game {
         // Credit current player with eliminations (excluding self-elimination)
         if !eliminated.is_empty() {
             if let Some(stats) = self.stats.get_mut(&mov.player_id) {
-                let self_eliminations = eliminated.iter().filter(|&&id| id == mov.player_id).count();
+                let self_eliminations =
+                    eliminated.iter().filter(|&&id| id == mov.player_id).count();
                 stats.players_eliminated += eliminated.len() - self_eliminations;
             }
         }
@@ -221,7 +243,10 @@ impl Game {
     }
 
     fn deduct_tile_from_hand(&mut self, mov: Move) -> Result<(), &'static str> {
-        let hand = self.hands.get_mut(&mov.player_id).expect("Player should exist");
+        let hand = self
+            .hands
+            .get_mut(&mov.player_id)
+            .expect("Player should exist");
         // Use rotation-invariant comparison: player may have rotated the tile before playing
         if let Some(pos) = hand.iter().position(|tile| tile.is_same_tile(&mov.tile)) {
             hand.remove(pos);
@@ -262,7 +287,8 @@ impl Game {
 
                         // Calculate and add geometric distance for this segment
                         if let Some(stats) = self.stats.get_mut(&player.id) {
-                            let distance = calculate_segment_distance(segment.entry_point, segment.exit_point);
+                            let distance =
+                                calculate_segment_distance(segment.entry_point, segment.exit_point);
                             stats.trail_distance += distance;
                         }
                     }
@@ -283,7 +309,8 @@ impl Game {
                         stats.unique_tiles_visited = stats.cells_visited.len();
 
                         // Update max visits to single tile
-                        stats.max_visits_to_single_tile = stats.max_visits_to_single_tile.max(visit_count);
+                        stats.max_visits_to_single_tile =
+                            stats.max_visits_to_single_tile.max(visit_count);
                     }
                 }
             }
@@ -310,7 +337,8 @@ impl Game {
         // Record trail for the cell the player just exited from
         if let Some(tile) = self.board.get_tile_at(exit_pos.cell) {
             // Find which segment this player used to exit this tile
-            let segment = tile.segments
+            let segment = tile
+                .segments
                 .iter()
                 .find(|&seg| seg.a == exit_pos.endpoint || seg.b == exit_pos.endpoint);
 
@@ -320,10 +348,15 @@ impl Game {
 
                 // Record that this player used this segment (every time they pass through)
                 // Find existing entry for this cell or add a new one
-                if let Some((_, trail_entries)) = self.tile_trails.iter_mut().find(|(cell, _)| cell == &exit_pos.cell) {
+                if let Some((_, trail_entries)) = self
+                    .tile_trails
+                    .iter_mut()
+                    .find(|(cell, _)| cell == &exit_pos.cell)
+                {
                     trail_entries.push((player_id, segment_key));
                 } else {
-                    self.tile_trails.push((exit_pos.cell, vec![(player_id, segment_key)]));
+                    self.tile_trails
+                        .push((exit_pos.cell, vec![(player_id, segment_key)]));
                 }
             }
         }
@@ -344,7 +377,11 @@ impl Game {
 
     fn next_active_player_id(&self) -> Option<PlayerID> {
         // Find the current player index
-        if let Some(current_index) = self.players.iter().position(|p| p.id == self.current_player_id) {
+        if let Some(current_index) = self
+            .players
+            .iter()
+            .position(|p| p.id == self.current_player_id)
+        {
             // Find the next alive player
             let player_count = self.players.len();
             for i in 1..=player_count {
@@ -366,7 +403,8 @@ impl Game {
         for &player_id in &eliminated {
             if let Some(stats) = self.stats.get_mut(&player_id) {
                 stats.elimination_turn = Some(turn_number);
-                stats.hand_tiles_remaining = self.hands.get(&player_id).map(|h| h.len()).unwrap_or(0);
+                stats.hand_tiles_remaining =
+                    self.hands.get(&player_id).map(|h| h.len()).unwrap_or(0);
             }
         }
 
@@ -390,24 +428,40 @@ impl Game {
         let alive_count = self.players.iter().filter(|p| p.alive).count();
 
         match alive_count {
-            0 => TurnResult::Extinction { turn_number, eliminated },
+            0 => TurnResult::Extinction {
+                turn_number,
+                eliminated,
+            },
             1 => {
                 // Find the winner
-                let winner = self.players.iter()
+                let winner = self
+                    .players
+                    .iter()
                     .find(|p| p.alive)
                     .map(|p| p.id)
                     .expect("Should have exactly one alive player");
 
-                TurnResult::PlayerWins { turn_number, winner, eliminated }
+                TurnResult::PlayerWins {
+                    turn_number,
+                    winner,
+                    eliminated,
+                }
             }
             _ => {
                 // Game continues - advance to next player
                 if let Some(next_player_id) = self.next_active_player_id() {
                     self.current_player_id = next_player_id;
-                    TurnResult::TurnAdvanced { turn_number, next_player: next_player_id, eliminated }
+                    TurnResult::TurnAdvanced {
+                        turn_number,
+                        next_player: next_player_id,
+                        eliminated,
+                    }
                 } else {
                     // This shouldn't happen if alive_count > 0, but handle it gracefully
-                    TurnResult::Extinction { turn_number, eliminated }
+                    TurnResult::Extinction {
+                        turn_number,
+                        eliminated,
+                    }
                 }
             }
         }
@@ -415,11 +469,17 @@ impl Game {
 
     /// Export the game with metadata for saving as a replay file
     /// For in-progress games, only the specified player's hand is included (others show empty)
-    pub fn export(&self, metadata: GameMetadata, player_perspective: Option<PlayerID>) -> GameExport {
+    pub fn export(
+        &self,
+        metadata: GameMetadata,
+        player_perspective: Option<PlayerID>,
+    ) -> GameExport {
         let mut game_state = self.clone();
 
         // Capture counts before filtering
-        let hand_counts: HashMap<PlayerID, usize> = self.hands.iter()
+        let hand_counts: HashMap<PlayerID, usize> = self
+            .hands
+            .iter()
             .map(|(id, hand)| (*id, hand.len()))
             .collect();
         let deck_count = self.deck.remaining();
@@ -452,13 +512,18 @@ impl Game {
 
     /// Rebuild a game state from move history
     /// This is used for replay functionality - reconstructs the game by replaying all moves
-    pub fn rebuild_from_history(initial_players: Vec<Player>, moves: &[Move]) -> Result<Game, &'static str> {
+    pub fn rebuild_from_history(
+        initial_players: Vec<Player>,
+        moves: &[Move],
+    ) -> Result<Game, &'static str> {
         let mut game = Game::new(initial_players);
 
         for mov in moves {
             // For replay, we need to ensure the tile is in the player's hand
             // Add it temporarily if not present (since we don't know original deck order)
-            let has_tile = game.hands.get(&mov.player_id)
+            let has_tile = game
+                .hands
+                .get(&mov.player_id)
                 .map(|hand| hand.iter().any(|t| t.is_same_tile(&mov.tile)))
                 .unwrap_or(false);
 
@@ -475,7 +540,7 @@ impl Game {
     }
 }
 
-fn alive_players(players: &mut Vec<Player>) -> Vec<&mut Player> {
+fn alive_players(players: &mut [Player]) -> Vec<&mut Player> {
     players.iter_mut().filter(|player| player.alive).collect()
 }
 
@@ -492,7 +557,7 @@ mod tests {
                 Segment { a: 2, b: 3 },
                 Segment { a: 4, b: 5 },
                 Segment { a: 6, b: 7 },
-            ]
+            ],
         }
     }
 
@@ -504,22 +569,23 @@ mod tests {
                 Segment { a: 1, b: 3 },
                 Segment { a: 4, b: 6 },
                 Segment { a: 5, b: 7 },
-            ]
+            ],
         }
     }
 
     #[test]
     fn test_trail_recording_single_player_single_pass() {
-        let players = vec![
-            Player {
-                id: 1,
-                name: "Player 1".to_string(),
-                pos: PlayerPos { cell: CellCoord { row: 1, col: 1 }, endpoint: 0 },
-                alive: true,
-                has_moved: false,
-                color: (255, 0, 0), // Red
-            }
-        ];
+        let players = vec![Player {
+            id: 1,
+            name: "Player 1".to_string(),
+            pos: PlayerPos {
+                cell: CellCoord { row: 1, col: 1 },
+                endpoint: 0,
+            },
+            alive: true,
+            has_moved: false,
+            color: (255, 0, 0), // Red
+        }];
 
         let mut game = Game::new(players);
 
@@ -539,7 +605,8 @@ mod tests {
         assert!(result.is_ok());
 
         // Check that trail was recorded for the tile
-        let trail_entries = game.tile_trails
+        let trail_entries = game
+            .tile_trails
             .iter()
             .find(|(coord, _)| coord == &CellCoord { row: 1, col: 1 })
             .map(|(_, entries)| entries)
@@ -556,7 +623,10 @@ mod tests {
             Player {
                 id: 1,
                 name: "Player 1".to_string(),
-                pos: PlayerPos { cell: CellCoord { row: 1, col: 1 }, endpoint: 0 },
+                pos: PlayerPos {
+                    cell: CellCoord { row: 1, col: 1 },
+                    endpoint: 0,
+                },
                 alive: true,
                 has_moved: false,
                 color: (255, 0, 0), // Red
@@ -564,11 +634,14 @@ mod tests {
             Player {
                 id: 2,
                 name: "Player 2".to_string(),
-                pos: PlayerPos { cell: CellCoord { row: 1, col: 1 }, endpoint: 2 },
+                pos: PlayerPos {
+                    cell: CellCoord { row: 1, col: 1 },
+                    endpoint: 2,
+                },
                 alive: true,
                 has_moved: false,
                 color: (0, 255, 0), // Green
-            }
+            },
         ];
 
         let mut game = Game::new(players);
@@ -587,7 +660,8 @@ mod tests {
         assert!(result.is_ok());
 
         // Check that trails were recorded for both players
-        let trail_entries = game.tile_trails
+        let trail_entries = game
+            .tile_trails
             .iter()
             .find(|(coord, _)| coord == &CellCoord { row: 1, col: 1 })
             .map(|(_, entries)| entries)
@@ -623,7 +697,10 @@ mod tests {
             Player {
                 id: 1,
                 name: "Player 1".to_string(),
-                pos: PlayerPos { cell: CellCoord { row: 1, col: 1 }, endpoint: 3 }, // Will move right to (1,2)
+                pos: PlayerPos {
+                    cell: CellCoord { row: 1, col: 1 },
+                    endpoint: 3,
+                }, // Will move right to (1,2)
                 alive: true,
                 has_moved: false,
                 color: (255, 0, 0), // Red
@@ -631,11 +708,14 @@ mod tests {
             Player {
                 id: 2,
                 name: "Player 2".to_string(),
-                pos: PlayerPos { cell: CellCoord { row: 2, col: 2 }, endpoint: 0 }, // Will move up to (1,2)
+                pos: PlayerPos {
+                    cell: CellCoord { row: 2, col: 2 },
+                    endpoint: 0,
+                }, // Will move up to (1,2)
                 alive: true,
                 has_moved: false,
                 color: (0, 255, 0), // Green
-            }
+            },
         ];
 
         let mut game = Game::new(players);
@@ -643,7 +723,7 @@ mod tests {
         // Step 1: Place a tile at (1,1) that sends player 1 to (1,2)
         // Player 1 is at endpoint 3, so we need a tile that connects 3 to an exit going right
         let tile1 = create_straight_tile(); // 0-1, 2-3, 4-5, 6-7
-        // Player 1 at endpoint 3 will use segment 2-3, exiting at endpoint 2 (which goes right)
+                                            // Player 1 at endpoint 3 will use segment 2-3, exiting at endpoint 2 (which goes right)
         let mov1 = Move {
             player_id: 1,
             cell: CellCoord { row: 1, col: 1 },
@@ -655,7 +735,8 @@ mod tests {
         assert!(result1.is_ok());
 
         // Check that player 1 moved to a different cell and trail was recorded
-        let trail_entries_1_1 = game.tile_trails
+        let trail_entries_1_1 = game
+            .tile_trails
             .iter()
             .find(|(coord, _)| coord == &CellCoord { row: 1, col: 1 })
             .map(|(_, entries)| entries);
@@ -665,7 +746,7 @@ mod tests {
 
         // Step 2: Place a tile at (2,2) that sends player 2 to meet player 1
         let tile2 = create_curve_tile(); // 0-2, 1-3, 4-6, 5-7
-        // Player 2 at endpoint 0 will use segment 0-2, exiting at endpoint 2 (which should go up)
+                                         // Player 2 at endpoint 0 will use segment 0-2, exiting at endpoint 2 (which should go up)
         let mov2 = Move {
             player_id: 2,
             cell: CellCoord { row: 2, col: 2 },
@@ -677,8 +758,14 @@ mod tests {
         assert!(result2.is_ok());
 
         // Manually position both players in cell (1,2) to simulate they arrived there
-        game.players[0].pos = PlayerPos { cell: CellCoord { row: 1, col: 2 }, endpoint: 0 };
-        game.players[1].pos = PlayerPos { cell: CellCoord { row: 1, col: 2 }, endpoint: 4 };
+        game.players[0].pos = PlayerPos {
+            cell: CellCoord { row: 1, col: 2 },
+            endpoint: 0,
+        };
+        game.players[1].pos = PlayerPos {
+            cell: CellCoord { row: 1, col: 2 },
+            endpoint: 4,
+        };
 
         // Place a tile at (1,2) that will cause both to traverse
         let tile3 = create_straight_tile(); // 0-1, 2-3, 4-5, 6-7
@@ -693,7 +780,8 @@ mod tests {
         assert!(result3.is_ok());
 
         // Verify that both players' trails are recorded at (1,2)
-        let trail_entries_1_2 = game.tile_trails
+        let trail_entries_1_2 = game
+            .tile_trails
             .iter()
             .find(|(coord, _)| coord == &CellCoord { row: 1, col: 2 })
             .map(|(_, entries)| entries)
@@ -712,7 +800,10 @@ mod tests {
             Player {
                 id: 1,
                 name: "Player 1".to_string(),
-                pos: PlayerPos { cell: CellCoord { row: 0, col: 2 }, endpoint: 4 },
+                pos: PlayerPos {
+                    cell: CellCoord { row: 0, col: 2 },
+                    endpoint: 4,
+                },
                 alive: true,
                 has_moved: false,
                 color: (255, 0, 0),
@@ -720,7 +811,10 @@ mod tests {
             Player {
                 id: 2,
                 name: "Player 2".to_string(),
-                pos: PlayerPos { cell: CellCoord { row: 5, col: 3 }, endpoint: 0 },
+                pos: PlayerPos {
+                    cell: CellCoord { row: 5, col: 3 },
+                    endpoint: 0,
+                },
                 alive: true,
                 has_moved: false,
                 color: (0, 255, 0),
@@ -758,7 +852,10 @@ mod tests {
             Player {
                 id: 1,
                 name: "Player 1".to_string(),
-                pos: PlayerPos { cell: CellCoord { row: 0, col: 2 }, endpoint: 4 },
+                pos: PlayerPos {
+                    cell: CellCoord { row: 0, col: 2 },
+                    endpoint: 4,
+                },
                 alive: true,
                 has_moved: false,
                 color: (255, 0, 0),
@@ -766,7 +863,10 @@ mod tests {
             Player {
                 id: 2,
                 name: "Player 2".to_string(),
-                pos: PlayerPos { cell: CellCoord { row: 5, col: 3 }, endpoint: 0 },
+                pos: PlayerPos {
+                    cell: CellCoord { row: 5, col: 3 },
+                    endpoint: 0,
+                },
                 alive: true,
                 has_moved: false,
                 color: (0, 255, 0),
@@ -804,7 +904,10 @@ mod tests {
             Player {
                 id: 1,
                 name: "Player 1".to_string(),
-                pos: PlayerPos { cell: CellCoord { row: 1, col: 1 }, endpoint: 0 },
+                pos: PlayerPos {
+                    cell: CellCoord { row: 1, col: 1 },
+                    endpoint: 0,
+                },
                 alive: true,
                 has_moved: false,
                 color: (255, 0, 0),
@@ -812,7 +915,10 @@ mod tests {
             Player {
                 id: 2,
                 name: "Player 2".to_string(),
-                pos: PlayerPos { cell: CellCoord { row: 2, col: 2 }, endpoint: 0 },
+                pos: PlayerPos {
+                    cell: CellCoord { row: 2, col: 2 },
+                    endpoint: 0,
+                },
                 alive: true,
                 has_moved: false,
                 color: (0, 255, 0),

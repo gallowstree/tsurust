@@ -1,5 +1,7 @@
 # GitHub Pages Deployment Guide
 
+> **Note:** The dedicated `deploy-pages.yml` workflow was consolidated into `.github/workflows/ci.yml`. The WASM build artifact is now produced by the `build-wasm` job in `ci.yml` on pushes to main/tags.
+
 This guide explains how to deploy the Tsurust WASM client to GitHub Pages using Trunk and GitHub Actions.
 
 ## Quick Start

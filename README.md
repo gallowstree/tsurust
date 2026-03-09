@@ -1,5 +1,7 @@
 # Tsurust
 
+[![CI](https://github.com/gallowstree/tsurust/actions/workflows/ci.yml/badge.svg)](https://github.com/gallowstree/tsurust/actions/workflows/ci.yml)
+
 A multiplayer implementation of the [Tsuro](https://en.wikipedia.org/wiki/Tsuro) board game in Rust, featuring both local and online multiplayer gameplay.
 
 ## Features

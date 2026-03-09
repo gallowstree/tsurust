@@ -46,13 +46,13 @@ fn test_server_message_serialization() {
     for (i, message) in test_cases.iter().enumerate() {
         // Test serialization
         let json = serde_json::to_string(message)
-            .expect(&format!("Failed to serialize ServerMessage variant #{}", i));
+            .unwrap_or_else(|_| panic!("Failed to serialize ServerMessage variant #{}", i));
 
         assert!(!json.is_empty(), "Serialized JSON should not be empty");
 
         // Test deserialization
         let deserialized: ServerMessage = serde_json::from_str(&json)
-            .expect(&format!("Failed to deserialize ServerMessage variant #{}", i));
+            .unwrap_or_else(|_| panic!("Failed to deserialize ServerMessage variant #{}", i));
 
         // Verify discriminant matches (same variant)
         assert_eq!(
@@ -104,13 +104,13 @@ fn test_client_message_serialization() {
     for (i, message) in test_cases.iter().enumerate() {
         // Test serialization
         let json = serde_json::to_string(message)
-            .expect(&format!("Failed to serialize ClientMessage variant #{}", i));
+            .unwrap_or_else(|_| panic!("Failed to serialize ClientMessage variant #{}", i));
 
         assert!(!json.is_empty(), "Serialized JSON should not be empty");
 
         // Test deserialization
         let deserialized: ClientMessage = serde_json::from_str(&json)
-            .expect(&format!("Failed to deserialize ClientMessage variant #{}", i));
+            .unwrap_or_else(|_| panic!("Failed to deserialize ClientMessage variant #{}", i));
 
         // Verify discriminant matches (same variant)
         assert_eq!(
@@ -133,8 +133,8 @@ fn test_game_serialization() {
     assert!(!json.is_empty());
 
     // Verify it can be deserialized
-    let deserialized: Game = serde_json::from_str(&json)
-        .expect("Game struct must be deserializable");
+    let deserialized: Game =
+        serde_json::from_str(&json).expect("Game struct must be deserializable");
 
     assert_eq!(deserialized.current_player_id, game.current_player_id);
     assert_eq!(deserialized.players.len(), game.players.len());
@@ -160,18 +160,23 @@ fn test_game_with_moves_serialization() {
     game.perform_move(mov).expect("Move should be valid");
 
     // This is the critical test - serialization should work even after moves
-    let json = serde_json::to_string(&game)
-        .expect("Game with moves must be serializable");
+    let json = serde_json::to_string(&game).expect("Game with moves must be serializable");
 
     assert!(!json.is_empty());
 
     // Verify it can be deserialized
-    let deserialized: Game = serde_json::from_str(&json)
-        .expect("Game with moves must be deserializable");
+    let deserialized: Game =
+        serde_json::from_str(&json).expect("Game with moves must be deserializable");
 
     // Verify tile_trails were preserved
-    assert!(!deserialized.tile_trails.is_empty(), "tile_trails should be preserved after serialization");
-    assert!(!deserialized.player_trails.is_empty(), "player_trails should be preserved after serialization");
+    assert!(
+        !deserialized.tile_trails.is_empty(),
+        "tile_trails should be preserved after serialization"
+    );
+    assert!(
+        !deserialized.player_trails.is_empty(),
+        "player_trails should be preserved after serialization"
+    );
 }
 
 /// Test that tile_trails (Vec of tuples) serializes correctly
@@ -197,22 +202,30 @@ fn test_tile_trails_vec_serialization() {
     game.perform_move(mov).expect("Move should be valid");
 
     // Verify tile_trails is populated
-    assert!(!game.tile_trails.is_empty(), "tile_trails should have entries");
+    assert!(
+        !game.tile_trails.is_empty(),
+        "tile_trails should have entries"
+    );
 
     // Critical: This must not fail with "key must be a string" error
-    let json = serde_json::to_string(&game)
-        .expect("tile_trails (Vec) must serialize to JSON");
+    let json = serde_json::to_string(&game).expect("tile_trails (Vec) must serialize to JSON");
 
     // Verify the JSON doesn't contain problematic structures
-    assert!(json.contains("tile_trails"), "JSON should contain tile_trails field");
+    assert!(
+        json.contains("tile_trails"),
+        "JSON should contain tile_trails field"
+    );
 
     // Verify round-trip works
-    let deserialized: Game = serde_json::from_str(&json)
-        .expect("tile_trails must deserialize from JSON");
+    let deserialized: Game =
+        serde_json::from_str(&json).expect("tile_trails must deserialize from JSON");
 
     // Verify tile_trails structure is preserved
-    assert_eq!(deserialized.tile_trails.len(), game.tile_trails.len(),
-               "tile_trails length should be preserved");
+    assert_eq!(
+        deserialized.tile_trails.len(),
+        game.tile_trails.len(),
+        "tile_trails length should be preserved"
+    );
 }
 
 // Helper function to create a test game

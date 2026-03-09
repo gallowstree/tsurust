@@ -13,7 +13,6 @@ pub async fn handle_connection(
     connection_id: ConnectionId,
     server: Arc<GameServer>,
 ) {
-
     let mut update_rx: Option<broadcast::Receiver<ServerMessage>> = None;
     let mut current_room: Option<RoomId> = None;
 
@@ -76,7 +75,10 @@ pub async fn handle_connection(
 
     // Cleanup on disconnect
     if let Some(room_id) = current_room {
-        println!("Connection {} disconnected from room {}", connection_id, room_id);
+        println!(
+            "Connection {} disconnected from room {}",
+            connection_id, room_id
+        );
         // TODO: Handle player disconnect (leave room, notify others, etc.)
     }
 }
@@ -98,7 +100,10 @@ async fn handle_client_message(
     println!("[SERVER] Received from client: {:?}", client_msg);
 
     match client_msg {
-        ClientMessage::CreateRoom { room_name, creator_name } => {
+        ClientMessage::CreateRoom {
+            room_name,
+            creator_name,
+        } => {
             let (room_id, player_id) = server.create_room(room_name, creator_name).await?;
 
             // Subscribe to room updates and send initial lobby state
@@ -115,25 +120,29 @@ async fn handle_client_message(
                     };
                     let json = serde_json::to_string(&lobby_state)
                         .map_err(|e| format!("Failed to serialize lobby state: {}", e))?;
-                    ws.send(Message::Text(json)).await
+                    ws.send(Message::Text(json))
+                        .await
                         .map_err(|e| format!("Failed to send lobby state: {}", e))?;
                 }
             }
             drop(rooms);
 
             // Send response
-            let response = ServerMessage::RoomCreated {
-                room_id,
-                player_id,
-            };
+            let response = ServerMessage::RoomCreated { room_id, player_id };
             let json = serde_json::to_string(&response)
                 .map_err(|e| format!("Failed to serialize response: {}", e))?;
-            ws.send(Message::Text(json)).await
+            ws.send(Message::Text(json))
+                .await
                 .map_err(|e| format!("Failed to send response: {}", e))?;
         }
 
-        ClientMessage::JoinRoom { room_id, player_name } => {
-            let player_id = server.join_room(room_id.clone(), player_name.clone()).await?;
+        ClientMessage::JoinRoom {
+            room_id,
+            player_name,
+        } => {
+            let player_id = server
+                .join_room(room_id.clone(), player_name.clone())
+                .await?;
 
             // Subscribe to room updates and send current lobby state
             let rooms = server.rooms.read().await;
@@ -149,7 +158,8 @@ async fn handle_client_message(
                     };
                     let json = serde_json::to_string(&lobby_state)
                         .map_err(|e| format!("Failed to serialize lobby state: {}", e))?;
-                    ws.send(Message::Text(json)).await
+                    ws.send(Message::Text(json))
+                        .await
                         .map_err(|e| format!("Failed to send lobby state: {}", e))?;
                 }
             }
@@ -163,7 +173,8 @@ async fn handle_client_message(
             };
             let json = serde_json::to_string(&response)
                 .map_err(|e| format!("Failed to serialize response: {}", e))?;
-            ws.send(Message::Text(json)).await
+            ws.send(Message::Text(json))
+                .await
                 .map_err(|e| format!("Failed to send response: {}", e))?;
         }
 
@@ -173,23 +184,34 @@ async fn handle_client_message(
             *current_room = None;
         }
 
-        ClientMessage::PlaceTile { room_id, player_id, mov } => {
+        ClientMessage::PlaceTile {
+            room_id,
+            player_id,
+            mov,
+        } => {
             let mut rooms = server.rooms.write().await;
-            let room = rooms.get_mut(&room_id)
+            let room = rooms
+                .get_mut(&room_id)
                 .ok_or_else(|| format!("Room '{}' not found", room_id))?;
 
             // Debug: show game state before placement
-            println!("[SERVER] PlaceTile request - player_id: {}, current_player: {}", player_id, room.game.current_player_id);
+            println!(
+                "[SERVER] PlaceTile request - player_id: {}, current_player: {}",
+                player_id, room.game.current_player_id
+            );
             println!("[SERVER] Tile being placed: {:?}", mov.tile);
             if let Some(hand) = room.game.hands.get(&player_id) {
                 println!("[SERVER] Player {} hand: {:?}", player_id, hand);
                 let has_tile = hand.iter().any(|t| t.is_same_tile(&mov.tile));
-                println!("[SERVER] Player has tile in hand (rotation-invariant): {}", has_tile);
+                println!(
+                    "[SERVER] Player has tile in hand (rotation-invariant): {}",
+                    has_tile
+                );
             } else {
                 println!("[SERVER] WARNING: Player {} has no hand!", player_id);
             }
 
-            match room.place_tile(player_id, mov.clone()) {
+            match room.place_tile(player_id, mov) {
                 Ok(result) => {
                     println!("[SERVER] PlaceTile success: {:?}", result);
                 }
@@ -204,7 +226,8 @@ async fn handle_client_message(
 
         ClientMessage::GetGameState { room_id } => {
             let rooms = server.rooms.read().await;
-            let room = rooms.get(&room_id)
+            let room = rooms
+                .get(&room_id)
                 .ok_or_else(|| format!("Room '{}' not found", room_id))?;
 
             let response = ServerMessage::GameStateUpdate {
@@ -213,13 +236,19 @@ async fn handle_client_message(
             };
             let json = serde_json::to_string(&response)
                 .map_err(|e| format!("Failed to serialize response: {}", e))?;
-            ws.send(Message::Text(json)).await
+            ws.send(Message::Text(json))
+                .await
                 .map_err(|e| format!("Failed to send response: {}", e))?;
         }
 
-        ClientMessage::PlacePawn { room_id, player_id, position } => {
+        ClientMessage::PlacePawn {
+            room_id,
+            player_id,
+            position,
+        } => {
             let mut rooms = server.rooms.write().await;
-            let room = rooms.get_mut(&room_id)
+            let room = rooms
+                .get_mut(&room_id)
                 .ok_or_else(|| format!("Room '{}' not found", room_id))?;
 
             room.place_pawn(player_id, position)?;
@@ -228,7 +257,8 @@ async fn handle_client_message(
 
         ClientMessage::StartGame { room_id } => {
             let mut rooms = server.rooms.write().await;
-            let room = rooms.get_mut(&room_id)
+            let room = rooms
+                .get_mut(&room_id)
                 .ok_or_else(|| format!("Room '{}' not found", room_id))?;
 
             room.start_game()?;

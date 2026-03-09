@@ -29,9 +29,12 @@ fn get_websocket_url() -> String {
     if let Ok(window) = web_sys::window().ok_or("No window object") {
         if let Ok(config) = js_sys::Reflect::get(&window, &JsValue::from_str("TSURUST_CONFIG")) {
             if !config.is_undefined() {
-                if let Ok(ws_url) = js_sys::Reflect::get(&config, &JsValue::from_str("wsServerUrl")) {
+                if let Ok(ws_url) = js_sys::Reflect::get(&config, &JsValue::from_str("wsServerUrl"))
+                {
                     if let Some(url_str) = ws_url.as_string() {
-                        web_sys::console::log_1(&format!("Using WebSocket URL from config: {}", url_str).into());
+                        web_sys::console::log_1(
+                            &format!("Using WebSocket URL from config: {}", url_str).into(),
+                        );
                         return url_str;
                     }
                 }
@@ -53,41 +56,43 @@ fn get_websocket_url() -> String {
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    TilePlaced(usize),                // tile index - place at current player position
-    TileRotated(usize, bool),         // tile index, clockwise
-    RestartGame,                      // restart the game
-    StartLobby,                       // start a local lobby (offline multiplayer)
-    StartSampleGame,                  // start sample game
+    TilePlaced(usize),        // tile index - place at current player position
+    TileRotated(usize, bool), // tile index, clockwise
+    RestartGame,              // restart the game
+    StartLobby,               // start a local lobby (offline multiplayer)
+    StartSampleGame,          // start sample game
     #[allow(dead_code)]
-    JoinLobby(String),               // join lobby with player name
-    PlacePawn(PlayerPos),            // place pawn at position in lobby
-    StartGameFromLobby,              // start game from lobby
-    ShowCreateLobbyForm,             // show create lobby form
-    ShowJoinLobbyForm,               // show join lobby form
+    JoinLobby(String), // join lobby with player name
+    PlacePawn(PlayerPos),     // place pawn at position in lobby
+    StartGameFromLobby,       // start game from lobby
+    ShowCreateLobbyForm,      // show create lobby form
+    ShowJoinLobbyForm,        // show join lobby form
     CreateAndJoinLobby(String, String), // (lobby_name, player_name)
     JoinLobbyWithId(String, String), // (lobby_id, player_name)
-    BackToMainMenu,                  // return to main menu
-    DebugAddPlayer,                  // debug: simulate player joining
-    DebugPlacePawn(PlayerID),        // debug: place pawn for specific player
-    DebugCyclePlayer(bool),          // debug: cycle active player (true = next, false = prev)
-    StartLocalServer,                // start a local server process
-    SendToServer(ClientMessage),     // send a message to the server via WebSocket
+    BackToMainMenu,           // return to main menu
+    DebugAddPlayer,           // debug: simulate player joining
+    DebugPlacePawn(PlayerID), // debug: place pawn for specific player
+    DebugCyclePlayer(bool),   // debug: cycle active player (true = next, false = prev)
+    StartLocalServer,         // start a local server process
+    SendToServer(ClientMessage), // send a message to the server via WebSocket
     // Export/Import
-    ExportGame,                      // Export current game to JSON file
-    ImportReplay,                    // Import replay from JSON file
+    ExportGame,   // Export current game to JSON file
+    ImportReplay, // Import replay from JSON file
+    #[allow(dead_code)]
     ReplayLoaded(Box<tsurust_common::game::GameExport>), // Replay file loaded (WASM async callback)
     // Replay controls
-    ReplayPlay,                      // Start replay playback
-    ReplayPause,                     // Pause replay playback
-    ReplayStepForward,               // Step forward one move
-    ReplayStepBackward,              // Step backward one move
-    ReplaySetSpeed(f32),             // Set playback speed (moves per second)
-    ReplayJumpToMove(usize),         // Jump to specific move index
-    ReplayJumpToStart,               // Jump to start of replay
-    ReplayJumpToEnd,                 // Jump to end of replay
-    ExitReplay,                      // Exit replay viewer and return to main menu
+    ReplayPlay,              // Start replay playback
+    ReplayPause,             // Pause replay playback
+    ReplayStepForward,       // Step forward one move
+    ReplayStepBackward,      // Step backward one move
+    ReplaySetSpeed(f32),     // Set playback speed (moves per second)
+    ReplayJumpToMove(usize), // Jump to specific move index
+    ReplayJumpToStart,       // Jump to start of replay
+    ReplayJumpToEnd,         // Jump to end of replay
+    ExitReplay,              // Exit replay viewer and return to main menu
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum AppState {
     MainMenu,
@@ -99,18 +104,18 @@ pub enum AppState {
         lobby_id: String,
         player_name: String,
     },
-    Lobby(Lobby),                       // Normal lobby view (place own pawn)
-    LobbyPlacingFor(Lobby, PlayerID),  // Debug mode: placing pawn for specific player
-    Game(Game),                         // Local game - client authoritative
+    Lobby(Lobby),                     // Normal lobby view (place own pawn)
+    LobbyPlacingFor(Lobby, PlayerID), // Debug mode: placing pawn for specific player
+    Game(Game),                       // Local game - client authoritative
     OnlineGame {
-        game: Game,                     // Server's authoritative state
+        game: Game, // Server's authoritative state
         room_id: String,
-        lobby_name: String,             // Display name of the lobby/game
-        waiting_for_server: bool,       // Show loading state during server round-trip
+        lobby_name: String,       // Display name of the lobby/game
+        waiting_for_server: bool, // Show loading state during server round-trip
     },
     ReplayViewer {
         replay_state: crate::replay_state::ReplayState,
-        current_game: Game,             // Cached game state at current move index
+        current_game: Game, // Cached game state at current move index
     },
 }
 
@@ -167,7 +172,7 @@ pub struct TilePlacementAnimation {
 pub enum LocalServerStatus {
     #[default]
     NotStarted,
-    Running(u32), // PID of the server process
+    Running(u32),   // PID of the server process
     Failed(String), // Error message
 }
 
@@ -206,7 +211,7 @@ impl TemplateApp {
 
     fn start_player_animations_static(
         player_animations: &mut std::collections::HashMap<PlayerID, PlayerAnimation>,
-        game: &Game
+        game: &Game,
     ) {
         // Clear existing animations
         player_animations.clear();
@@ -223,12 +228,15 @@ impl TemplateApp {
             // Calculate animation duration based on trail length
             let duration = trail.length() as f32 / animation_speed;
 
-            player_animations.insert(*player_id, PlayerAnimation {
-                trail: trail.clone(),
-                progress: 0.0,
-                start_time: now,
-                duration_secs: duration.max(0.3), // Minimum 0.3 seconds
-            });
+            player_animations.insert(
+                *player_id,
+                PlayerAnimation {
+                    trail: trail.clone(),
+                    progress: 0.0,
+                    start_time: now,
+                    duration_secs: duration.max(0.3), // Minimum 0.3 seconds
+                },
+            );
         }
     }
 
@@ -271,34 +279,81 @@ impl TemplateApp {
         }
     }
 
-    fn render_ui(ctx: &Context, app_state: &mut AppState, current_player_id: PlayerID, is_online: bool, server_status: &LocalServerStatus, sender: &mpsc::Sender<Message>, last_rotated_tile: Option<(usize, bool)>, player_animations: &std::collections::HashMap<PlayerID, PlayerAnimation>, tile_placement_animation: &Option<TilePlacementAnimation>) {
+    #[allow(clippy::too_many_arguments)]
+    fn render_ui(
+        ctx: &Context,
+        app_state: &mut AppState,
+        current_player_id: PlayerID,
+        is_online: bool,
+        server_status: &LocalServerStatus,
+        sender: &mpsc::Sender<Message>,
+        last_rotated_tile: Option<(usize, bool)>,
+        player_animations: &std::collections::HashMap<PlayerID, PlayerAnimation>,
+        tile_placement_animation: &Option<TilePlacementAnimation>,
+    ) {
         match app_state {
             AppState::MainMenu => screens::main_menu::render(ctx, server_status, sender),
-            AppState::CreateLobbyForm { lobby_name, player_name } => {
+            AppState::CreateLobbyForm {
+                lobby_name,
+                player_name,
+            } => {
                 screens::lobby_forms::render_create_lobby_form(ctx, lobby_name, player_name, sender)
             }
-            AppState::JoinLobbyForm { lobby_id, player_name } => {
-                screens::lobby_forms::render_join_lobby_form(ctx, lobby_id, player_name, sender)
-            }
+            AppState::JoinLobbyForm {
+                lobby_id,
+                player_name,
+            } => screens::lobby_forms::render_join_lobby_form(ctx, lobby_id, player_name, sender),
             AppState::Lobby(lobby) => {
                 screens::lobby::render_lobby_ui(ctx, lobby, current_player_id, is_online, sender)
             }
             AppState::LobbyPlacingFor(lobby, placing_for_id) => {
-                screens::lobby::render_lobby_placing_ui(ctx, lobby, *placing_for_id, is_online, sender)
+                screens::lobby::render_lobby_placing_ui(
+                    ctx,
+                    lobby,
+                    *placing_for_id,
+                    is_online,
+                    sender,
+                )
             }
-            AppState::Game(game) => screens::game::render_game_ui(ctx, game, current_player_id, false, None, sender, last_rotated_tile, player_animations, tile_placement_animation),
-            AppState::OnlineGame { game, waiting_for_server, lobby_name, .. } => {
-                screens::game::render_game_ui(ctx, game, current_player_id, *waiting_for_server, Some(lobby_name.as_str()), sender, last_rotated_tile, player_animations, tile_placement_animation)
-            }
-            AppState::ReplayViewer { replay_state, current_game } => {
-                screens::replay_viewer::render_replay_viewer_ui(ctx, replay_state, current_game, sender)
-            }
+            AppState::Game(game) => screens::game::render_game_ui(
+                ctx,
+                game,
+                current_player_id,
+                false,
+                None,
+                sender,
+                last_rotated_tile,
+                player_animations,
+                tile_placement_animation,
+            ),
+            AppState::OnlineGame {
+                game,
+                waiting_for_server,
+                lobby_name,
+                ..
+            } => screens::game::render_game_ui(
+                ctx,
+                game,
+                current_player_id,
+                *waiting_for_server,
+                Some(lobby_name.as_str()),
+                sender,
+                last_rotated_tile,
+                player_animations,
+                tile_placement_animation,
+            ),
+            AppState::ReplayViewer {
+                replay_state,
+                current_game,
+            } => screens::replay_viewer::render_replay_viewer_ui(
+                ctx,
+                replay_state,
+                current_game,
+                sender,
+            ),
         }
     }
-
 }
-
-
 
 impl eframe::App for TemplateApp {
     /// Called each time the UI needs repainting, which may be many times per second.
@@ -332,7 +387,11 @@ impl eframe::App for TemplateApp {
         }
 
         // Handle replay auto-advance
-        if let AppState::ReplayViewer { replay_state, current_game } = &mut self.app_state {
+        if let AppState::ReplayViewer {
+            replay_state,
+            current_game,
+        } = &mut self.app_state
+        {
             if let Some(new_game) = replay_state.update(ctx) {
                 *current_game = new_game;
             }
@@ -341,7 +400,17 @@ impl eframe::App for TemplateApp {
         // Render UI
         if let Some(tx) = &self.sender {
             let is_online = self.game_client.is_some();
-            Self::render_ui(ctx, &mut self.app_state, self.current_player_id, is_online, &self.local_server_status, tx, self.last_rotated_tile, &self.player_animations, &self.tile_placement_animation);
+            Self::render_ui(
+                ctx,
+                &mut self.app_state,
+                self.current_player_id,
+                is_online,
+                &self.local_server_status,
+                tx,
+                self.last_rotated_tile,
+                &self.player_animations,
+                &self.tile_placement_animation,
+            );
 
             // Clear the rotation animation state after one frame
             self.last_rotated_tile = None;
@@ -367,7 +436,9 @@ impl TemplateApp {
             Message::StartSampleGame => self.handle_start_sample_game(),
             Message::ShowCreateLobbyForm => self.handle_show_create_lobby_form(),
             Message::ShowJoinLobbyForm => self.handle_show_join_lobby_form(),
-            Message::CreateAndJoinLobby(name, player) => self.handle_create_and_join_lobby(name, player),
+            Message::CreateAndJoinLobby(name, player) => {
+                self.handle_create_and_join_lobby(name, player)
+            }
             Message::JoinLobbyWithId(id, player) => self.handle_join_lobby_with_id(id, player),
             Message::BackToMainMenu => self.handle_back_to_main_menu(),
             Message::JoinLobby(player_name) => self.handle_join_lobby(player_name),
@@ -427,7 +498,11 @@ impl TemplateApp {
                     lobby.id = room_id.clone();
                 }
             }
-            ServerMessage::PlayerJoined { room_id, player_id, player_name } => {
+            ServerMessage::PlayerJoined {
+                room_id,
+                player_id,
+                player_name,
+            } => {
                 // If we don't have a room ID yet, this might be our own join confirmation
                 if current_room_id.is_none() {
                     *current_room_id = Some(room_id.clone());
@@ -446,7 +521,12 @@ impl TemplateApp {
             }
             ServerMessage::GameStateUpdate { room_id: _, state } => {
                 // Server is source of truth - update our game state
-                if let AppState::OnlineGame { game, waiting_for_server, .. } = app_state {
+                if let AppState::OnlineGame {
+                    game,
+                    waiting_for_server,
+                    ..
+                } = app_state
+                {
                     *game = state.clone();
                     *waiting_for_server = false;
 
@@ -466,26 +546,41 @@ impl TemplateApp {
                     // Stay in OnlineGame state even if game is over (overlay will show stats)
                 }
             }
-            ServerMessage::TurnCompleted { room_id: _, result: _ } => {
+            ServerMessage::TurnCompleted {
+                room_id: _,
+                result: _,
+            } => {
                 // Game over will be handled by GameStateUpdate
                 // No need to transition to GameOver state - overlay will show when game.is_game_over() is true
             }
             ServerMessage::Error { message } => {
                 eprintln!("Server error: {}", message);
                 // Clear waiting state if we were waiting
-                if let AppState::OnlineGame { waiting_for_server, .. } = app_state {
+                if let AppState::OnlineGame {
+                    waiting_for_server, ..
+                } = app_state
+                {
                     *waiting_for_server = false;
                 }
             }
-            ServerMessage::PlayerLeft { room_id: _, player_id: _ } => {
+            ServerMessage::PlayerLeft {
+                room_id: _,
+                player_id: _,
+            } => {
                 // TODO: Update lobby state when PlayerLeft event is implemented in Lobby
             }
             ServerMessage::LobbyStateUpdate { room_id: _, lobby } => {
-                if let AppState::Lobby(current_lobby) | AppState::LobbyPlacingFor(current_lobby, _) = app_state {
+                if let AppState::Lobby(current_lobby)
+                | AppState::LobbyPlacingFor(current_lobby, _) = app_state
+                {
                     *current_lobby = lobby;
                 }
             }
-            ServerMessage::PawnPlaced { room_id: _, player_id, position } => {
+            ServerMessage::PawnPlaced {
+                room_id: _,
+                player_id,
+                position,
+            } => {
                 if let AppState::Lobby(lobby) | AppState::LobbyPlacingFor(lobby, _) = app_state {
                     if let Err(e) = lobby.handle_event(LobbyEvent::PawnPlaced {
                         player_id,
@@ -498,7 +593,9 @@ impl TemplateApp {
             ServerMessage::GameStarted { room_id, game } => {
                 // Get lobby name from current lobby state
                 let lobby_name = match app_state {
-                    AppState::Lobby(lobby) | AppState::LobbyPlacingFor(lobby, _) => lobby.name.clone(),
+                    AppState::Lobby(lobby) | AppState::LobbyPlacingFor(lobby, _) => {
+                        lobby.name.clone()
+                    }
                     _ => "Game".to_string(), // Fallback name
                 };
 
@@ -556,10 +653,13 @@ impl TemplateApp {
 
                 // Send create room message via mpsc
                 if let Some(sender) = &self.sender {
-                    crate::messaging::send_server_message(sender, ClientMessage::CreateRoom {
-                        room_name: lobby_name.clone(),
-                        creator_name: player_name.clone(),
-                    });
+                    crate::messaging::send_server_message(
+                        sender,
+                        ClientMessage::CreateRoom {
+                            room_name: lobby_name.clone(),
+                            creator_name: player_name.clone(),
+                        },
+                    );
                 }
 
                 let (lobby, player_id) = Lobby::new_with_creator(lobby_name, player_name);
@@ -583,10 +683,13 @@ impl TemplateApp {
 
                 // Send join room message via mpsc
                 if let Some(sender) = &self.sender {
-                    crate::messaging::send_server_message(sender, ClientMessage::JoinRoom {
-                        room_id: lobby_id.clone(),
-                        player_name: player_name.clone(),
-                    });
+                    crate::messaging::send_server_message(
+                        sender,
+                        ClientMessage::JoinRoom {
+                            room_id: lobby_id.clone(),
+                            player_name: player_name.clone(),
+                        },
+                    );
                 }
 
                 // Create empty lobby - it will be populated when server sends PlayerJoined messages
@@ -628,8 +731,15 @@ impl TemplateApp {
 
         #[cfg(target_arch = "wasm32")]
         {
-            web_sys::console::log_1(&format!("handle_place_pawn: is_online={}, sender={}, room_id={}",
-                is_online, self.sender.is_some(), self.current_room_id.is_some()).into());
+            web_sys::console::log_1(
+                &format!(
+                    "handle_place_pawn: is_online={}, sender={}, room_id={}",
+                    is_online,
+                    self.sender.is_some(),
+                    self.current_room_id.is_some()
+                )
+                .into(),
+            );
         }
 
         match &mut self.app_state {
@@ -641,18 +751,28 @@ impl TemplateApp {
                     if let (Some(sender), Some(room_id)) = (&self.sender, &self.current_room_id) {
                         #[cfg(target_arch = "wasm32")]
                         {
-                            web_sys::console::log_1(&format!("Sending PlacePawn to server: room={}, player={}, pos={:?}",
-                                room_id, player_id, position).into());
+                            web_sys::console::log_1(
+                                &format!(
+                                    "Sending PlacePawn to server: room={}, player={}, pos={:?}",
+                                    room_id, player_id, position
+                                )
+                                .into(),
+                            );
                         }
-                        crate::messaging::send_server_message(sender, ClientMessage::PlacePawn {
-                            room_id: room_id.clone(),
-                            player_id,
-                            position,
-                        });
+                        crate::messaging::send_server_message(
+                            sender,
+                            ClientMessage::PlacePawn {
+                                room_id: room_id.clone(),
+                                player_id,
+                                position,
+                            },
+                        );
                     } else {
                         #[cfg(target_arch = "wasm32")]
                         {
-                            web_sys::console::log_1(&"PlacePawn NOT sent: sender or room_id is None".into());
+                            web_sys::console::log_1(
+                                &"PlacePawn NOT sent: sender or room_id is None".into(),
+                            );
                         }
                     }
                 } else {
@@ -671,11 +791,14 @@ impl TemplateApp {
                 // For online lobbies, send to server
                 if is_online {
                     if let (Some(sender), Some(room_id)) = (&self.sender, &self.current_room_id) {
-                        crate::messaging::send_server_message(sender, ClientMessage::PlacePawn {
-                            room_id: room_id.clone(),
-                            player_id,
-                            position,
-                        });
+                        crate::messaging::send_server_message(
+                            sender,
+                            ClientMessage::PlacePawn {
+                                room_id: room_id.clone(),
+                                player_id,
+                                position,
+                            },
+                        );
                         // Transition back to regular lobby view
                         self.app_state = AppState::Lobby(lobby.clone());
                     }
@@ -702,9 +825,12 @@ impl TemplateApp {
             // For online lobbies, send start game request to server
             if is_online {
                 if let (Some(sender), Some(room_id)) = (&self.sender, &self.current_room_id) {
-                    crate::messaging::send_server_message(sender, ClientMessage::StartGame {
-                        room_id: room_id.clone(),
-                    });
+                    crate::messaging::send_server_message(
+                        sender,
+                        ClientMessage::StartGame {
+                            room_id: room_id.clone(),
+                        },
+                    );
                     // Server will send GameStarted message to all clients
                 }
                 return;
@@ -760,25 +886,26 @@ impl TemplateApp {
 
     fn handle_debug_cycle_player(&mut self, next: bool) {
         if let AppState::LobbyPlacingFor(lobby, current_placing_id) = &self.app_state {
-            let mut unplaced_players: Vec<PlayerID> = lobby.players.iter()
+            let mut unplaced_players: Vec<PlayerID> = lobby
+                .players
+                .iter()
                 .filter(|(_, p)| p.spawn_position.is_none())
                 .map(|(id, _)| *id)
                 .collect();
             unplaced_players.sort();
 
             if !unplaced_players.is_empty() {
-                let current_idx = unplaced_players.iter()
+                let current_idx = unplaced_players
+                    .iter()
                     .position(|id| id == current_placing_id)
                     .unwrap_or(0);
 
                 let new_idx = if next {
                     (current_idx + 1) % unplaced_players.len()
+                } else if current_idx == 0 {
+                    unplaced_players.len() - 1
                 } else {
-                    if current_idx == 0 {
-                        unplaced_players.len() - 1
-                    } else {
-                        current_idx - 1
-                    }
+                    current_idx - 1
                 };
 
                 let new_player_id = unplaced_players[new_idx];
@@ -794,7 +921,7 @@ impl TemplateApp {
         // Get mutable reference to the game, whether local or online
         let game = match &mut self.app_state {
             AppState::Game(game) => game,
-            AppState::OnlineGame { game, .. } => game,  // Rotation is client-side only
+            AppState::OnlineGame { game, .. } => game, // Rotation is client-side only
             _ => return,
         };
 
@@ -814,7 +941,9 @@ impl TemplateApp {
             // Local game: perform move immediately (client authoritative)
             AppState::Game(_) => {
                 // Take ownership of the game state temporarily
-                if let AppState::Game(game) = std::mem::replace(&mut self.app_state, AppState::MainMenu) {
+                if let AppState::Game(game) =
+                    std::mem::replace(&mut self.app_state, AppState::MainMenu)
+                {
                     let (game, placed_cell) = Self::perform_local_tile_placement(game, tile_index);
 
                     // Start animations
@@ -827,7 +956,12 @@ impl TemplateApp {
             }
 
             // Online game: send to server and wait for response (server authoritative)
-            AppState::OnlineGame { game, room_id, waiting_for_server, .. } => {
+            AppState::OnlineGame {
+                game,
+                room_id,
+                waiting_for_server,
+                ..
+            } => {
                 if *waiting_for_server {
                     eprintln!("Already waiting for server response");
                     return;
@@ -835,22 +969,33 @@ impl TemplateApp {
 
                 // Only allow placing tiles when it's this client's turn
                 if game.current_player_id != self.current_player_id {
-                    eprintln!("Not your turn! Current player: {}, Your player: {}",
-                             game.current_player_id, self.current_player_id);
+                    eprintln!(
+                        "Not your turn! Current player: {}, Your player: {}",
+                        game.current_player_id, self.current_player_id
+                    );
                     return;
                 }
 
-                let player_cell = game.players.iter()
+                let player_cell = game
+                    .players
+                    .iter()
                     .find(|p| p.id == self.current_player_id && p.alive)
                     .expect("current player should exist and be alive")
-                    .pos.cell;
+                    .pos
+                    .cell;
 
                 // Get the client's own hand (not the current player's hand)
-                let hand = game.hands.get(&self.current_player_id)
+                let hand = game
+                    .hands
+                    .get(&self.current_player_id)
                     .expect("client should have a hand");
 
                 if tile_index >= hand.len() {
-                    eprintln!("Invalid tile index: {} (hand size: {})", tile_index, hand.len());
+                    eprintln!(
+                        "Invalid tile index: {} (hand size: {})",
+                        tile_index,
+                        hand.len()
+                    );
                     return;
                 }
 
@@ -864,11 +1009,14 @@ impl TemplateApp {
 
                 // Send to server via mpsc
                 if let Some(sender) = &self.sender {
-                    crate::messaging::send_server_message(sender, ClientMessage::PlaceTile {
-                        room_id: room_id.clone(),
-                        player_id: self.current_player_id,
-                        mov,
-                    });
+                    crate::messaging::send_server_message(
+                        sender,
+                        ClientMessage::PlaceTile {
+                            room_id: room_id.clone(),
+                            player_id: self.current_player_id,
+                            mov,
+                        },
+                    );
                     *waiting_for_server = true;
                 }
             }
@@ -879,13 +1027,21 @@ impl TemplateApp {
 
     /// Perform a tile placement in a local game (client authoritative)
     /// Returns the updated game and the cell where the tile was placed
-    fn perform_local_tile_placement(mut game: Game, tile_index: usize) -> (Game, tsurust_common::board::CellCoord) {
-        let player_cell = game.players.iter()
+    fn perform_local_tile_placement(
+        mut game: Game,
+        tile_index: usize,
+    ) -> (Game, tsurust_common::board::CellCoord) {
+        let player_cell = game
+            .players
+            .iter()
             .find(|p| p.id == game.current_player_id && p.alive)
             .expect("current player should exist and be alive")
-            .pos.cell;
+            .pos
+            .cell;
 
-        let hand = game.hands.get(&game.current_player_id)
+        let hand = game
+            .hands
+            .get(&game.current_player_id)
             .expect("current player should always have a hand");
 
         let tile = hand[tile_index];
@@ -897,9 +1053,7 @@ impl TemplateApp {
         };
 
         match game.perform_move(mov) {
-            Ok(_turn_result) => {
-                (game, player_cell)
-            }
+            Ok(_turn_result) => (game, player_cell),
             Err(error) => {
                 eprintln!("Failed to place tile: {}", error);
                 (game, player_cell)
@@ -916,20 +1070,16 @@ impl TemplateApp {
         });
     }
 
-
     fn handle_restart_game(&mut self) {
-        match &mut self.app_state {
-            AppState::Game(game) => {
-                let players = vec![
-                    Player::new(1, PlayerPos::new(0, 2, 5)),
-                    Player::new(2, PlayerPos::new(2, 5, 2)),
-                    Player::new(3, PlayerPos::new(5, 3, 0)),
-                    Player::new(4, PlayerPos::new(3, 0, 6)),
-                ];
-                *game = Game::new(players);
-                self.app_state = AppState::Game(game.clone());
-            }
-            _ => {}
+        if let AppState::Game(game) = &mut self.app_state {
+            let players = vec![
+                Player::new(1, PlayerPos::new(0, 2, 5)),
+                Player::new(2, PlayerPos::new(2, 5, 2)),
+                Player::new(3, PlayerPos::new(5, 3, 0)),
+                Player::new(4, PlayerPos::new(3, 0, 6)),
+            ];
+            *game = Game::new(players);
+            self.app_state = AppState::Game(game.clone());
         }
     }
 
@@ -963,9 +1113,12 @@ impl TemplateApp {
                     }
                     Err(e) => {
                         eprintln!("Failed to start local server: {}", e);
-                        eprintln!("Make sure to build the server first with: cargo build --bin server");
+                        eprintln!(
+                            "Make sure to build the server first with: cargo build --bin server"
+                        );
 
-                        let error_msg = "Binary not found. Run 'cargo build --bin server' first.".to_string();
+                        let error_msg =
+                            "Binary not found. Run 'cargo build --bin server' first.".to_string();
                         self.local_server_status = LocalServerStatus::Failed(error_msg);
                     }
                 }
@@ -1000,13 +1153,20 @@ impl TemplateApp {
                         None
                     },
                     total_turns: game.board.history.len(),
-                    player_names: game.players.iter()
+                    player_names: game
+                        .players
+                        .iter()
                         .map(|p| (p.id, p.name.clone()))
                         .collect(),
                 };
                 (game, metadata)
             }
-            AppState::OnlineGame { game, room_id, lobby_name, .. } => {
+            AppState::OnlineGame {
+                game,
+                room_id,
+                lobby_name,
+                ..
+            } => {
                 let metadata = GameMetadata {
                     game_mode: GameMode::Online,
                     room_id: Some(room_id.clone()),
@@ -1018,7 +1178,9 @@ impl TemplateApp {
                         None
                     },
                     total_turns: game.board.history.len(),
-                    player_names: game.players.iter()
+                    player_names: game
+                        .players
+                        .iter()
                         .map(|p| (p.id, p.name.clone()))
                         .collect(),
                 };
@@ -1061,7 +1223,9 @@ impl TemplateApp {
         crate::file_io::load_game_export(move |export| {
             // Send the loaded export via the message channel
             if let Err(e) = sender.send(Message::ReplayLoaded(Box::new(export))) {
-                web_sys::console::error_1(&format!("Failed to send ReplayLoaded message: {}", e).into());
+                web_sys::console::error_1(
+                    &format!("Failed to send ReplayLoaded message: {}", e).into(),
+                );
             }
         });
     }
@@ -1081,7 +1245,11 @@ impl TemplateApp {
     }
 
     fn handle_replay_step_forward(&mut self) {
-        if let AppState::ReplayViewer { replay_state, current_game } = &mut self.app_state {
+        if let AppState::ReplayViewer {
+            replay_state,
+            current_game,
+        } = &mut self.app_state
+        {
             if let Some(new_game) = replay_state.step_forward() {
                 *current_game = new_game;
             }
@@ -1089,7 +1257,11 @@ impl TemplateApp {
     }
 
     fn handle_replay_step_backward(&mut self) {
-        if let AppState::ReplayViewer { replay_state, current_game } = &mut self.app_state {
+        if let AppState::ReplayViewer {
+            replay_state,
+            current_game,
+        } = &mut self.app_state
+        {
             if let Some(new_game) = replay_state.step_backward() {
                 *current_game = new_game;
             }
@@ -1103,7 +1275,11 @@ impl TemplateApp {
     }
 
     fn handle_replay_jump_to_move(&mut self, index: usize) {
-        if let AppState::ReplayViewer { replay_state, current_game } = &mut self.app_state {
+        if let AppState::ReplayViewer {
+            replay_state,
+            current_game,
+        } = &mut self.app_state
+        {
             if let Some(new_game) = replay_state.set_move_index(index) {
                 *current_game = new_game;
             }
@@ -1111,7 +1287,11 @@ impl TemplateApp {
     }
 
     fn handle_replay_jump_to_start(&mut self) {
-        if let AppState::ReplayViewer { replay_state, current_game } = &mut self.app_state {
+        if let AppState::ReplayViewer {
+            replay_state,
+            current_game,
+        } = &mut self.app_state
+        {
             if let Some(new_game) = replay_state.jump_to_start() {
                 *current_game = new_game;
             }
@@ -1119,7 +1299,11 @@ impl TemplateApp {
     }
 
     fn handle_replay_jump_to_end(&mut self) {
-        if let AppState::ReplayViewer { replay_state, current_game } = &mut self.app_state {
+        if let AppState::ReplayViewer {
+            replay_state,
+            current_game,
+        } = &mut self.app_state
+        {
             if let Some(new_game) = replay_state.jump_to_end() {
                 *current_game = new_game;
             }

@@ -44,10 +44,8 @@ pub fn render_replay_viewer_ui(
                     if ui.button("⏸ Pause").clicked() {
                         send_ui_message(sender, Message::ReplayPause);
                     }
-                } else {
-                    if ui.button("▶ Play").clicked() {
-                        send_ui_message(sender, Message::ReplayPlay);
-                    }
+                } else if ui.button("▶ Play").clicked() {
+                    send_ui_message(sender, Message::ReplayPlay);
                 }
 
                 // Step forward
@@ -84,8 +82,7 @@ pub fn render_replay_viewer_ui(
                 // Move counter
                 ui.label(format!(
                     "Move {}/{}",
-                    replay_state.current_move_index,
-                    replay_state.export.metadata.total_turns
+                    replay_state.current_move_index, replay_state.export.metadata.total_turns
                 ));
 
                 // Exit button on the right
@@ -112,10 +109,10 @@ pub fn render_replay_viewer_ui(
                 let mut move_index = replay_state.current_move_index;
                 let max_moves = replay_state.export.metadata.total_turns;
 
-                if ui.add(egui::Slider::new(
-                    &mut move_index,
-                    0..=max_moves
-                ).show_value(false)).changed() {
+                if ui
+                    .add(egui::Slider::new(&mut move_index, 0..=max_moves).show_value(false))
+                    .changed()
+                {
                     send_ui_message(sender, Message::ReplayJumpToMove(move_index));
                 }
                 ui.add_space(10.0);
@@ -134,7 +131,7 @@ pub fn render_replay_viewer_ui(
                 &current_game.tile_trails,
                 &current_game.player_trails,
                 &std::collections::HashMap::new(), // No animations in replay
-                &None, // No tile placement animation
+                &None,                             // No tile placement animation
             ));
         });
     });
@@ -147,22 +144,37 @@ pub fn render_replay_viewer_ui(
             ui.add_space(10.0);
 
             // Show metadata
-            ui.label(format!("Game Mode: {:?}", replay_state.export.metadata.game_mode));
+            ui.label(format!(
+                "Game Mode: {:?}",
+                replay_state.export.metadata.game_mode
+            ));
 
             // Parse and display timestamp
-            if let Ok(datetime) = chrono::DateTime::parse_from_rfc3339(&replay_state.export.timestamp) {
+            if let Ok(datetime) =
+                chrono::DateTime::parse_from_rfc3339(&replay_state.export.timestamp)
+            {
                 ui.label(format!("Date: {}", datetime.format("%Y-%m-%d %H:%M")));
             }
 
-            ui.label(format!("Status: {}",
-                if replay_state.export.metadata.completed { "Completed" } else { "In Progress" }
+            ui.label(format!(
+                "Status: {}",
+                if replay_state.export.metadata.completed {
+                    "Completed"
+                } else {
+                    "In Progress"
+                }
             ));
 
             if replay_state.export.metadata.completed {
                 if let Some(winner_id) = replay_state.export.metadata.winner_id {
                     if let Some(winner) = current_game.players.iter().find(|p| p.id == winner_id) {
-                        let winner_color = egui::Color32::from_rgb(winner.color.0, winner.color.1, winner.color.2);
-                        ui.label(egui::RichText::new(format!("Winner: {}", winner.name)).color(winner_color).strong());
+                        let winner_color =
+                            egui::Color32::from_rgb(winner.color.0, winner.color.1, winner.color.2);
+                        ui.label(
+                            egui::RichText::new(format!("Winner: {}", winner.name))
+                                .color(winner_color)
+                                .strong(),
+                        );
                     }
                 }
             }
@@ -177,14 +189,17 @@ pub fn render_replay_viewer_ui(
 
             for player in &current_game.players {
                 ui.horizontal(|ui| {
-                    let color = egui::Color32::from_rgb(player.color.0, player.color.1, player.color.2);
+                    let color =
+                        egui::Color32::from_rgb(player.color.0, player.color.1, player.color.2);
                     let status_icon = if player.alive { "✓" } else { "✗" };
                     ui.label(egui::RichText::new(status_icon).color(color).strong());
                     ui.label(&player.name);
 
                     // Show stats if available
                     if let Some(stats) = current_game.stats.get(&player.id) {
-                        ui.label(egui::RichText::new(format!("(T:{})", stats.turns_survived)).weak());
+                        ui.label(
+                            egui::RichText::new(format!("(T:{})", stats.turns_survived)).weak(),
+                        );
                     }
                 });
 
@@ -192,11 +207,24 @@ pub fn render_replay_viewer_ui(
                 // For in-progress games exported from a player's perspective, use static counts
                 // For completed games, players maintain 3 tiles unless eliminated
                 let hand_count = if replay_state.export.metadata.completed {
-                    if player.alive { 3 } else { 0 }
+                    if player.alive {
+                        3
+                    } else {
+                        0
+                    }
                 } else {
-                    replay_state.export.hand_counts.get(&player.id).copied().unwrap_or(0)
+                    replay_state
+                        .export
+                        .hand_counts
+                        .get(&player.id)
+                        .copied()
+                        .unwrap_or(0)
                 };
-                ui.label(egui::RichText::new(format!("  {} tiles in hand", hand_count)).weak().small());
+                ui.label(
+                    egui::RichText::new(format!("  {} tiles in hand", hand_count))
+                        .weak()
+                        .small(),
+                );
             }
 
             // Show deck count
@@ -206,7 +234,9 @@ pub fn render_replay_viewer_ui(
                 let total_tiles: usize = 35; // Standard Tsuro deck
                 let initial_hands = replay_state.export.game_state.players.len() * 3;
                 let tiles_played = replay_state.current_move_index;
-                total_tiles.saturating_sub(initial_hands).saturating_sub(tiles_played)
+                total_tiles
+                    .saturating_sub(initial_hands)
+                    .saturating_sub(tiles_played)
             } else {
                 replay_state.export.deck_count
             };

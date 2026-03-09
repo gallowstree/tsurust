@@ -15,6 +15,7 @@ pub type ConnectionId = usize;
 
 pub struct GameServer {
     pub rooms: Arc<RwLock<HashMap<RoomId, GameRoom>>>,
+    #[allow(dead_code)]
     pub connections: Arc<RwLock<HashMap<ConnectionId, RoomId>>>,
     next_connection_id: Arc<RwLock<ConnectionId>>,
 }
@@ -35,7 +36,11 @@ impl GameServer {
         current
     }
 
-    pub async fn create_room(&self, room_name: String, creator_name: String) -> Result<(RoomId, PlayerID), String> {
+    pub async fn create_room(
+        &self,
+        room_name: String,
+        creator_name: String,
+    ) -> Result<(RoomId, PlayerID), String> {
         // Generate a unique short room ID
         let room_id = loop {
             let id = next_lobby_id();
@@ -52,7 +57,8 @@ impl GameServer {
             endpoint: 0,
         };
         let player_color = tsurust_common::colors::get_player_color(player_id);
-        let player = Player::new_with_name(player_id, creator_name.clone(), start_pos, player_color);
+        let player =
+            Player::new_with_name(player_id, creator_name.clone(), start_pos, player_color);
 
         // Create game with single player
         let game = Game::new(vec![player]);
@@ -75,16 +81,18 @@ impl GameServer {
         Ok((room_id, player_id))
     }
 
-    pub async fn join_room(&self, room_id: RoomId, player_name: String) -> Result<PlayerID, String> {
+    pub async fn join_room(
+        &self,
+        room_id: RoomId,
+        player_name: String,
+    ) -> Result<PlayerID, String> {
         let mut rooms = self.rooms.write().await;
-        let room = rooms.get_mut(&room_id)
+        let room = rooms
+            .get_mut(&room_id)
             .ok_or_else(|| format!("Room '{}' not found", room_id))?;
 
         // Determine next player ID (start from 1, not 0)
-        let player_id = room.game.players.iter()
-            .map(|p| p.id)
-            .max()
-            .unwrap_or(0) + 1;
+        let player_id = room.game.players.iter().map(|p| p.id).max().unwrap_or(0) + 1;
 
         // Create player at default starting position (will be customized in lobby)
         let start_pos = PlayerPos {
@@ -136,7 +144,8 @@ impl GameServer {
 
     pub async fn leave_room(&self, room_id: RoomId, player_id: PlayerID) -> Result<(), String> {
         let mut rooms = self.rooms.write().await;
-        let room = rooms.get_mut(&room_id)
+        let room = rooms
+            .get_mut(&room_id)
             .ok_or_else(|| format!("Room '{}' not found", room_id))?;
 
         // Broadcast player left

@@ -12,6 +12,7 @@ use crate::hand_renderer::HandRenderer;
 use crate::messaging::send_ui_message;
 use crate::player_card::PlayerCard;
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_game_ui(
     ctx: &Context,
     game: &mut Game,
@@ -60,7 +61,14 @@ pub fn render_game_ui(
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.horizontal(|ui| {
             ui.add_space(20.);
-            ui.add(BoardRenderer::new(&game.board.history, &game.players, &game.tile_trails, &game.player_trails, player_animations, tile_placement_animation));
+            ui.add(BoardRenderer::new(
+                &game.board.history,
+                &game.players,
+                &game.tile_trails,
+                &game.player_trails,
+                player_animations,
+                tile_placement_animation,
+            ));
         });
     });
 
@@ -78,11 +86,25 @@ pub fn render_game_ui(
                 // Determine the winner
                 let alive_count = game.players.iter().filter(|p| p.alive).count();
                 if alive_count == 1 {
-                    let winner = game.players.iter().find(|p| p.alive).expect("Should have exactly one alive player");
-                    let winner_color = egui::Color32::from_rgb(winner.color.0, winner.color.1, winner.color.2);
-                    ui.label(egui::RichText::new(format!("🎉 {} Wins!", winner.name)).size(18.0).strong().color(winner_color));
+                    let winner = game
+                        .players
+                        .iter()
+                        .find(|p| p.alive)
+                        .expect("Should have exactly one alive player");
+                    let winner_color =
+                        egui::Color32::from_rgb(winner.color.0, winner.color.1, winner.color.2);
+                    ui.label(
+                        egui::RichText::new(format!("🎉 {} Wins!", winner.name))
+                            .size(18.0)
+                            .strong()
+                            .color(winner_color),
+                    );
                 } else {
-                    ui.label(egui::RichText::new("All Players Eliminated").size(16.0).color(egui::Color32::from_rgb(255, 200, 0)));
+                    ui.label(
+                        egui::RichText::new("All Players Eliminated")
+                            .size(16.0)
+                            .color(egui::Color32::from_rgb(255, 200, 0)),
+                    );
                 }
 
                 ui.add_space(15.0);
@@ -100,12 +122,10 @@ pub fn render_game_ui(
                     let stats_b = game.stats.get(&b.id);
 
                     match (stats_a, stats_b) {
-                        (Some(sa), Some(sb)) => {
-                            match sb.turns_survived.cmp(&sa.turns_survived) {
-                                std::cmp::Ordering::Equal => sb.path_length.cmp(&sa.path_length),
-                                other => other
-                            }
-                        }
+                        (Some(sa), Some(sb)) => match sb.turns_survived.cmp(&sa.turns_survived) {
+                            std::cmp::Ordering::Equal => sb.path_length.cmp(&sa.path_length),
+                            other => other,
+                        },
                         (Some(_), None) => std::cmp::Ordering::Less,
                         (None, Some(_)) => std::cmp::Ordering::Greater,
                         (None, None) => std::cmp::Ordering::Equal,
@@ -162,22 +182,25 @@ pub fn render_game_ui(
 
                     ui.horizontal(|ui| {
                         // Arrow indicator for current player
-                        let (arrow_rect, _) = ui.allocate_exact_size(egui::Vec2::new(16.0, 60.0), egui::Sense::hover());
+                        let (arrow_rect, _) = ui
+                            .allocate_exact_size(egui::Vec2::new(16.0, 60.0), egui::Sense::hover());
 
                         if is_current {
                             let triangle_center = arrow_rect.center();
                             let triangle_size = 12.0;
 
                             let points = [
-                                triangle_center + egui::Vec2::new(-triangle_size/2.0, -triangle_size/2.0),
-                                triangle_center + egui::Vec2::new(-triangle_size/2.0, triangle_size/2.0),
-                                triangle_center + egui::Vec2::new(triangle_size/2.0, 0.0),
+                                triangle_center
+                                    + egui::Vec2::new(-triangle_size / 2.0, -triangle_size / 2.0),
+                                triangle_center
+                                    + egui::Vec2::new(-triangle_size / 2.0, triangle_size / 2.0),
+                                triangle_center + egui::Vec2::new(triangle_size / 2.0, 0.0),
                             ];
 
                             ui.painter().add(egui::Shape::convex_polygon(
                                 points.to_vec(),
                                 egui::Color32::from_rgb(100, 150, 255),
-                                egui::Stroke::NONE
+                                egui::Stroke::NONE,
                             ));
                         }
 
@@ -201,12 +224,11 @@ pub fn render_game_ui(
         });
 
         // Hand section - show this client's hand, not the current player's hand
-        let hand = game.hands.get(&client_player_id)
+        let hand = game
+            .hands
+            .get(&client_player_id)
             .cloned()
             .unwrap_or_default();
-        ui.add(
-            HandRenderer::new(hand, sender.clone())
-                .with_last_rotated(last_rotated_tile)
-        );
+        ui.add(HandRenderer::new(hand, sender.clone()).with_last_rotated(last_rotated_tile));
     });
 }

@@ -82,7 +82,7 @@ pub enum ServerMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::board::{CellCoord, PlayerPos, Tile};
+    use crate::board::{CellCoord, Tile};
 
     #[test]
     fn test_client_message_create_room_serialization() {
@@ -92,10 +92,14 @@ mod tests {
         };
 
         let json = serde_json::to_string(&msg).expect("Failed to serialize");
-        let deserialized: ClientMessage = serde_json::from_str(&json).expect("Failed to deserialize");
+        let deserialized: ClientMessage =
+            serde_json::from_str(&json).expect("Failed to deserialize");
 
         match deserialized {
-            ClientMessage::CreateRoom { room_name, creator_name } => {
+            ClientMessage::CreateRoom {
+                room_name,
+                creator_name,
+            } => {
                 assert_eq!(room_name, "Test Room");
                 assert_eq!(creator_name, "Alice");
             }
@@ -111,10 +115,14 @@ mod tests {
         };
 
         let json = serde_json::to_string(&msg).expect("Failed to serialize");
-        let deserialized: ClientMessage = serde_json::from_str(&json).expect("Failed to deserialize");
+        let deserialized: ClientMessage =
+            serde_json::from_str(&json).expect("Failed to deserialize");
 
         match deserialized {
-            ClientMessage::JoinRoom { room_id, player_name } => {
+            ClientMessage::JoinRoom {
+                room_id,
+                player_name,
+            } => {
                 assert_eq!(room_id, "ROOM1");
                 assert_eq!(player_name, "Bob");
             }
@@ -130,7 +138,8 @@ mod tests {
         };
 
         let json = serde_json::to_string(&msg).expect("Failed to serialize");
-        let deserialized: ClientMessage = serde_json::from_str(&json).expect("Failed to deserialize");
+        let deserialized: ClientMessage =
+            serde_json::from_str(&json).expect("Failed to deserialize");
 
         match deserialized {
             ClientMessage::LeaveRoom { room_id, player_id } => {
@@ -159,14 +168,19 @@ mod tests {
         let msg = ClientMessage::PlaceTile {
             room_id: "ROOM1".to_string(),
             player_id: 1,
-            mov: mov.clone(),
+            mov,
         };
 
         let json = serde_json::to_string(&msg).expect("Failed to serialize");
-        let deserialized: ClientMessage = serde_json::from_str(&json).expect("Failed to deserialize");
+        let deserialized: ClientMessage =
+            serde_json::from_str(&json).expect("Failed to deserialize");
 
         match deserialized {
-            ClientMessage::PlaceTile { room_id, player_id, mov: deserialized_mov } => {
+            ClientMessage::PlaceTile {
+                room_id,
+                player_id,
+                mov: deserialized_mov,
+            } => {
                 assert_eq!(room_id, "ROOM1");
                 assert_eq!(player_id, 1);
                 assert_eq!(deserialized_mov.cell, mov.cell);
@@ -183,7 +197,8 @@ mod tests {
         };
 
         let json = serde_json::to_string(&msg).expect("Failed to serialize");
-        let deserialized: ClientMessage = serde_json::from_str(&json).expect("Failed to deserialize");
+        let deserialized: ClientMessage =
+            serde_json::from_str(&json).expect("Failed to deserialize");
 
         match deserialized {
             ClientMessage::GetGameState { room_id } => {
@@ -201,7 +216,8 @@ mod tests {
         };
 
         let json = serde_json::to_string(&msg).expect("Failed to serialize");
-        let deserialized: ServerMessage = serde_json::from_str(&json).expect("Failed to deserialize");
+        let deserialized: ServerMessage =
+            serde_json::from_str(&json).expect("Failed to deserialize");
 
         match deserialized {
             ServerMessage::RoomCreated { room_id, player_id } => {
@@ -221,10 +237,15 @@ mod tests {
         };
 
         let json = serde_json::to_string(&msg).expect("Failed to serialize");
-        let deserialized: ServerMessage = serde_json::from_str(&json).expect("Failed to deserialize");
+        let deserialized: ServerMessage =
+            serde_json::from_str(&json).expect("Failed to deserialize");
 
         match deserialized {
-            ServerMessage::PlayerJoined { room_id, player_id, player_name } => {
+            ServerMessage::PlayerJoined {
+                room_id,
+                player_id,
+                player_name,
+            } => {
                 assert_eq!(room_id, "ROOM1");
                 assert_eq!(player_id, 2);
                 assert_eq!(player_name, "Charlie");
@@ -241,7 +262,8 @@ mod tests {
         };
 
         let json = serde_json::to_string(&msg).expect("Failed to serialize");
-        let deserialized: ServerMessage = serde_json::from_str(&json).expect("Failed to deserialize");
+        let deserialized: ServerMessage =
+            serde_json::from_str(&json).expect("Failed to deserialize");
 
         match deserialized {
             ServerMessage::PlayerLeft { room_id, player_id } => {
@@ -259,7 +281,8 @@ mod tests {
         };
 
         let json = serde_json::to_string(&msg).expect("Failed to serialize");
-        let deserialized: ServerMessage = serde_json::from_str(&json).expect("Failed to deserialize");
+        let deserialized: ServerMessage =
+            serde_json::from_str(&json).expect("Failed to deserialize");
 
         match deserialized {
             ServerMessage::Error { message } => {

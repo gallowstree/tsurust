@@ -404,7 +404,7 @@ Consider adding:
 
 ## Next Steps
 
-- [ ] Set up CI/CD pipeline (GitHub Actions, GitLab CI, etc.)
+- [x] Set up CI/CD pipeline (`.github/workflows/ci.yml`)
 - [ ] Configure auto-scaling based on metrics
 - [ ] Add distributed session storage (Redis)
 - [ ] Implement monitoring and alerting

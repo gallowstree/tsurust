@@ -47,7 +47,6 @@
    - Implement comprehensive validation
 
 2. **Advanced Features**
-   - Implement game replay system
    - Add AI opponents that can join multiplayer games
    - Tournament/ranking system
    - Spectator mode with game history

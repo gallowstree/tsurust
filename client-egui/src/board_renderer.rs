@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use eframe::emath::Vec2;
 use eframe::egui::{vec2, Frame, Rect, Response, Sense, Ui, Widget};
+use eframe::emath::Vec2;
 use eframe::epaint::{Color32, Stroke};
 use egui::Pos2;
 
@@ -24,7 +24,7 @@ pub struct BoardRenderer<'a> {
     tile_placement_animation: &'a Option<TilePlacementAnimation>,
 }
 
-impl <'a> BoardRenderer<'a> {
+impl<'a> BoardRenderer<'a> {
     pub(crate) fn new(
         history: &'a Vec<Move>,
         players: &'a Vec<Player>,
@@ -33,43 +33,55 @@ impl <'a> BoardRenderer<'a> {
         player_animations: &'a HashMap<PlayerID, PlayerAnimation>,
         tile_placement_animation: &'a Option<TilePlacementAnimation>,
     ) -> Self {
-        Self { history, players, tile_trails, player_trails, player_animations, tile_placement_animation }
+        Self {
+            history,
+            players,
+            tile_trails,
+            player_trails,
+            player_animations,
+            tile_placement_animation,
+        }
     }
-
 }
 
 impl Widget for BoardRenderer<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
-        let (rows, cols) = (6.,6.);
+        let (rows, cols) = (6., 6.);
         let (board_rect, response) = ui.allocate_at_least(
             vec2(rows * TILE_LENGTH, cols * TILE_LENGTH),
-            Sense::click().union(Sense::hover())
+            Sense::click().union(Sense::hover()),
         );
 
         background(ui, board_rect);
 
         ui.vertical_centered(|ui| {
-            render_board_tiles(ui, self.history, self.tile_trails, self.players, board_rect, self.tile_placement_animation);
+            render_board_tiles(
+                ui,
+                self.history,
+                self.tile_trails,
+                self.players,
+                board_rect,
+                self.tile_placement_animation,
+            );
         });
 
         // Render player trails on top with higher opacity so tile paths don't show through as much
         for player in self.players.iter() {
             if let Some(trail) = self.player_trails.get(&player.id) {
-                let player_color = Color32::from_rgb(player.color.0, player.color.1, player.color.2);
+                let player_color =
+                    Color32::from_rgb(player.color.0, player.color.1, player.color.2);
                 let trail_color = Color32::from_rgba_unmultiplied(
                     player_color.r(),
                     player_color.g(),
                     player_color.b(),
-                    200 // Higher opacity to minimize tile path blending
+                    200, // Higher opacity to minimize tile path blending
                 );
 
                 let line_segments = trail_to_world_coords(trail, TILE_LENGTH, board_rect.min);
 
                 for (start, end) in line_segments {
-                    ui.painter().line_segment(
-                        [start, end],
-                        Stroke::new(3.0, trail_color)
-                    );
+                    ui.painter()
+                        .line_segment([start, end], Stroke::new(3.0, trail_color));
                 }
             }
         }
@@ -86,55 +98,71 @@ impl Widget for BoardRenderer<'_> {
                 let cell_rect = rect_at_coord(player.pos.cell, board_rect);
                 let endpoint_offset = path_index_position(player.pos.endpoint);
 
-                cell_rect.min + Vec2::new(
-                    endpoint_offset.x * cell_rect.width(),
-                    endpoint_offset.y * cell_rect.height()
-                )
+                cell_rect.min
+                    + Vec2::new(
+                        endpoint_offset.x * cell_rect.width(),
+                        endpoint_offset.y * cell_rect.height(),
+                    )
             };
 
             if player.alive {
-                ui.painter().circle(player_pos, PLAYER_RADIUS, Color32::WHITE, Stroke::default());
-                ui.painter().circle_filled(player_pos, PLAYER_RADIUS*0.8, player_color);
+                ui.painter()
+                    .circle(player_pos, PLAYER_RADIUS, Color32::WHITE, Stroke::default());
+                ui.painter()
+                    .circle_filled(player_pos, PLAYER_RADIUS * 0.8, player_color);
             } else {
                 // Dead player: gray circle with brighter, thicker X
-                ui.painter().circle(player_pos, PLAYER_RADIUS, Color32::WHITE, Stroke::default());
-                ui.painter().circle_filled(player_pos, PLAYER_RADIUS*0.8, Color32::from_gray(100));
+                ui.painter()
+                    .circle(player_pos, PLAYER_RADIUS, Color32::WHITE, Stroke::default());
+                ui.painter().circle_filled(
+                    player_pos,
+                    PLAYER_RADIUS * 0.8,
+                    Color32::from_gray(100),
+                );
 
                 let x_size = PLAYER_RADIUS * 0.7; // Slightly larger X
 
                 // Brighten the player color for the X
                 let bright_color = Color32::from_rgb(
-                    player_color.r().saturating_add(80).min(255),
-                    player_color.g().saturating_add(80).min(255),
-                    player_color.b().saturating_add(80).min(255)
+                    player_color.r().saturating_add(80),
+                    player_color.g().saturating_add(80),
+                    player_color.b().saturating_add(80),
                 );
 
                 ui.painter().line_segment(
-                    [player_pos - Vec2::new(x_size, x_size), player_pos + Vec2::new(x_size, x_size)],
-                    Stroke::new(6.0, bright_color) // Thicker stroke
+                    [
+                        player_pos - Vec2::new(x_size, x_size),
+                        player_pos + Vec2::new(x_size, x_size),
+                    ],
+                    Stroke::new(6.0, bright_color), // Thicker stroke
                 );
                 ui.painter().line_segment(
-                    [player_pos - Vec2::new(x_size, -x_size), player_pos + Vec2::new(x_size, -x_size)],
-                    Stroke::new(6.0, bright_color) // Thicker stroke
+                    [
+                        player_pos - Vec2::new(x_size, -x_size),
+                        player_pos + Vec2::new(x_size, -x_size),
+                    ],
+                    Stroke::new(6.0, bright_color), // Thicker stroke
                 );
             }
         }
-
 
         response
     }
 }
 
 fn rect_at_coord(cell_coord: CellCoord, board_rect: Rect) -> Rect {
-    let pos = Pos2::new(cell_coord.col as f32 * TILE_LENGTH, cell_coord.row as f32 * TILE_LENGTH) + board_rect.min.to_vec2();
+    let pos = Pos2::new(
+        cell_coord.col as f32 * TILE_LENGTH,
+        cell_coord.row as f32 * TILE_LENGTH,
+    ) + board_rect.min.to_vec2();
     Rect::from_min_size(pos, TILE_SIZE)
 }
 
 fn render_board_tiles(
     ui: &mut Ui,
-    history: &Vec<Move>,
-    tile_trails: &Vec<(CellCoord, Vec<(PlayerID, TileEndpoint)>)>,
-    players: &Vec<Player>,
+    history: &[Move],
+    tile_trails: &[(CellCoord, Vec<(PlayerID, TileEndpoint)>)],
+    players: &[Player],
     board_rect: Rect,
     tile_placement_animation: &Option<TilePlacementAnimation>,
 ) {
@@ -158,7 +186,8 @@ fn render_board_tiles(
                     for &(player_id, segment_key) in trail_entries {
                         // Find player color
                         if let Some(player) = players.iter().find(|p| p.id == player_id) {
-                            let player_color = Color32::from_rgb(player.color.0, player.color.1, player.color.2);
+                            let player_color =
+                                Color32::from_rgb(player.color.0, player.color.1, player.color.2);
                             player_paths.insert(segment_key, (player_id, player_color));
                         }
                     }
@@ -181,12 +210,17 @@ fn render_board_tiles(
                 // Apply transformations
                 let center = rect.center();
                 let scaled_size = rect.size() * scale;
-                let animated_rect = Rect::from_center_size(
-                    center - Vec2::new(0.0, drop_offset),
-                    scaled_size
-                );
+                let animated_rect =
+                    Rect::from_center_size(center - Vec2::new(0.0, drop_offset), scaled_size);
 
-                crate::rendering::paint_tile_with_trails_rotation_and_alpha(&mov.tile, animated_rect, painter, &player_paths, 0.0, alpha);
+                crate::rendering::paint_tile_with_trails_rotation_and_alpha(
+                    &mov.tile,
+                    animated_rect,
+                    painter,
+                    &player_paths,
+                    0.0,
+                    alpha,
+                );
             } else {
                 // Normal rendering
                 paint_tile_with_trails(&mov.tile, rect, painter, &player_paths);
@@ -207,18 +241,19 @@ fn background(ui: &mut Ui, rect: Rect) {
     // Draw animated glowing light spinning around the border
     draw_spinning_border_glow(ui, rect);
 
-    for x in 0..= 6 {
+    for x in 0..=6 {
         let x = x as f32 * TILE_SIZE.x;
-        let start = Pos2::new(x , 0.) + rect.min.to_vec2();
+        let start = Pos2::new(x, 0.) + rect.min.to_vec2();
         let end = Pos2::new(x, TILE_SIZE.x * 6.) + rect.min.to_vec2();
 
-        ui.painter().line_segment([start, end], Stroke::new(0.2, Color32::LIGHT_YELLOW));
+        ui.painter()
+            .line_segment([start, end], Stroke::new(0.2, Color32::LIGHT_YELLOW));
 
         let y = x;
-        let start = Pos2::new(0. , y) + rect.min.to_vec2();
+        let start = Pos2::new(0., y) + rect.min.to_vec2();
         let end = Pos2::new(TILE_SIZE.x * 6., y) + rect.min.to_vec2();
-        ui.painter().line_segment([start, end], Stroke::new(0.2, Color32::LIGHT_YELLOW));
-
+        ui.painter()
+            .line_segment([start, end], Stroke::new(0.2, Color32::LIGHT_YELLOW));
     }
 }
 
@@ -294,10 +329,8 @@ fn draw_spinning_border_glow(ui: &mut Ui, rect: Rect) {
         // Width tapers from thick at head to thin at tail
         let width = 12.0 * (1.0 - segment_t * 0.8);
 
-        ui.painter().line_segment(
-            [pos, next_pos],
-            Stroke::new(width, glow_color),
-        );
+        ui.painter()
+            .line_segment([pos, next_pos], Stroke::new(width, glow_color));
     }
 
     // Request repaint for continuous animation
@@ -312,31 +345,19 @@ fn position_at_perimeter_distance(rect: Rect, distance: f32) -> Pos2 {
     if distance < width {
         // Top edge (left to right)
         let t = distance / width;
-        Pos2::new(
-            rect.left_top().x + t * width,
-            rect.left_top().y,
-        )
+        Pos2::new(rect.left_top().x + t * width, rect.left_top().y)
     } else if distance < width + height {
         // Right edge (top to bottom)
         let t = (distance - width) / height;
-        Pos2::new(
-            rect.right_top().x,
-            rect.right_top().y + t * height,
-        )
+        Pos2::new(rect.right_top().x, rect.right_top().y + t * height)
     } else if distance < 2.0 * width + height {
         // Bottom edge (right to left)
         let t = (distance - width - height) / width;
-        Pos2::new(
-            rect.right_bottom().x - t * width,
-            rect.right_bottom().y,
-        )
+        Pos2::new(rect.right_bottom().x - t * width, rect.right_bottom().y)
     } else {
         // Left edge (bottom to top)
         let t = (distance - 2.0 * width - height) / height;
-        Pos2::new(
-            rect.left_bottom().x,
-            rect.left_bottom().y - t * height,
-        )
+        Pos2::new(rect.left_bottom().x, rect.left_bottom().y - t * height)
     }
 }
 
@@ -349,14 +370,16 @@ fn interpolate_position_along_trail(trail: &Trail, progress: f32, board_rect: Re
         // No movement, return start position
         let cell_rect = rect_at_coord(trail.start_pos.cell, board_rect);
         let endpoint_offset = path_index_position(trail.start_pos.endpoint);
-        return cell_rect.min + Vec2::new(
-            endpoint_offset.x * cell_rect.width(),
-            endpoint_offset.y * cell_rect.height()
-        );
+        return cell_rect.min
+            + Vec2::new(
+                endpoint_offset.x * cell_rect.width(),
+                endpoint_offset.y * cell_rect.height(),
+            );
     }
 
     // Calculate total trail length
-    let total_length: f32 = line_segments.iter()
+    let total_length: f32 = line_segments
+        .iter()
         .map(|(start, end)| (*end - *start).length())
         .sum();
 
@@ -380,5 +403,8 @@ fn interpolate_position_along_trail(trail: &Trail, progress: f32, board_rect: Re
     }
 
     // If we got here, return the end position
-    line_segments.last().map(|(_, end)| *end).unwrap_or(Pos2::ZERO)
+    line_segments
+        .last()
+        .map(|(_, end)| *end)
+        .unwrap_or(Pos2::ZERO)
 }
