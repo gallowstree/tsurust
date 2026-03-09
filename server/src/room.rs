@@ -47,14 +47,24 @@ impl GameRoom {
         }
 
         // Validate and perform move
-        let result = self.game.perform_move(mov)
+        let result = self
+            .game
+            .perform_move(mov)
             .map_err(|e| format!("Invalid move: {:?}", e))?;
 
         // Broadcast game state update to all clients in this room
         // This contains all information clients need (game state, current player, etc.)
-        println!("[SERVER] Broadcasting GameStateUpdate - current_player: {}", self.game.current_player_id);
+        println!(
+            "[SERVER] Broadcasting GameStateUpdate - current_player: {}",
+            self.game.current_player_id
+        );
         for (pid, hand) in &self.game.hands {
-            println!("[SERVER]   Player {} hand ({} tiles): {:?}", pid, hand.len(), hand);
+            println!(
+                "[SERVER]   Player {} hand ({} tiles): {:?}",
+                pid,
+                hand.len(),
+                hand
+            );
         }
         let state_update = ServerMessage::GameStateUpdate {
             room_id: self.id.clone(),
@@ -72,14 +82,18 @@ impl GameRoom {
     }
 
     pub fn place_pawn(&mut self, player_id: PlayerID, position: PlayerPos) -> Result<(), String> {
-        let lobby = self.lobby.as_mut()
+        let lobby = self
+            .lobby
+            .as_mut()
             .ok_or("Game has already started, cannot place pawns".to_string())?;
 
         // Handle pawn placement in lobby
-        lobby.handle_event(LobbyEvent::PawnPlaced {
-            player_id,
-            position,
-        }).map_err(|e| format!("Failed to place pawn: {:?}", e))?;
+        lobby
+            .handle_event(LobbyEvent::PawnPlaced {
+                player_id,
+                position,
+            })
+            .map_err(|e| format!("Failed to place pawn: {:?}", e))?;
 
         // Clone the lobby before broadcasting to avoid borrow checker issues
         let lobby_clone = lobby.clone();
@@ -102,27 +116,98 @@ impl GameRoom {
         Ok(())
     }
 
+    /// Returns true if the room is now empty and should be removed.
+    pub fn handle_disconnect(&mut self, player_id: PlayerID) -> bool {
+        if let Some(lobby) = &mut self.lobby {
+            // Lobby phase: remove the player entirely
+            let _ = lobby.handle_event(tsurust_common::lobby::LobbyEvent::PlayerLeft { player_id });
+            self.game.players.retain(|p| p.id != player_id);
+
+            let remaining = lobby.players.len();
+            if remaining == 0 {
+                return true; // Empty room
+            }
+
+            // Broadcast updated lobby state
+            let lobby_update = ServerMessage::LobbyStateUpdate {
+                room_id: self.id.clone(),
+                lobby: lobby.clone(),
+            };
+            self.broadcast(lobby_update);
+        } else {
+            // Game in progress: eliminate the disconnected player
+            if let Some(player) = self.game.players.iter_mut().find(|p| p.id == player_id) {
+                player.alive = false;
+            }
+
+            let alive_count = self.game.players.iter().filter(|p| p.alive).count();
+            if alive_count == 0 {
+                return true; // Empty room
+            }
+
+            // If it was this player's turn, advance to the next player
+            if self.game.current_player_id == player_id {
+                if let Some(next_id) = self
+                    .game
+                    .players
+                    .iter()
+                    .find(|p| p.alive)
+                    .map(|p| p.id)
+                {
+                    self.game.current_player_id = next_id;
+                }
+            }
+
+            // Broadcast updated game state
+            let state_update = ServerMessage::GameStateUpdate {
+                room_id: self.id.clone(),
+                state: self.game.clone(),
+            };
+            self.broadcast(state_update);
+        }
+
+        // Broadcast that the player left
+        self.broadcast(ServerMessage::PlayerLeft {
+            room_id: self.id.clone(),
+            player_id,
+        });
+
+        false
+    }
+
     pub fn start_game(&mut self) -> Result<(), String> {
-        let lobby = self.lobby.take()
+        let lobby = self
+            .lobby
+            .take()
             .ok_or("Game has already started or lobby does not exist".to_string())?;
 
         // Start the game in the lobby
         let mut lobby_clone = lobby.clone();
-        lobby_clone.handle_event(tsurust_common::lobby::LobbyEvent::StartGame)
+        lobby_clone
+            .handle_event(tsurust_common::lobby::LobbyEvent::StartGame)
             .map_err(|e| format!("Failed to start game in lobby: {:?}", e))?;
 
         // Convert lobby to game
-        let game = lobby_clone.to_game()
+        let game = lobby_clone
+            .to_game()
             .map_err(|e| format!("Failed to convert lobby to game: {:?}", e))?;
 
         // Update the game state
         self.game = game.clone();
 
         // Debug: show initial game state
-        println!("[SERVER] Game started! Players: {:?}", self.game.players.iter().map(|p| p.id).collect::<Vec<_>>());
+        println!(
+            "[SERVER] Game started! Players: {:?}",
+            self.game.players.iter().map(|p| p.id).collect::<Vec<_>>()
+        );
         println!("[SERVER] Current player: {}", self.game.current_player_id);
         for (pid, hand) in &self.game.hands {
-            println!("[SERVER]   Player {} initial hand ({} tiles): {:?}", pid, hand.len(), hand);
+            println!(
+                "[SERVER]   Player {} initial hand ({} tiles): {:?}",
+                pid,
+                hand.len(),
+                hand
+            );
         }
 
         // Broadcast game started to all clients

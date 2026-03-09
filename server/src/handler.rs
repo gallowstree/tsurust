@@ -4,6 +4,7 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::sync::broadcast;
 use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 
+use tsurust_common::board::PlayerID;
 use tsurust_common::protocol::{ClientMessage, RoomId, ServerMessage};
 
 use crate::server::{ConnectionId, GameServer};
@@ -15,6 +16,7 @@ pub async fn handle_connection(
 ) {
     let mut update_rx: Option<broadcast::Receiver<ServerMessage>> = None;
     let mut current_room: Option<RoomId> = None;
+    let mut current_player_id: Option<PlayerID> = None;
 
     loop {
         tokio::select! {
@@ -28,6 +30,7 @@ pub async fn handle_connection(
                             &server,
                             &mut update_rx,
                             &mut current_room,
+                            &mut current_player_id,
                         ).await {
                             eprintln!("Error handling client message: {}", e);
                             let error_msg = ServerMessage::Error {
@@ -74,12 +77,12 @@ pub async fn handle_connection(
     }
 
     // Cleanup on disconnect
-    if let Some(room_id) = current_room {
+    if let (Some(room_id), Some(player_id)) = (current_room, current_player_id) {
         println!(
-            "Connection {} disconnected from room {}",
-            connection_id, room_id
+            "Connection {} (player {}) disconnected from room {}",
+            connection_id, player_id, room_id
         );
-        // TODO: Handle player disconnect (leave room, notify others, etc.)
+        server.handle_disconnect(room_id, player_id).await;
     }
 }
 
@@ -89,6 +92,7 @@ async fn handle_client_message(
     server: &Arc<GameServer>,
     update_rx: &mut Option<broadcast::Receiver<ServerMessage>>,
     current_room: &mut Option<RoomId>,
+    current_player_id: &mut Option<PlayerID>,
 ) -> Result<(), String> {
     let text = match msg {
         Message::Text(text) => text,
@@ -111,6 +115,7 @@ async fn handle_client_message(
             if let Some(room) = rooms.get(&room_id) {
                 *update_rx = Some(room.update_tx.subscribe());
                 *current_room = Some(room_id.clone());
+                *current_player_id = Some(player_id);
 
                 // Send current lobby state to the creator
                 if let Some(lobby) = &room.lobby {
@@ -149,6 +154,7 @@ async fn handle_client_message(
             if let Some(room) = rooms.get(&room_id) {
                 *update_rx = Some(room.update_tx.subscribe());
                 *current_room = Some(room_id.clone());
+                *current_player_id = Some(player_id);
 
                 // Send current lobby state directly to the joining player
                 if let Some(lobby) = &room.lobby {
@@ -182,6 +188,7 @@ async fn handle_client_message(
             server.leave_room(room_id, player_id).await?;
             *update_rx = None;
             *current_room = None;
+            *current_player_id = None;
         }
 
         ClientMessage::PlaceTile {

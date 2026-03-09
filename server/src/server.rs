@@ -143,21 +143,18 @@ impl GameServer {
     }
 
     pub async fn leave_room(&self, room_id: RoomId, player_id: PlayerID) -> Result<(), String> {
-        let mut rooms = self.rooms.write().await;
-        let room = rooms
-            .get_mut(&room_id)
-            .ok_or_else(|| format!("Room '{}' not found", room_id))?;
-
-        // Broadcast player left
-        let leave_msg = ServerMessage::PlayerLeft {
-            room_id: room_id.clone(),
-            player_id,
-        };
-        room.broadcast(leave_msg);
-
-        // TODO: Remove player from game or mark as disconnected
-        // For now, just broadcast the message
-
+        self.handle_disconnect(room_id, player_id).await;
         Ok(())
+    }
+
+    pub async fn handle_disconnect(&self, room_id: RoomId, player_id: PlayerID) {
+        let mut rooms = self.rooms.write().await;
+        if let Some(room) = rooms.get_mut(&room_id) {
+            let should_remove = room.handle_disconnect(player_id);
+            if should_remove {
+                println!("[SERVER] Room '{}' is empty, removing it", room_id);
+                rooms.remove(&room_id);
+            }
+        }
     }
 }

@@ -56,6 +56,9 @@ pub enum LobbyEvent {
         player_id: PlayerID,
         position: PlayerPos, // Must be valid board edge position
     },
+    PlayerLeft {
+        player_id: PlayerID,
+    },
     StartGame,
 }
 
@@ -84,17 +87,22 @@ impl Lobby {
 
         // Auto-join creator as first player
         let creator_id = 1;
-        lobby.handle_event(LobbyEvent::PlayerJoined {
-            player_id: creator_id,
-            player_name: creator_name,
-        }).expect("Creator should always be able to join empty lobby");
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: creator_id,
+                player_name: creator_name,
+            })
+            .expect("Creator should always be able to join empty lobby");
 
         (lobby, creator_id)
     }
 
     pub fn handle_event(&mut self, event: LobbyEvent) -> Result<(), LobbyError> {
         match event {
-            LobbyEvent::PlayerJoined { player_id, player_name } => {
+            LobbyEvent::PlayerJoined {
+                player_id,
+                player_name,
+            } => {
                 // If player already exists, treat as idempotent (no-op)
                 // This prevents color changes on duplicate join events
                 if self.players.contains_key(&player_id) {
@@ -117,7 +125,10 @@ impl Lobby {
                 Ok(())
             }
 
-            LobbyEvent::PawnPlaced { player_id, position } => {
+            LobbyEvent::PawnPlaced {
+                player_id,
+                position,
+            } => {
                 if !self.is_valid_edge_position(&position) {
                     return Err(LobbyError::InvalidSpawnPosition);
                 }
@@ -134,6 +145,11 @@ impl Lobby {
                 }
             }
 
+            LobbyEvent::PlayerLeft { player_id } => {
+                self.players.remove(&player_id);
+                Ok(())
+            }
+
             LobbyEvent::StartGame => {
                 if !self.can_start() {
                     return Err(LobbyError::NotReadyToStart);
@@ -146,8 +162,7 @@ impl Lobby {
     }
 
     pub fn can_start(&self) -> bool {
-        self.players.len() >= 2 &&
-        self.players.values().all(|p| p.spawn_position.is_some())
+        self.players.len() >= 2 && self.players.values().all(|p| p.spawn_position.is_some())
     }
 
     pub fn to_game(&self) -> Result<Game, LobbyError> {
@@ -155,7 +170,8 @@ impl Lobby {
             return Err(LobbyError::GameNotStarted);
         }
 
-        let mut players: Vec<Player> = self.players
+        let mut players: Vec<Player> = self
+            .players
             .values()
             .filter_map(|lobby_player| {
                 lobby_player.spawn_position.map(|pos| {
@@ -163,7 +179,7 @@ impl Lobby {
                         lobby_player.id,
                         lobby_player.name.clone(),
                         pos,
-                        lobby_player.color
+                        lobby_player.color,
                     )
                 })
             })
@@ -182,15 +198,13 @@ impl Lobby {
     fn is_valid_edge_position(&self, pos: &PlayerPos) -> bool {
         let CellCoord { row, col } = pos.cell;
         // Valid board edge positions only
-        (row == 0 || row == 5 || col == 0 || col == 5) &&
-        row <= 5 && col <= 5
+        (row == 0 || row == 5 || col == 0 || col == 5) && row <= 5 && col <= 5
     }
 
     fn is_position_taken(&self, pos: &PlayerPos, requesting_player: PlayerID) -> bool {
-        self.players.values().any(|p|
-            p.id != requesting_player &&
-            p.spawn_position == Some(*pos)
-        )
+        self.players
+            .values()
+            .any(|p| p.id != requesting_player && p.spawn_position == Some(*pos))
     }
 
     fn assign_next_color(&self) -> Result<(u8, u8, u8), LobbyError> {
@@ -206,11 +220,10 @@ impl Lobby {
             (108, 113, 196), // Violet
         ];
 
-        let used_colors: HashSet<_> = self.players.values()
-            .map(|p| p.color)
-            .collect();
+        let used_colors: HashSet<_> = self.players.values().map(|p| p.color).collect();
 
-        COLORS.iter()
+        COLORS
+            .iter()
             .find(|color| !used_colors.contains(color))
             .copied()
             .ok_or(LobbyError::NoAvailableColors)
@@ -266,8 +279,18 @@ mod tests {
         lobby.max_players = 2;
 
         // Fill lobby
-        lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 1, player_name: "Alice".to_string() }).unwrap();
-        lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 2, player_name: "Bob".to_string() }).unwrap();
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: 1,
+                player_name: "Alice".to_string(),
+            })
+            .unwrap();
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: 2,
+                player_name: "Bob".to_string(),
+            })
+            .unwrap();
 
         // Third player should fail
         let result = lobby.handle_event(LobbyEvent::PlayerJoined {
@@ -281,7 +304,12 @@ mod tests {
     #[test]
     fn test_pawn_placement_valid() {
         let mut lobby = Lobby::new("TEST".to_string(), "Test".to_string());
-        lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 1, player_name: "Alice".to_string() }).unwrap();
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: 1,
+                player_name: "Alice".to_string(),
+            })
+            .unwrap();
 
         let edge_pos = PlayerPos::new(0, 2, 4); // Top edge
         let result = lobby.handle_event(LobbyEvent::PawnPlaced {
@@ -296,7 +324,12 @@ mod tests {
     #[test]
     fn test_pawn_placement_invalid_position() {
         let mut lobby = Lobby::new("TEST".to_string(), "Test".to_string());
-        lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 1, player_name: "Alice".to_string() }).unwrap();
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: 1,
+                player_name: "Alice".to_string(),
+            })
+            .unwrap();
 
         let center_pos = PlayerPos::new(2, 2, 0); // Center of board - invalid
         let result = lobby.handle_event(LobbyEvent::PawnPlaced {
@@ -310,16 +343,34 @@ mod tests {
     #[test]
     fn test_pawn_placement_position_taken() {
         let mut lobby = Lobby::new("TEST".to_string(), "Test".to_string());
-        lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 1, player_name: "Alice".to_string() }).unwrap();
-        lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 2, player_name: "Bob".to_string() }).unwrap();
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: 1,
+                player_name: "Alice".to_string(),
+            })
+            .unwrap();
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: 2,
+                player_name: "Bob".to_string(),
+            })
+            .unwrap();
 
         let edge_pos = PlayerPos::new(0, 2, 4);
 
         // First player places pawn
-        lobby.handle_event(LobbyEvent::PawnPlaced { player_id: 1, position: edge_pos }).unwrap();
+        lobby
+            .handle_event(LobbyEvent::PawnPlaced {
+                player_id: 1,
+                position: edge_pos,
+            })
+            .unwrap();
 
         // Second player tries same position
-        let result = lobby.handle_event(LobbyEvent::PawnPlaced { player_id: 2, position: edge_pos });
+        let result = lobby.handle_event(LobbyEvent::PawnPlaced {
+            player_id: 2,
+            position: edge_pos,
+        });
 
         assert!(matches!(result, Err(LobbyError::PositionTaken)));
     }
@@ -332,19 +383,39 @@ mod tests {
         assert!(!lobby.can_start());
 
         // Single player cannot start
-        lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 1, player_name: "Alice".to_string() }).unwrap();
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: 1,
+                player_name: "Alice".to_string(),
+            })
+            .unwrap();
         assert!(!lobby.can_start());
 
         // Two players without positions cannot start
-        lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 2, player_name: "Bob".to_string() }).unwrap();
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: 2,
+                player_name: "Bob".to_string(),
+            })
+            .unwrap();
         assert!(!lobby.can_start());
 
         // One player with position cannot start
-        lobby.handle_event(LobbyEvent::PawnPlaced { player_id: 1, position: PlayerPos::new(0, 2, 4) }).unwrap();
+        lobby
+            .handle_event(LobbyEvent::PawnPlaced {
+                player_id: 1,
+                position: PlayerPos::new(0, 2, 4),
+            })
+            .unwrap();
         assert!(!lobby.can_start());
 
         // Both players with positions can start
-        lobby.handle_event(LobbyEvent::PawnPlaced { player_id: 2, position: PlayerPos::new(5, 3, 0) }).unwrap();
+        lobby
+            .handle_event(LobbyEvent::PawnPlaced {
+                player_id: 2,
+                position: PlayerPos::new(5, 3, 0),
+            })
+            .unwrap();
         assert!(lobby.can_start());
     }
 
@@ -360,7 +431,12 @@ mod tests {
     #[test]
     fn test_start_game_not_ready() {
         let mut lobby = Lobby::new("TEST".to_string(), "Test".to_string());
-        lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 1, player_name: "Alice".to_string() }).unwrap();
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: 1,
+                player_name: "Alice".to_string(),
+            })
+            .unwrap();
 
         let result = lobby.handle_event(LobbyEvent::StartGame);
         assert!(matches!(result, Err(LobbyError::NotReadyToStart)));
@@ -389,10 +465,12 @@ mod tests {
 
         // Test first 3 colors are assigned and different
         for i in 1..=3 {
-            lobby.handle_event(LobbyEvent::PlayerJoined {
-                player_id: i,
-                player_name: format!("Player{}", i),
-            }).unwrap();
+            lobby
+                .handle_event(LobbyEvent::PlayerJoined {
+                    player_id: i,
+                    player_name: format!("Player{}", i),
+                })
+                .unwrap();
         }
 
         // Verify all players have different colors
@@ -452,10 +530,12 @@ mod tests {
 
         // Add 8 players (all available colors)
         for i in 1..=8 {
-            lobby.handle_event(LobbyEvent::PlayerJoined {
-                player_id: i,
-                player_name: format!("Player{}", i),
-            }).unwrap();
+            lobby
+                .handle_event(LobbyEvent::PlayerJoined {
+                    player_id: i,
+                    player_name: format!("Player{}", i),
+                })
+                .unwrap();
         }
 
         // 9th player should fail due to no available colors
@@ -474,22 +554,28 @@ mod tests {
         let mut lobby = Lobby::new("ROOM1".to_string(), "Test Room".to_string());
 
         // First player joins (creator)
-        lobby.handle_event(LobbyEvent::PlayerJoined {
-            player_id: 1,
-            player_name: "Alice".to_string(),
-        }).unwrap();
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: 1,
+                player_name: "Alice".to_string(),
+            })
+            .unwrap();
 
         // Second player joins (via server broadcast)
-        lobby.handle_event(LobbyEvent::PlayerJoined {
-            player_id: 2,
-            player_name: "Bob".to_string(),
-        }).unwrap();
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: 2,
+                player_name: "Bob".to_string(),
+            })
+            .unwrap();
 
         // Third player joins (via server broadcast)
-        lobby.handle_event(LobbyEvent::PlayerJoined {
-            player_id: 3,
-            player_name: "Charlie".to_string(),
-        }).unwrap();
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: 3,
+                player_name: "Charlie".to_string(),
+            })
+            .unwrap();
 
         // Verify all players are in the lobby
         assert_eq!(lobby.players.len(), 3);
@@ -508,10 +594,12 @@ mod tests {
         let mut lobby = Lobby::new("ROOM1".to_string(), "Test Room".to_string());
 
         // First join
-        lobby.handle_event(LobbyEvent::PlayerJoined {
-            player_id: 1,
-            player_name: "Alice".to_string(),
-        }).unwrap();
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: 1,
+                player_name: "Alice".to_string(),
+            })
+            .unwrap();
 
         // Duplicate join with same ID (might happen in edge cases)
         // This should either succeed idempotently or return a specific error
@@ -532,23 +620,33 @@ mod tests {
         let mut lobby = Lobby::new("TEST".to_string(), "Test".to_string());
 
         // Player 1 joins
-        lobby.handle_event(LobbyEvent::PlayerJoined {
-            player_id: 1,
-            player_name: "Alice".to_string(),
-        }).unwrap();
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: 1,
+                player_name: "Alice".to_string(),
+            })
+            .unwrap();
 
         let original_color = lobby.players[&1].color;
         let original_name = lobby.players[&1].name.clone();
 
         // Player 1 "joins" again (duplicate event) with different name
-        lobby.handle_event(LobbyEvent::PlayerJoined {
-            player_id: 1,
-            player_name: "Alice2".to_string(),
-        }).unwrap();
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: 1,
+                player_name: "Alice2".to_string(),
+            })
+            .unwrap();
 
         // Color and name should be preserved (idempotent behavior)
-        assert_eq!(lobby.players[&1].color, original_color, "Color should not change on duplicate join");
-        assert_eq!(lobby.players[&1].name, original_name, "Name should not change on duplicate join (idempotent)");
+        assert_eq!(
+            lobby.players[&1].color, original_color,
+            "Color should not change on duplicate join"
+        );
+        assert_eq!(
+            lobby.players[&1].name, original_name,
+            "Name should not change on duplicate join (idempotent)"
+        );
     }
 
     #[test]
@@ -557,20 +655,26 @@ mod tests {
         // (e.g., if player 2 left and player 4 joined)
         let mut lobby = Lobby::new("ROOM1".to_string(), "Test Room".to_string());
 
-        lobby.handle_event(LobbyEvent::PlayerJoined {
-            player_id: 1,
-            player_name: "Alice".to_string(),
-        }).unwrap();
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: 1,
+                player_name: "Alice".to_string(),
+            })
+            .unwrap();
 
-        lobby.handle_event(LobbyEvent::PlayerJoined {
-            player_id: 3,  // Skipping 2
-            player_name: "Charlie".to_string(),
-        }).unwrap();
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: 3, // Skipping 2
+                player_name: "Charlie".to_string(),
+            })
+            .unwrap();
 
-        lobby.handle_event(LobbyEvent::PlayerJoined {
-            player_id: 7,  // Large gap
-            player_name: "Grace".to_string(),
-        }).unwrap();
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: 7, // Large gap
+                player_name: "Grace".to_string(),
+            })
+            .unwrap();
 
         assert_eq!(lobby.players.len(), 3);
         assert!(lobby.players.contains_key(&1));
@@ -584,21 +688,27 @@ mod tests {
         let mut lobby = Lobby::new("ROOM1".to_string(), "Test Room".to_string());
 
         for i in 1..=4 {
-            lobby.handle_event(LobbyEvent::PlayerJoined {
-                player_id: i,
-                player_name: format!("Player{}", i),
-            }).unwrap();
+            lobby
+                .handle_event(LobbyEvent::PlayerJoined {
+                    player_id: i,
+                    player_name: format!("Player{}", i),
+                })
+                .unwrap();
         }
 
         // Collect all colors
-        let colors: Vec<_> = (1..=4)
-            .map(|id| lobby.players[&id].color)
-            .collect();
+        let colors: Vec<_> = (1..=4).map(|id| lobby.players[&id].color).collect();
 
         // Verify all colors are unique
         for i in 0..colors.len() {
-            for j in (i+1)..colors.len() {
-                assert_ne!(colors[i], colors[j], "Players {} and {} have the same color", i+1, j+1);
+            for j in (i + 1)..colors.len() {
+                assert_ne!(
+                    colors[i],
+                    colors[j],
+                    "Players {} and {} have the same color",
+                    i + 1,
+                    j + 1
+                );
             }
         }
     }
@@ -606,10 +716,30 @@ mod tests {
     // Helper function for tests that need a ready lobby
     fn setup_ready_lobby() -> Lobby {
         let mut lobby = Lobby::new("TEST".to_string(), "Test".to_string());
-        lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 1, player_name: "Alice".to_string() }).unwrap();
-        lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 2, player_name: "Bob".to_string() }).unwrap();
-        lobby.handle_event(LobbyEvent::PawnPlaced { player_id: 1, position: PlayerPos::new(0, 2, 4) }).unwrap();
-        lobby.handle_event(LobbyEvent::PawnPlaced { player_id: 2, position: PlayerPos::new(5, 3, 0) }).unwrap();
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: 1,
+                player_name: "Alice".to_string(),
+            })
+            .unwrap();
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: 2,
+                player_name: "Bob".to_string(),
+            })
+            .unwrap();
+        lobby
+            .handle_event(LobbyEvent::PawnPlaced {
+                player_id: 1,
+                position: PlayerPos::new(0, 2, 4),
+            })
+            .unwrap();
+        lobby
+            .handle_event(LobbyEvent::PawnPlaced {
+                player_id: 2,
+                position: PlayerPos::new(5, 3, 0),
+            })
+            .unwrap();
         lobby
     }
 }
@@ -635,19 +765,17 @@ mod lobby_id_tests {
 
     #[test]
     fn test_normalize_lobby_id_invalid() {
-        assert_eq!(normalize_lobby_id("abc"), None);  // Too short
-        assert_eq!(normalize_lobby_id("abcde"), None);  // Too long
-        assert_eq!(normalize_lobby_id("ab-d"), None);  // Invalid character
-        assert_eq!(normalize_lobby_id(""), None);  // Empty
-        assert_eq!(normalize_lobby_id("   "), None);  // Whitespace only
+        assert_eq!(normalize_lobby_id("abc"), None); // Too short
+        assert_eq!(normalize_lobby_id("abcde"), None); // Too long
+        assert_eq!(normalize_lobby_id("ab-d"), None); // Invalid character
+        assert_eq!(normalize_lobby_id(""), None); // Empty
+        assert_eq!(normalize_lobby_id("   "), None); // Whitespace only
     }
 
     #[test]
     fn test_new_with_creator() {
-        let (lobby, creator_id) = Lobby::new_with_creator(
-            "Test Room".to_string(),
-            "Alice".to_string()
-        );
+        let (lobby, creator_id) =
+            Lobby::new_with_creator("Test Room".to_string(), "Alice".to_string());
 
         // Verify lobby properties
         assert_eq!(lobby.name, "Test Room");
@@ -665,10 +793,7 @@ mod lobby_id_tests {
 
     #[test]
     fn test_new_with_creator_assigns_first_color() {
-        let (lobby, creator_id) = Lobby::new_with_creator(
-            "Test".to_string(),
-            "Bob".to_string()
-        );
+        let (lobby, creator_id) = Lobby::new_with_creator("Test".to_string(), "Bob".to_string());
 
         let creator = &lobby.players[&creator_id];
         assert_eq!(creator.color, (220, 50, 47)); // First Solarized color (red)

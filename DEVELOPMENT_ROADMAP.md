@@ -14,8 +14,7 @@
    - Maintain sample game for quick testing
 
 2. **Server-Side Improvements**
-   - Implement player disconnect handling (`handler.rs:75`, `server.rs:116`)
-   - Add room cleanup for abandoned games
+   - Add room cleanup for abandoned games (timeout-based, currently immediate on last player leaving)
    - Implement heartbeat/ping-pong for connection health
    - Add proper error handling and validation
 
