@@ -1,17 +1,17 @@
 #![warn(clippy::all, rust_2018_idioms)]
 
 mod app;
-mod rendering;
-mod tile_button;
 mod board_renderer;
-mod hand_renderer;
-mod player_card;
-mod screens;
 mod components;
-mod messaging;
-mod stats_display;
-mod replay_state;
 mod file_io;
+mod hand_renderer;
+mod messaging;
+mod player_card;
+mod rendering;
+mod replay_state;
+mod screens;
+mod stats_display;
+mod tile_button;
 pub mod ws_client;
 
 pub use app::TemplateApp;

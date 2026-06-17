@@ -26,7 +26,8 @@ impl<'a> LobbyBoard<'a> {
     // TODO (low): use existing board rendering code and add support in there for spawns, etc.
     /// Render the lobby board in the given UI with the specified size
     pub fn render(&self, ui: &mut egui::Ui, board_size: f32, sender: &mpsc::Sender<Message>) {
-        let (rect, _response) = ui.allocate_exact_size(egui::Vec2::splat(board_size), egui::Sense::hover());
+        let (rect, _response) =
+            ui.allocate_exact_size(egui::Vec2::splat(board_size), egui::Sense::hover());
 
         // Draw board grid
         self.draw_grid(ui, rect, board_size);
@@ -37,7 +38,8 @@ impl<'a> LobbyBoard<'a> {
 
     fn draw_grid(&self, ui: &mut egui::Ui, rect: egui::Rect, board_size: f32) {
         // Draw outer border
-        ui.painter().rect_stroke(rect, 4.0, egui::Stroke::new(2.0, egui::Color32::LIGHT_GRAY));
+        ui.painter()
+            .rect_stroke(rect, 4.0, egui::Stroke::new(2.0, egui::Color32::LIGHT_GRAY));
 
         let cell_size = board_size / 6.0;
 
@@ -48,19 +50,31 @@ impl<'a> LobbyBoard<'a> {
 
             // Vertical lines
             ui.painter().line_segment(
-                [egui::Pos2::new(x, rect.min.y), egui::Pos2::new(x, rect.max.y)],
-                egui::Stroke::new(1.0, egui::Color32::GRAY)
+                [
+                    egui::Pos2::new(x, rect.min.y),
+                    egui::Pos2::new(x, rect.max.y),
+                ],
+                egui::Stroke::new(1.0, egui::Color32::GRAY),
             );
 
             // Horizontal lines
             ui.painter().line_segment(
-                [egui::Pos2::new(rect.min.x, y), egui::Pos2::new(rect.max.x, y)],
-                egui::Stroke::new(1.0, egui::Color32::GRAY)
+                [
+                    egui::Pos2::new(rect.min.x, y),
+                    egui::Pos2::new(rect.max.x, y),
+                ],
+                egui::Stroke::new(1.0, egui::Color32::GRAY),
             );
         }
     }
 
-    fn draw_spawn_positions(&self, ui: &mut egui::Ui, rect: egui::Rect, board_size: f32, sender: &mpsc::Sender<Message>) {
+    fn draw_spawn_positions(
+        &self,
+        ui: &mut egui::Ui,
+        rect: egui::Rect,
+        board_size: f32,
+        sender: &mpsc::Sender<Message>,
+    ) {
         let cell_size = board_size / 6.0;
 
         // Draw available spawn positions on outer border only
@@ -75,10 +89,15 @@ impl<'a> LobbyBoard<'a> {
                         }
 
                         let pos = PlayerPos::new(row, col, endpoint);
-                        let spawn_center = self.get_endpoint_pos(rect, cell_size, row, col, endpoint);
+                        let spawn_center =
+                            self.get_endpoint_pos(rect, cell_size, row, col, endpoint);
 
                         // Check if position is already taken
-                        let is_taken = self.lobby.players.values().any(|p| p.spawn_position == Some(pos));
+                        let is_taken = self
+                            .lobby
+                            .players
+                            .values()
+                            .any(|p| p.spawn_position == Some(pos));
 
                         if is_taken {
                             self.draw_occupied_spawn(ui, spawn_center, pos);
@@ -105,43 +124,62 @@ impl<'a> LobbyBoard<'a> {
         }
     }
 
-    fn get_endpoint_pos(&self, rect: egui::Rect, cell_size: f32, row: usize, col: usize, endpoint: usize) -> egui::Pos2 {
+    fn get_endpoint_pos(
+        &self,
+        rect: egui::Rect,
+        cell_size: f32,
+        row: usize,
+        col: usize,
+        endpoint: usize,
+    ) -> egui::Pos2 {
         let cell_min = rect.min + egui::Vec2::new(col as f32 * cell_size, row as f32 * cell_size);
         let half_cell = cell_size / 2.0;
 
         // Endpoint positions (counterclockwise from bottom-left):
         // 0-1: bottom, 2-3: right, 4-5: top, 6-7: left
         match endpoint {
-            0 => cell_min + egui::Vec2::new(half_cell * 0.5, cell_size),     // bottom-left
-            1 => cell_min + egui::Vec2::new(half_cell * 1.5, cell_size),     // bottom-right
-            2 => cell_min + egui::Vec2::new(cell_size, half_cell * 1.5),     // right-bottom
-            3 => cell_min + egui::Vec2::new(cell_size, half_cell * 0.5),     // right-top
-            4 => cell_min + egui::Vec2::new(half_cell * 1.5, 0.0),           // top-right
-            5 => cell_min + egui::Vec2::new(half_cell * 0.5, 0.0),           // top-left
-            6 => cell_min + egui::Vec2::new(0.0, half_cell * 0.5),           // left-top
-            7 => cell_min + egui::Vec2::new(0.0, half_cell * 1.5),           // left-bottom
+            0 => cell_min + egui::Vec2::new(half_cell * 0.5, cell_size), // bottom-left
+            1 => cell_min + egui::Vec2::new(half_cell * 1.5, cell_size), // bottom-right
+            2 => cell_min + egui::Vec2::new(cell_size, half_cell * 1.5), // right-bottom
+            3 => cell_min + egui::Vec2::new(cell_size, half_cell * 0.5), // right-top
+            4 => cell_min + egui::Vec2::new(half_cell * 1.5, 0.0),       // top-right
+            5 => cell_min + egui::Vec2::new(half_cell * 0.5, 0.0),       // top-left
+            6 => cell_min + egui::Vec2::new(0.0, half_cell * 0.5),       // left-top
+            7 => cell_min + egui::Vec2::new(0.0, half_cell * 1.5),       // left-bottom
             _ => cell_min + egui::Vec2::new(half_cell, half_cell),
         }
     }
 
     fn draw_occupied_spawn(&self, ui: &mut egui::Ui, spawn_center: egui::Pos2, pos: PlayerPos) {
         // Draw taken position with player's color
-        if let Some(lobby_player) = self.lobby.players.values().find(|p| p.spawn_position == Some(pos)) {
+        if let Some(lobby_player) = self
+            .lobby
+            .players
+            .values()
+            .find(|p| p.spawn_position == Some(pos))
+        {
             let player_color = egui::Color32::from_rgb(
                 lobby_player.color.0,
                 lobby_player.color.1,
-                lobby_player.color.2
+                lobby_player.color.2,
             );
             ui.painter().circle_filled(spawn_center, 6.0, player_color);
-            ui.painter().circle_stroke(spawn_center, 6.0, (2.0, egui::Color32::WHITE));
+            ui.painter()
+                .circle_stroke(spawn_center, 6.0, (2.0, egui::Color32::WHITE));
         }
     }
 
-    fn draw_available_spawn(&self, ui: &mut egui::Ui, spawn_center: egui::Pos2, pos: PlayerPos, sender: &mpsc::Sender<Message>) {
+    fn draw_available_spawn(
+        &self,
+        ui: &mut egui::Ui,
+        spawn_center: egui::Pos2,
+        pos: PlayerPos,
+        sender: &mpsc::Sender<Message>,
+    ) {
         // Draw available spawn as clickable spot
         let spawn_response = ui.allocate_rect(
             egui::Rect::from_center_size(spawn_center, egui::Vec2::splat(12.0)),
-            egui::Sense::click()
+            egui::Sense::click(),
         );
 
         let color = if spawn_response.hovered() {
@@ -155,7 +193,9 @@ impl<'a> LobbyBoard<'a> {
         if spawn_response.clicked() {
             #[cfg(target_arch = "wasm32")]
             {
-                web_sys::console::log_1(&format!("Pawn placement clicked at position: {:?}", pos).into());
+                web_sys::console::log_1(
+                    &format!("Pawn placement clicked at position: {:?}", pos).into(),
+                );
             }
             send_ui_message(sender, Message::PlacePawn(pos));
         }

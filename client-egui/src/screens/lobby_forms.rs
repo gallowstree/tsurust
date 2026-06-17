@@ -5,7 +5,12 @@ use eframe::egui::{self, Context};
 use crate::app::Message;
 use crate::messaging::send_ui_message;
 
-pub fn render_create_lobby_form(ctx: &Context, lobby_name: &mut String, player_name: &mut String, sender: &mpsc::Sender<Message>) {
+pub fn render_create_lobby_form(
+    ctx: &Context,
+    lobby_name: &mut String,
+    player_name: &mut String,
+    sender: &mpsc::Sender<Message>,
+) {
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.vertical_centered(|ui| {
             ui.add_space(100.0);
@@ -32,18 +37,21 @@ pub fn render_create_lobby_form(ctx: &Context, lobby_name: &mut String, player_n
 
             // Submit on Enter key
             if ui.input(|i| i.key_pressed(egui::Key::Enter)) && can_create {
-                send_ui_message(sender, Message::CreateAndJoinLobby(
-                    lobby_name.clone(),
-                    player_name.clone()
-                ));
+                send_ui_message(
+                    sender,
+                    Message::CreateAndJoinLobby(lobby_name.clone(), player_name.clone()),
+                );
             }
 
             ui.horizontal(|ui| {
-                if ui.add_enabled(can_create, egui::Button::new("Create & Join")).clicked() {
-                    send_ui_message(sender, Message::CreateAndJoinLobby(
-                        lobby_name.clone(),
-                        player_name.clone()
-                    ));
+                if ui
+                    .add_enabled(can_create, egui::Button::new("Create & Join"))
+                    .clicked()
+                {
+                    send_ui_message(
+                        sender,
+                        Message::CreateAndJoinLobby(lobby_name.clone(), player_name.clone()),
+                    );
                 }
 
                 if ui.button("Back").clicked() {
@@ -54,7 +62,12 @@ pub fn render_create_lobby_form(ctx: &Context, lobby_name: &mut String, player_n
     });
 }
 
-pub fn render_join_lobby_form(ctx: &Context, lobby_id: &mut String, player_name: &mut String, sender: &mpsc::Sender<Message>) {
+pub fn render_join_lobby_form(
+    ctx: &Context,
+    lobby_id: &mut String,
+    player_name: &mut String,
+    sender: &mpsc::Sender<Message>,
+) {
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.vertical_centered(|ui| {
             ui.add_space(100.0);
@@ -82,18 +95,21 @@ pub fn render_join_lobby_form(ctx: &Context, lobby_id: &mut String, player_name:
 
             // Submit on Enter key
             if ui.input(|i| i.key_pressed(egui::Key::Enter)) && can_join {
-                send_ui_message(sender, Message::JoinLobbyWithId(
-                    lobby_id.clone(),
-                    player_name.clone()
-                ));
+                send_ui_message(
+                    sender,
+                    Message::JoinLobbyWithId(lobby_id.clone(), player_name.clone()),
+                );
             }
 
             ui.horizontal(|ui| {
-                if ui.add_enabled(can_join, egui::Button::new("Join")).clicked() {
-                    send_ui_message(sender, Message::JoinLobbyWithId(
-                        lobby_id.clone(),
-                        player_name.clone()
-                    ));
+                if ui
+                    .add_enabled(can_join, egui::Button::new("Join"))
+                    .clicked()
+                {
+                    send_ui_message(
+                        sender,
+                        Message::JoinLobbyWithId(lobby_id.clone(), player_name.clone()),
+                    );
                 }
 
                 if ui.button("Back").clicked() {

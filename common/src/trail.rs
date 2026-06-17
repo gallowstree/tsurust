@@ -3,9 +3,9 @@ use crate::board::{PlayerPos, TileEndpoint};
 /// Represents a single segment of a player's trail through one tile
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TrailSegment {
-    pub board_pos: (usize, usize),  // Board cell position (row, col)
-    pub entry_point: TileEndpoint,   // Entry point into this tile (0-7)
-    pub exit_point: TileEndpoint,    // Exit point from this tile (0-7)
+    pub board_pos: (usize, usize), // Board cell position (row, col)
+    pub entry_point: TileEndpoint, // Entry point into this tile (0-7)
+    pub exit_point: TileEndpoint,  // Exit point from this tile (0-7)
 }
 
 /// Represents a complete trail for a player
@@ -14,7 +14,7 @@ pub struct Trail {
     pub segments: Vec<TrailSegment>,
     pub start_pos: PlayerPos,
     pub end_pos: PlayerPos,
-    pub completed: bool,  // true if trail ends at board edge or collision
+    pub completed: bool, // true if trail ends at board edge or collision
 }
 
 impl Trail {

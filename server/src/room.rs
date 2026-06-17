@@ -147,13 +147,7 @@ impl GameRoom {
 
             // If it was this player's turn, advance to the next player
             if self.game.current_player_id == player_id {
-                if let Some(next_id) = self
-                    .game
-                    .players
-                    .iter()
-                    .find(|p| p.alive)
-                    .map(|p| p.id)
-                {
+                if let Some(next_id) = self.game.players.iter().find(|p| p.alive).map(|p| p.id) {
                     self.game.current_player_id = next_id;
                 }
             }

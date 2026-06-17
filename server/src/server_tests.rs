@@ -4,7 +4,9 @@ use crate::server::GameServer;
 async fn test_create_room_assigns_player_id_1() {
     let server = GameServer::new();
 
-    let result = server.create_room("Test Room".to_string(), "Alice".to_string()).await;
+    let result = server
+        .create_room("Test Room".to_string(), "Alice".to_string())
+        .await;
 
     assert!(result.is_ok());
     let (room_id, player_id) = result.unwrap();

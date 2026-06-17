@@ -1,11 +1,11 @@
+use crate::app::Message;
 use eframe::egui::Context;
 use std::sync::mpsc;
-use crate::app::Message;
 
-pub mod main_menu;
-pub mod lobby_forms;
-pub mod lobby;
 pub mod game;
+pub mod lobby;
+pub mod lobby_forms;
+pub mod main_menu;
 pub mod replay_viewer;
 
 /// Trait for UI screens that can be rendered

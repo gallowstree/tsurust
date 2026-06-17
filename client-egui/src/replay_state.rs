@@ -42,7 +42,10 @@ impl ReplayState {
 
     /// Extract initial player positions from the export
     fn extract_initial_players(&self) -> Vec<Player> {
-        self.export.game_state.players.iter()
+        self.export
+            .game_state
+            .players
+            .iter()
             .map(|p| Player {
                 id: p.id,
                 name: p.name.clone(),
@@ -55,8 +58,13 @@ impl ReplayState {
     }
 
     /// Get the starting position for a player from their trail
-    fn get_initial_position(&self, player_id: tsurust_common::board::PlayerID) -> tsurust_common::board::PlayerPos {
-        self.export.game_state.player_trails
+    fn get_initial_position(
+        &self,
+        player_id: tsurust_common::board::PlayerID,
+    ) -> tsurust_common::board::PlayerPos {
+        self.export
+            .game_state
+            .player_trails
             .get(&player_id)
             .map(|trail| trail.start_pos)
             .expect("Player should have a trail")
@@ -168,20 +176,21 @@ impl ReplayState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tsurust_common::board::{CellCoord, PlayerPos, Tile, Segment};
+    use tsurust_common::board::{CellCoord, PlayerPos, Segment, Tile};
     use tsurust_common::game::{GameMetadata, GameMode};
 
     fn create_test_export() -> GameExport {
-        let players = vec![
-            Player {
-                id: 1,
-                name: "Player 1".to_string(),
-                pos: PlayerPos { cell: CellCoord { row: 1, col: 1 }, endpoint: 0 },
-                alive: true,
-                has_moved: false,
-                color: (255, 0, 0),
+        let players = vec![Player {
+            id: 1,
+            name: "Player 1".to_string(),
+            pos: PlayerPos {
+                cell: CellCoord { row: 1, col: 1 },
+                endpoint: 0,
             },
-        ];
+            alive: true,
+            has_moved: false,
+            color: (255, 0, 0),
+        }];
         let mut game = Game::new(players);
 
         // Make a few moves
@@ -192,12 +201,15 @@ mod tests {
                     Segment { a: 2, b: 3 },
                     Segment { a: 4, b: 5 },
                     Segment { a: 6, b: 7 },
-                ]
+                ],
             };
             game.hands.get_mut(&1).unwrap().push(tile);
             let mov = tsurust_common::board::Move {
                 player_id: 1,
-                cell: CellCoord { row: i + 1, col: i + 1 },
+                cell: CellCoord {
+                    row: i + 1,
+                    col: i + 1,
+                },
                 tile,
             };
             game.perform_move(mov).ok();

@@ -1,6 +1,6 @@
+use crate::room::GameRoom;
 use tsurust_common::board::{CellCoord, Move, Player, PlayerPos, Segment, Tile};
 use tsurust_common::game::Game;
-use crate::room::GameRoom;
 
 // Helper function to create a test tile
 fn create_test_tile() -> Tile {
@@ -66,7 +66,10 @@ fn test_place_tile_validates_move_player_id() {
 
     let result = room.place_tile(1, mov);
 
-    assert!(result.is_err(), "Should reject move with mismatched player_id");
+    assert!(
+        result.is_err(),
+        "Should reject move with mismatched player_id"
+    );
     assert!(
         result.unwrap_err().contains("player_id mismatch"),
         "Error message should mention player_id mismatch"
@@ -99,5 +102,8 @@ fn test_place_tile_accepts_valid_move() {
 
     let result = room.place_tile(1, mov);
 
-    assert!(result.is_ok(), "Should accept valid move from current player");
+    assert!(
+        result.is_ok(),
+        "Should accept valid move from current player"
+    );
 }

@@ -31,22 +31,22 @@ impl HandRenderer {
 impl Widget for HandRenderer {
     fn ui(self, ui: &mut eframe::egui::Ui) -> eframe::egui::Response {
         ui.vertical_centered(|ui| {
-            ScrollArea::vertical()
-                .show(ui, |ui| {
-                    for (index, tile) in self.tiles.iter().enumerate() {
-                        ui.add_space(10.);
-                        let mut button = TileButton::new(*tile, index, self.sender.clone());
+            ScrollArea::vertical().show(ui, |ui| {
+                for (index, tile) in self.tiles.iter().enumerate() {
+                    ui.add_space(10.);
+                    let mut button = TileButton::new(*tile, index, self.sender.clone());
 
-                        // Apply rotation animation if this tile was just rotated
-                        if let Some((rotated_index, clockwise)) = self.last_rotated_tile {
-                            if rotated_index == index {
-                                button = button.with_rotation_animation(clockwise);
-                            }
+                    // Apply rotation animation if this tile was just rotated
+                    if let Some((rotated_index, clockwise)) = self.last_rotated_tile {
+                        if rotated_index == index {
+                            button = button.with_rotation_animation(clockwise);
                         }
-
-                        ui.add(button);
                     }
-                });
-        }).response
+
+                    ui.add(button);
+                }
+            });
+        })
+        .response
     }
 }

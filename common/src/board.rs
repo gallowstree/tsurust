@@ -307,7 +307,11 @@ impl Board {
 
     /// Returns the entry point connected to the given entry point in the neighboring cell
     fn neighboring_entry(exit: TileEndpoint) -> TileEndpoint {
-        (if exit.is_multiple_of(2) { exit + 5 } else { exit + 3 }) % 8
+        (if exit.is_multiple_of(2) {
+            exit + 5
+        } else {
+            exit + 3
+        }) % 8
     }
 }
 

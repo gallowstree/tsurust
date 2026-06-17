@@ -114,7 +114,10 @@ async fn test_create_room_over_websocket() {
     .await;
 
     // Expect LobbyStateUpdate then RoomCreated (order may vary)
-    let msg = recv_where(&mut alice, |m| matches!(m, ServerMessage::RoomCreated { .. })).await;
+    let msg = recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::RoomCreated { .. })
+    })
+    .await;
 
     let ServerMessage::RoomCreated { room_id, player_id } = msg else {
         panic!("Expected RoomCreated");
@@ -139,8 +142,10 @@ async fn test_join_room_notifies_both_clients() {
     )
     .await;
 
-    let ServerMessage::RoomCreated { room_id, .. } =
-        recv_where(&mut alice, |m| matches!(m, ServerMessage::RoomCreated { .. })).await
+    let ServerMessage::RoomCreated { room_id, .. } = recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::RoomCreated { .. })
+    })
+    .await
     else {
         panic!("Expected RoomCreated");
     };
@@ -155,8 +160,10 @@ async fn test_join_room_notifies_both_clients() {
     .await;
 
     // Bob receives PlayerJoined confirmation
-    let bob_msg =
-        recv_where(&mut bob, |m| matches!(m, ServerMessage::PlayerJoined { .. })).await;
+    let bob_msg = recv_where(&mut bob, |m| {
+        matches!(m, ServerMessage::PlayerJoined { .. })
+    })
+    .await;
     let ServerMessage::PlayerJoined {
         player_id: bob_id,
         player_name,
@@ -169,8 +176,10 @@ async fn test_join_room_notifies_both_clients() {
     assert_eq!(player_name, "Bob");
 
     // Alice receives the PlayerJoined broadcast
-    let alice_msg =
-        recv_where(&mut alice, |m| matches!(m, ServerMessage::PlayerJoined { .. })).await;
+    let alice_msg = recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::PlayerJoined { .. })
+    })
+    .await;
     let ServerMessage::PlayerJoined { player_id, .. } = alice_msg else {
         panic!("Expected PlayerJoined broadcast on Alice's connection");
     };
@@ -196,7 +205,10 @@ async fn test_full_lobby_to_game_flow() {
     let ServerMessage::RoomCreated {
         room_id,
         player_id: alice_id,
-    } = recv_where(&mut alice, |m| matches!(m, ServerMessage::RoomCreated { .. })).await
+    } = recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::RoomCreated { .. })
+    })
+    .await
     else {
         panic!("Expected RoomCreated");
     };
@@ -212,7 +224,10 @@ async fn test_full_lobby_to_game_flow() {
     .await;
     let ServerMessage::PlayerJoined {
         player_id: bob_id, ..
-    } = recv_where(&mut bob, |m| matches!(m, ServerMessage::PlayerJoined { .. })).await
+    } = recv_where(&mut bob, |m| {
+        matches!(m, ServerMessage::PlayerJoined { .. })
+    })
+    .await
     else {
         panic!("Expected PlayerJoined");
     };
@@ -231,7 +246,10 @@ async fn test_full_lobby_to_game_flow() {
         },
     )
     .await;
-    recv_where(&mut alice, |m| matches!(m, ServerMessage::PawnPlaced { .. })).await;
+    recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::PawnPlaced { .. })
+    })
+    .await;
 
     send(
         &mut bob,
@@ -253,12 +271,16 @@ async fn test_full_lobby_to_game_flow() {
     )
     .await;
 
-    let alice_start =
-        recv_where(&mut alice, |m| matches!(m, ServerMessage::GameStarted { .. })).await;
-    let bob_start =
-        recv_where(&mut bob, |m| matches!(m, ServerMessage::GameStarted { .. })).await;
+    let alice_start = recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::GameStarted { .. })
+    })
+    .await;
+    let bob_start = recv_where(&mut bob, |m| matches!(m, ServerMessage::GameStarted { .. })).await;
 
-    let ServerMessage::GameStarted { game: alice_game, .. } = alice_start else {
+    let ServerMessage::GameStarted {
+        game: alice_game, ..
+    } = alice_start
+    else {
         panic!("Expected GameStarted on Alice");
     };
     let ServerMessage::GameStarted { game: bob_game, .. } = bob_start else {
@@ -290,8 +312,13 @@ async fn test_tile_placement_broadcasts_state_update() {
         },
     )
     .await;
-    let ServerMessage::RoomCreated { room_id, player_id: alice_id } =
-        recv_where(&mut alice, |m| matches!(m, ServerMessage::RoomCreated { .. })).await
+    let ServerMessage::RoomCreated {
+        room_id,
+        player_id: alice_id,
+    } = recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::RoomCreated { .. })
+    })
+    .await
     else {
         panic!();
     };
@@ -304,20 +331,51 @@ async fn test_tile_placement_broadcasts_state_update() {
         },
     )
     .await;
-    let ServerMessage::PlayerJoined { player_id: bob_id, .. } =
-        recv_where(&mut bob, |m| matches!(m, ServerMessage::PlayerJoined { .. })).await
+    let ServerMessage::PlayerJoined {
+        player_id: bob_id, ..
+    } = recv_where(&mut bob, |m| {
+        matches!(m, ServerMessage::PlayerJoined { .. })
+    })
+    .await
     else {
         panic!();
     };
 
-    send(&mut alice, ClientMessage::PlacePawn { room_id: room_id.clone(), player_id: alice_id, position: PlayerPos::new(0, 2, 5) }).await;
-    recv_where(&mut alice, |m| matches!(m, ServerMessage::PawnPlaced { .. })).await;
-    send(&mut bob, ClientMessage::PlacePawn { room_id: room_id.clone(), player_id: bob_id, position: PlayerPos::new(5, 3, 0) }).await;
+    send(
+        &mut alice,
+        ClientMessage::PlacePawn {
+            room_id: room_id.clone(),
+            player_id: alice_id,
+            position: PlayerPos::new(0, 2, 5),
+        },
+    )
+    .await;
+    recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::PawnPlaced { .. })
+    })
+    .await;
+    send(
+        &mut bob,
+        ClientMessage::PlacePawn {
+            room_id: room_id.clone(),
+            player_id: bob_id,
+            position: PlayerPos::new(5, 3, 0),
+        },
+    )
+    .await;
     recv_where(&mut bob, |m| matches!(m, ServerMessage::PawnPlaced { .. })).await;
-    send(&mut alice, ClientMessage::StartGame { room_id: room_id.clone() }).await;
+    send(
+        &mut alice,
+        ClientMessage::StartGame {
+            room_id: room_id.clone(),
+        },
+    )
+    .await;
 
-    let ServerMessage::GameStarted { game, .. } =
-        recv_where(&mut alice, |m| matches!(m, ServerMessage::GameStarted { .. })).await
+    let ServerMessage::GameStarted { game, .. } = recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::GameStarted { .. })
+    })
+    .await
     else {
         panic!();
     };
@@ -348,13 +406,27 @@ async fn test_tile_placement_broadcasts_state_update() {
     .await;
 
     // Both clients should receive a GameStateUpdate
-    let alice_update =
-        recv_where(&mut alice, |m| matches!(m, ServerMessage::GameStateUpdate { .. })).await;
-    let bob_update =
-        recv_where(&mut bob, |m| matches!(m, ServerMessage::GameStateUpdate { .. })).await;
+    let alice_update = recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::GameStateUpdate { .. })
+    })
+    .await;
+    let bob_update = recv_where(&mut bob, |m| {
+        matches!(m, ServerMessage::GameStateUpdate { .. })
+    })
+    .await;
 
-    let ServerMessage::GameStateUpdate { state: alice_state, .. } = alice_update else { panic!() };
-    let ServerMessage::GameStateUpdate { state: bob_state, .. } = bob_update else { panic!() };
+    let ServerMessage::GameStateUpdate {
+        state: alice_state, ..
+    } = alice_update
+    else {
+        panic!()
+    };
+    let ServerMessage::GameStateUpdate {
+        state: bob_state, ..
+    } = bob_update
+    else {
+        panic!()
+    };
 
     // After Alice's turn, it should be Bob's turn
     assert_eq!(
@@ -371,39 +443,110 @@ async fn test_out_of_turn_placement_returns_error() {
     let mut alice = connect_client(addr).await;
     let mut bob = connect_client(addr).await;
 
-    send(&mut alice, ClientMessage::CreateRoom { room_name: "Turn Test".to_string(), creator_name: "Alice".to_string() }).await;
-    let ServerMessage::RoomCreated { room_id, player_id: alice_id } =
-        recv_where(&mut alice, |m| matches!(m, ServerMessage::RoomCreated { .. })).await
-    else { panic!() };
+    send(
+        &mut alice,
+        ClientMessage::CreateRoom {
+            room_name: "Turn Test".to_string(),
+            creator_name: "Alice".to_string(),
+        },
+    )
+    .await;
+    let ServerMessage::RoomCreated {
+        room_id,
+        player_id: alice_id,
+    } = recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::RoomCreated { .. })
+    })
+    .await
+    else {
+        panic!()
+    };
 
-    send(&mut bob, ClientMessage::JoinRoom { room_id: room_id.clone(), player_name: "Bob".to_string() }).await;
-    let ServerMessage::PlayerJoined { player_id: bob_id, .. } =
-        recv_where(&mut bob, |m| matches!(m, ServerMessage::PlayerJoined { .. })).await
-    else { panic!() };
+    send(
+        &mut bob,
+        ClientMessage::JoinRoom {
+            room_id: room_id.clone(),
+            player_name: "Bob".to_string(),
+        },
+    )
+    .await;
+    let ServerMessage::PlayerJoined {
+        player_id: bob_id, ..
+    } = recv_where(&mut bob, |m| {
+        matches!(m, ServerMessage::PlayerJoined { .. })
+    })
+    .await
+    else {
+        panic!()
+    };
 
-    send(&mut alice, ClientMessage::PlacePawn { room_id: room_id.clone(), player_id: alice_id, position: PlayerPos::new(0, 2, 5) }).await;
-    recv_where(&mut alice, |m| matches!(m, ServerMessage::PawnPlaced { .. })).await;
-    send(&mut bob, ClientMessage::PlacePawn { room_id: room_id.clone(), player_id: bob_id, position: PlayerPos::new(5, 3, 0) }).await;
+    send(
+        &mut alice,
+        ClientMessage::PlacePawn {
+            room_id: room_id.clone(),
+            player_id: alice_id,
+            position: PlayerPos::new(0, 2, 5),
+        },
+    )
+    .await;
+    recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::PawnPlaced { .. })
+    })
+    .await;
+    send(
+        &mut bob,
+        ClientMessage::PlacePawn {
+            room_id: room_id.clone(),
+            player_id: bob_id,
+            position: PlayerPos::new(5, 3, 0),
+        },
+    )
+    .await;
     recv_where(&mut bob, |m| matches!(m, ServerMessage::PawnPlaced { .. })).await;
-    send(&mut alice, ClientMessage::StartGame { room_id: room_id.clone() }).await;
+    send(
+        &mut alice,
+        ClientMessage::StartGame {
+            room_id: room_id.clone(),
+        },
+    )
+    .await;
 
     let ServerMessage::GameStarted { game, .. } =
         recv_where(&mut bob, |m| matches!(m, ServerMessage::GameStarted { .. })).await
-    else { panic!() };
-    recv_where(&mut alice, |m| matches!(m, ServerMessage::GameStarted { .. })).await;
+    else {
+        panic!()
+    };
+    recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::GameStarted { .. })
+    })
+    .await;
 
     // Bob tries to place a tile when it's Alice's turn
-    let tile = game.hands.get(&bob_id).and_then(|h| h.first()).copied()
+    let tile = game
+        .hands
+        .get(&bob_id)
+        .and_then(|h| h.first())
+        .copied()
         .expect("Bob should have tiles");
 
-    send(&mut bob, ClientMessage::PlaceTile {
-        room_id: room_id.clone(),
-        player_id: bob_id,
-        mov: Move { tile, cell: CellCoord { row: 5, col: 3 }, player_id: bob_id },
-    }).await;
+    send(
+        &mut bob,
+        ClientMessage::PlaceTile {
+            room_id: room_id.clone(),
+            player_id: bob_id,
+            mov: Move {
+                tile,
+                cell: CellCoord { row: 5, col: 3 },
+                player_id: bob_id,
+            },
+        },
+    )
+    .await;
 
     let msg = recv_where(&mut bob, |m| matches!(m, ServerMessage::Error { .. })).await;
-    let ServerMessage::Error { message } = msg else { panic!() };
+    let ServerMessage::Error { message } = msg else {
+        panic!()
+    };
     assert!(
         message.contains("Not your turn"),
         "Error should say 'Not your turn', got: {}",
@@ -418,22 +561,77 @@ async fn test_disconnect_eliminates_player_and_advances_turn() {
     let mut alice = connect_client(addr).await;
     let mut bob = connect_client(addr).await;
 
-    send(&mut alice, ClientMessage::CreateRoom { room_name: "Disconnect Test".to_string(), creator_name: "Alice".to_string() }).await;
-    let ServerMessage::RoomCreated { room_id, player_id: alice_id } =
-        recv_where(&mut alice, |m| matches!(m, ServerMessage::RoomCreated { .. })).await
-    else { panic!() };
+    send(
+        &mut alice,
+        ClientMessage::CreateRoom {
+            room_name: "Disconnect Test".to_string(),
+            creator_name: "Alice".to_string(),
+        },
+    )
+    .await;
+    let ServerMessage::RoomCreated {
+        room_id,
+        player_id: alice_id,
+    } = recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::RoomCreated { .. })
+    })
+    .await
+    else {
+        panic!()
+    };
 
-    send(&mut bob, ClientMessage::JoinRoom { room_id: room_id.clone(), player_name: "Bob".to_string() }).await;
-    let ServerMessage::PlayerJoined { player_id: bob_id, .. } =
-        recv_where(&mut bob, |m| matches!(m, ServerMessage::PlayerJoined { .. })).await
-    else { panic!() };
+    send(
+        &mut bob,
+        ClientMessage::JoinRoom {
+            room_id: room_id.clone(),
+            player_name: "Bob".to_string(),
+        },
+    )
+    .await;
+    let ServerMessage::PlayerJoined {
+        player_id: bob_id, ..
+    } = recv_where(&mut bob, |m| {
+        matches!(m, ServerMessage::PlayerJoined { .. })
+    })
+    .await
+    else {
+        panic!()
+    };
 
-    send(&mut alice, ClientMessage::PlacePawn { room_id: room_id.clone(), player_id: alice_id, position: PlayerPos::new(0, 2, 5) }).await;
-    recv_where(&mut alice, |m| matches!(m, ServerMessage::PawnPlaced { .. })).await;
-    send(&mut bob, ClientMessage::PlacePawn { room_id: room_id.clone(), player_id: bob_id, position: PlayerPos::new(5, 3, 0) }).await;
+    send(
+        &mut alice,
+        ClientMessage::PlacePawn {
+            room_id: room_id.clone(),
+            player_id: alice_id,
+            position: PlayerPos::new(0, 2, 5),
+        },
+    )
+    .await;
+    recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::PawnPlaced { .. })
+    })
+    .await;
+    send(
+        &mut bob,
+        ClientMessage::PlacePawn {
+            room_id: room_id.clone(),
+            player_id: bob_id,
+            position: PlayerPos::new(5, 3, 0),
+        },
+    )
+    .await;
     recv_where(&mut bob, |m| matches!(m, ServerMessage::PawnPlaced { .. })).await;
-    send(&mut alice, ClientMessage::StartGame { room_id: room_id.clone() }).await;
-    recv_where(&mut alice, |m| matches!(m, ServerMessage::GameStarted { .. })).await;
+    send(
+        &mut alice,
+        ClientMessage::StartGame {
+            room_id: room_id.clone(),
+        },
+    )
+    .await;
+    recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::GameStarted { .. })
+    })
+    .await;
     recv_where(&mut bob, |m| matches!(m, ServerMessage::GameStarted { .. })).await;
 
     // Alice (player 1) disconnects mid-game
@@ -444,8 +642,14 @@ async fn test_disconnect_eliminates_player_and_advances_turn() {
 
     // Verify server state: Alice should be eliminated
     let rooms = server.rooms.read().await;
-    let room = rooms.get(&room_id).expect("Room should still exist (Bob is alive)");
-    let alice_player = room.game.players.iter().find(|p| p.id == alice_id)
+    let room = rooms
+        .get(&room_id)
+        .expect("Room should still exist (Bob is alive)");
+    let alice_player = room
+        .game
+        .players
+        .iter()
+        .find(|p| p.id == alice_id)
         .expect("Alice should still be in the player list");
 
     assert!(
@@ -464,10 +668,21 @@ async fn test_last_player_disconnect_removes_room() {
     let (addr, server) = start_test_server().await;
     let mut alice = connect_client(addr).await;
 
-    send(&mut alice, ClientMessage::CreateRoom { room_name: "Cleanup Test".to_string(), creator_name: "Alice".to_string() }).await;
-    let ServerMessage::RoomCreated { room_id, .. } =
-        recv_where(&mut alice, |m| matches!(m, ServerMessage::RoomCreated { .. })).await
-    else { panic!() };
+    send(
+        &mut alice,
+        ClientMessage::CreateRoom {
+            room_name: "Cleanup Test".to_string(),
+            creator_name: "Alice".to_string(),
+        },
+    )
+    .await;
+    let ServerMessage::RoomCreated { room_id, .. } = recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::RoomCreated { .. })
+    })
+    .await
+    else {
+        panic!()
+    };
 
     // Alice disconnects
     drop(alice);

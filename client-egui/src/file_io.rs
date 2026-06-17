@@ -41,18 +41,16 @@ pub fn load_game_export() -> Option<GameExport> {
         .pick_file()
     {
         match fs::read_to_string(&path) {
-            Ok(json) => {
-                match serde_json::from_str(&json) {
-                    Ok(export) => {
-                        println!("Replay loaded from: {:?}", path);
-                        Some(export)
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to parse replay file: {}", e);
-                        None
-                    }
+            Ok(json) => match serde_json::from_str(&json) {
+                Ok(export) => {
+                    println!("Replay loaded from: {:?}", path);
+                    Some(export)
                 }
-            }
+                Err(e) => {
+                    eprintln!("Failed to parse replay file: {}", e);
+                    None
+                }
+            },
             Err(e) => {
                 eprintln!("Failed to read replay file: {}", e);
                 None
@@ -67,7 +65,7 @@ pub fn load_game_export() -> Option<GameExport> {
 #[cfg(target_arch = "wasm32")]
 pub fn save_game_export(export: &GameExport) {
     use wasm_bindgen::JsCast;
-    use web_sys::{Blob, Url, HtmlAnchorElement};
+    use web_sys::{Blob, HtmlAnchorElement, Url};
 
     // Generate filename with timestamp
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
@@ -154,9 +152,9 @@ where
     F: Fn(GameExport) + 'static,
 {
     use std::rc::Rc;
-    use wasm_bindgen::JsCast;
     use wasm_bindgen::closure::Closure;
-    use web_sys::{HtmlInputElement, FileReader, Event};
+    use wasm_bindgen::JsCast;
+    use web_sys::{Event, FileReader, HtmlInputElement};
 
     // Wrap callback in Rc so it can be shared between closures
     let callback = Rc::new(callback);
@@ -245,7 +243,9 @@ where
             let result = match reader_clone.result() {
                 Ok(result) => result,
                 Err(e) => {
-                    web_sys::console::error_1(&format!("Failed to get reader result: {:?}", e).into());
+                    web_sys::console::error_1(
+                        &format!("Failed to get reader result: {:?}", e).into(),
+                    );
                     return;
                 }
             };
@@ -264,7 +264,9 @@ where
                     callback(export);
                 }
                 Err(e) => {
-                    web_sys::console::error_1(&format!("Failed to parse replay file: {}", e).into());
+                    web_sys::console::error_1(
+                        &format!("Failed to parse replay file: {}", e).into(),
+                    );
                 }
             }
         }) as Box<dyn FnMut(_)>);

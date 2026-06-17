@@ -16,19 +16,37 @@ pub fn render(ctx: &Context, server_status: &LocalServerStatus, sender: &mpsc::S
 
             let button_width = 200.0;
 
-            if ui.add_sized([button_width, 30.0], egui::Button::new("🌐 Create Online Lobby")).clicked() {
+            if ui
+                .add_sized(
+                    [button_width, 30.0],
+                    egui::Button::new("🌐 Create Online Lobby"),
+                )
+                .clicked()
+            {
                 send_ui_message(sender, Message::ShowCreateLobbyForm);
             }
 
             ui.add_space(10.0);
 
-            if ui.add_sized([button_width, 30.0], egui::Button::new("🔗 Join Online Lobby")).clicked() {
+            if ui
+                .add_sized(
+                    [button_width, 30.0],
+                    egui::Button::new("🔗 Join Online Lobby"),
+                )
+                .clicked()
+            {
                 send_ui_message(sender, Message::ShowJoinLobbyForm);
             }
 
             ui.add_space(10.0);
 
-            if ui.add_sized([button_width, 30.0], egui::Button::new("🖥️ Start Local Server")).clicked() {
+            if ui
+                .add_sized(
+                    [button_width, 30.0],
+                    egui::Button::new("🖥️ Start Local Server"),
+                )
+                .clicked()
+            {
                 send_ui_message(sender, Message::StartLocalServer);
             }
 
@@ -45,19 +63,28 @@ pub fn render(ctx: &Context, server_status: &LocalServerStatus, sender: &mpsc::S
 
             ui.add_space(10.0);
 
-            if ui.add_sized([button_width, 30.0], egui::Button::new("🏠 Local Game")).clicked() {
+            if ui
+                .add_sized([button_width, 30.0], egui::Button::new("🏠 Local Game"))
+                .clicked()
+            {
                 send_ui_message(sender, Message::StartLobby);
             }
 
             ui.add_space(10.0);
 
-            if ui.add_sized([button_width, 30.0], egui::Button::new("🎮 Sample Game")).clicked() {
+            if ui
+                .add_sized([button_width, 30.0], egui::Button::new("🎮 Sample Game"))
+                .clicked()
+            {
                 send_ui_message(sender, Message::StartSampleGame);
             }
 
             ui.add_space(10.0);
 
-            if ui.add_sized([button_width, 30.0], egui::Button::new("📂 Load Replay")).clicked() {
+            if ui
+                .add_sized([button_width, 30.0], egui::Button::new("📂 Load Replay"))
+                .clicked()
+            {
                 send_ui_message(sender, Message::ImportReplay);
             }
         });

@@ -24,7 +24,7 @@ pub fn paint_tile_with_trails(
     tile: &Tile,
     rect: Rect,
     painter: &Painter,
-    player_paths: &HashMap<TileEndpoint, (PlayerID, Color32)>
+    player_paths: &HashMap<TileEndpoint, (PlayerID, Color32)>,
 ) {
     paint_tile_with_trails_rotation_and_alpha(tile, rect, painter, player_paths, 0.0, 1.0);
 }
@@ -34,9 +34,16 @@ pub fn paint_tile_with_trails_and_rotation(
     rect: Rect,
     painter: &Painter,
     player_paths: &HashMap<TileEndpoint, (PlayerID, Color32)>,
-    rotation_angle: f32
+    rotation_angle: f32,
 ) {
-    paint_tile_with_trails_rotation_and_alpha(tile, rect, painter, player_paths, rotation_angle, 1.0);
+    paint_tile_with_trails_rotation_and_alpha(
+        tile,
+        rect,
+        painter,
+        player_paths,
+        rotation_angle,
+        1.0,
+    );
 }
 
 pub fn paint_tile_with_trails_rotation_and_alpha(
@@ -45,21 +52,16 @@ pub fn paint_tile_with_trails_rotation_and_alpha(
     painter: &Painter,
     player_paths: &HashMap<TileEndpoint, (PlayerID, Color32)>,
     rotation_angle: f32,
-    alpha: f32
+    alpha: f32,
 ) {
     // Apply alpha to tile background
     let bg_color = Color32::from_rgba_premultiplied(
         TILE_BACKGROUND.r(),
         TILE_BACKGROUND.g(),
         TILE_BACKGROUND.b(),
-        (TILE_BACKGROUND.a() as f32 * alpha) as u8
+        (TILE_BACKGROUND.a() as f32 * alpha) as u8,
     );
-    let stroke_color = Color32::from_rgba_premultiplied(
-        80,
-        80,
-        80,
-        (255.0 * alpha) as u8
-    );
+    let stroke_color = Color32::from_rgba_premultiplied(80, 80, 80, (255.0 * alpha) as u8);
 
     // Draw tile background
     painter.rect_filled(rect, 4.0, bg_color);
@@ -80,7 +82,7 @@ pub fn paint_tile_with_trails_rotation_and_alpha(
                     player_color.r(),
                     player_color.g(),
                     player_color.b(),
-                    (180.0 * alpha) as u8
+                    (180.0 * alpha) as u8,
                 )
             } else {
                 // Apply alpha to default tile color
@@ -88,7 +90,7 @@ pub fn paint_tile_with_trails_rotation_and_alpha(
                     TRANSPARENT_WHITE.r(),
                     TRANSPARENT_WHITE.g(),
                     TRANSPARENT_WHITE.b(),
-                    (TRANSPARENT_WHITE.a() as f32 * alpha) as u8
+                    (TRANSPARENT_WHITE.a() as f32 * alpha) as u8,
                 )
             };
 
@@ -160,7 +162,11 @@ pub fn paint_tile_button_hoverlay(rect: Rect, painter: &Painter) {
     );
 }
 
-pub fn paint_tile_button_hoverlay_with_highlight(rect: Rect, painter: &Painter, highlight: Option<bool>) {
+pub fn paint_tile_button_hoverlay_with_highlight(
+    rect: Rect,
+    painter: &Painter,
+    highlight: Option<bool>,
+) {
     let to_screen = tile_to_screen_transform(rect);
     let font_size = rect.size().x / 7.;
     let radius = font_size * 0.86;
@@ -177,7 +183,11 @@ pub fn paint_tile_button_hoverlay_with_highlight(rect: Rect, painter: &Painter, 
     // Left button (counterclockwise)
     if highlight == Some(false) {
         // Highlight left button
-        painter.circle_filled(rotate_ccw_pos, radius * 1.2, Color32::from_rgba_unmultiplied(255, 255, 0, 100));
+        painter.circle_filled(
+            rotate_ccw_pos,
+            radius * 1.2,
+            Color32::from_rgba_unmultiplied(255, 255, 0, 100),
+        );
     }
     painter.circle_filled(rotate_ccw_pos, radius, Color32::BLACK);
     painter.text(
@@ -191,7 +201,11 @@ pub fn paint_tile_button_hoverlay_with_highlight(rect: Rect, painter: &Painter, 
     // Right button (clockwise)
     if highlight == Some(true) {
         // Highlight right button
-        painter.circle_filled(rotate_cw_pos, radius * 1.2, Color32::from_rgba_unmultiplied(255, 255, 0, 100));
+        painter.circle_filled(
+            rotate_cw_pos,
+            radius * 1.2,
+            Color32::from_rgba_unmultiplied(255, 255, 0, 100),
+        );
     }
     painter.circle_filled(rotate_cw_pos, radius, Color32::BLACK);
     painter.text(
@@ -207,22 +221,22 @@ pub fn tile_to_screen_transform(rect: Rect) -> RectTransform {
     let painter_proportions = rect.square_proportions();
 
     RectTransform::from_to(
-        Rect::from_min_size(Pos2::ZERO, 3.* painter_proportions),
-        rect
+        Rect::from_min_size(Pos2::ZERO, 3. * painter_proportions),
+        rect,
     )
 }
 
 /// Get the normalized position (0.0 to 1.0) of an endpoint within a tile
 pub fn endpoint_position(endpoint: TileEndpoint) -> (f32, f32) {
     match endpoint {
-        0 => (1./3., 1.),
-        1 => (2./3., 1.),
-        2 => (1., 2./3.),
-        3 => (1., 1./3.),
-        4 => (2./3., 0.),
-        5 => (1./3., 0.),
-        6 => (0., 1./3.),
-        7 => (0., 2./3.),
+        0 => (1. / 3., 1.),
+        1 => (2. / 3., 1.),
+        2 => (1., 2. / 3.),
+        3 => (1., 1. / 3.),
+        4 => (2. / 3., 0.),
+        5 => (1. / 3., 0.),
+        6 => (0., 1. / 3.),
+        7 => (0., 2. / 3.),
         _ => panic!("non existent endpoint {}", endpoint),
     }
 }
@@ -232,7 +246,7 @@ pub fn endpoint_position(endpoint: TileEndpoint) -> (f32, f32) {
 pub fn trail_to_world_coords(
     trail: &tsurust_common::trail::Trail,
     tile_size: f32,
-    board_offset: Pos2
+    board_offset: Pos2,
 ) -> Vec<(Pos2, Pos2)> {
     let mut line_segments = Vec::new();
 
@@ -247,28 +261,25 @@ pub fn trail_to_world_coords(
 
         // Convert normalized coordinates to screen coordinates
         let to_screen = |norm_x: f32, norm_y: f32| -> Pos2 {
-            Pos2::new(
-                tile_x + norm_x * tile_size,
-                tile_y + norm_y * tile_size
-            )
+            Pos2::new(tile_x + norm_x * tile_size, tile_y + norm_y * tile_size)
         };
 
         // 1. Entry tail: entry point -> inner point
         line_segments.push((
             to_screen(start_chunk[0].0, start_chunk[0].1),
-            to_screen(start_chunk[1].0, start_chunk[1].1)
+            to_screen(start_chunk[1].0, start_chunk[1].1),
         ));
 
         // 2. Middle segment: inner point -> inner point
         line_segments.push((
             to_screen(start_chunk[1].0, start_chunk[1].1),
-            to_screen(end_chunk[1].0, end_chunk[1].1)
+            to_screen(end_chunk[1].0, end_chunk[1].1),
         ));
 
         // 3. Exit tail: inner point -> exit point
         line_segments.push((
             to_screen(end_chunk[1].0, end_chunk[1].1),
-            to_screen(end_chunk[0].0, end_chunk[0].1)
+            to_screen(end_chunk[0].0, end_chunk[0].1),
         ));
     }
 
@@ -278,14 +289,14 @@ pub fn trail_to_world_coords(
 /// Get segment tail points in normalized 0-1 coordinates
 fn segment_tail_normalized(endpoint: TileEndpoint) -> [(f32, f32); 2] {
     match endpoint {
-        0 => [(1./3., 1.), (1./3., 5./6.)],      // Bottom left
-        1 => [(2./3., 1.), (2./3., 5./6.)],      // Bottom right
-        2 => [(1., 2./3.), (5./6., 2./3.)],      // Right top
-        3 => [(1., 1./3.), (5./6., 1./3.)],      // Right bottom
-        4 => [(2./3., 0.), (2./3., 1./6.)],      // Top right
-        5 => [(1./3., 0.), (1./3., 1./6.)],      // Top left
-        6 => [(0., 1./3.), (1./6., 1./3.)],      // Left bottom
-        7 => [(0., 2./3.), (1./6., 2./3.)],      // Left top
+        0 => [(1. / 3., 1.), (1. / 3., 5. / 6.)], // Bottom left
+        1 => [(2. / 3., 1.), (2. / 3., 5. / 6.)], // Bottom right
+        2 => [(1., 2. / 3.), (5. / 6., 2. / 3.)], // Right top
+        3 => [(1., 1. / 3.), (5. / 6., 1. / 3.)], // Right bottom
+        4 => [(2. / 3., 0.), (2. / 3., 1. / 6.)], // Top right
+        5 => [(1. / 3., 0.), (1. / 3., 1. / 6.)], // Top left
+        6 => [(0., 1. / 3.), (1. / 6., 1. / 3.)], // Left bottom
+        7 => [(0., 2. / 3.), (1. / 6., 2. / 3.)], // Left top
         _ => panic!("non existent endpoint {}", endpoint),
     }
 }

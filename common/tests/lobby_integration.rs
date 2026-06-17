@@ -1,5 +1,5 @@
-use tsurust_common::lobby::*;
 use tsurust_common::board::PlayerPos;
+use tsurust_common::lobby::*;
 
 #[test]
 fn test_full_lobby_to_game_flow() {
@@ -8,10 +8,12 @@ fn test_full_lobby_to_game_flow() {
 
     // Add players
     for i in 1..=4 {
-        lobby.handle_event(LobbyEvent::PlayerJoined {
-            player_id: i,
-            player_name: format!("Player{}", i),
-        }).unwrap();
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: i,
+                player_name: format!("Player{}", i),
+            })
+            .unwrap();
     }
 
     // Place pawns on different edges
@@ -23,10 +25,12 @@ fn test_full_lobby_to_game_flow() {
     ];
 
     for (i, &pos) in positions.iter().enumerate() {
-        lobby.handle_event(LobbyEvent::PawnPlaced {
-            player_id: i + 1,
-            position: pos,
-        }).unwrap();
+        lobby
+            .handle_event(LobbyEvent::PawnPlaced {
+                player_id: i + 1,
+                position: pos,
+            })
+            .unwrap();
     }
 
     // Start game
@@ -61,27 +65,35 @@ fn test_lobby_state_transitions() {
     assert!(!lobby.can_start());
 
     // Add two players
-    lobby.handle_event(LobbyEvent::PlayerJoined {
-        player_id: 1,
-        player_name: "Alice".to_string(),
-    }).unwrap();
-    lobby.handle_event(LobbyEvent::PlayerJoined {
-        player_id: 2,
-        player_name: "Bob".to_string(),
-    }).unwrap();
+    lobby
+        .handle_event(LobbyEvent::PlayerJoined {
+            player_id: 1,
+            player_name: "Alice".to_string(),
+        })
+        .unwrap();
+    lobby
+        .handle_event(LobbyEvent::PlayerJoined {
+            player_id: 2,
+            player_name: "Bob".to_string(),
+        })
+        .unwrap();
 
     // Still can't start without positions
     assert!(!lobby.can_start());
 
     // Place pawns
-    lobby.handle_event(LobbyEvent::PawnPlaced {
-        player_id: 1,
-        position: PlayerPos::new(0, 2, 4),
-    }).unwrap();
-    lobby.handle_event(LobbyEvent::PawnPlaced {
-        player_id: 2,
-        position: PlayerPos::new(5, 3, 0),
-    }).unwrap();
+    lobby
+        .handle_event(LobbyEvent::PawnPlaced {
+            player_id: 1,
+            position: PlayerPos::new(0, 2, 4),
+        })
+        .unwrap();
+    lobby
+        .handle_event(LobbyEvent::PawnPlaced {
+            player_id: 2,
+            position: PlayerPos::new(5, 3, 0),
+        })
+        .unwrap();
 
     // Now can start
     assert!(lobby.can_start());
@@ -101,10 +113,23 @@ fn test_error_handling_workflow() {
     lobby.max_players = 2;
 
     // Test lobby full
-    lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 1, player_name: "Alice".to_string() }).unwrap();
-    lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 2, player_name: "Bob".to_string() }).unwrap();
+    lobby
+        .handle_event(LobbyEvent::PlayerJoined {
+            player_id: 1,
+            player_name: "Alice".to_string(),
+        })
+        .unwrap();
+    lobby
+        .handle_event(LobbyEvent::PlayerJoined {
+            player_id: 2,
+            player_name: "Bob".to_string(),
+        })
+        .unwrap();
 
-    let result = lobby.handle_event(LobbyEvent::PlayerJoined { player_id: 3, player_name: "Charlie".to_string() });
+    let result = lobby.handle_event(LobbyEvent::PlayerJoined {
+        player_id: 3,
+        player_name: "Charlie".to_string(),
+    });
     assert!(matches!(result, Err(LobbyError::LobbyFull)));
 
     // Test invalid position
@@ -116,9 +141,17 @@ fn test_error_handling_workflow() {
 
     // Test position conflict
     let edge_pos = PlayerPos::new(0, 2, 4);
-    lobby.handle_event(LobbyEvent::PawnPlaced { player_id: 1, position: edge_pos }).unwrap();
+    lobby
+        .handle_event(LobbyEvent::PawnPlaced {
+            player_id: 1,
+            position: edge_pos,
+        })
+        .unwrap();
 
-    let result = lobby.handle_event(LobbyEvent::PawnPlaced { player_id: 2, position: edge_pos });
+    let result = lobby.handle_event(LobbyEvent::PawnPlaced {
+        player_id: 2,
+        position: edge_pos,
+    });
     assert!(matches!(result, Err(LobbyError::PositionTaken)));
 
     // Test starting when not ready

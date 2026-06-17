@@ -14,7 +14,9 @@ use crate::messaging::send_ui_message;
 fn copy_to_clipboard(text: &str) {
     use wasm_bindgen::prelude::*;
 
-    #[wasm_bindgen(inline_js = "export function copy_to_clipboard_js(text) { navigator.clipboard.writeText(text); }")]
+    #[wasm_bindgen(
+        inline_js = "export function copy_to_clipboard_js(text) { navigator.clipboard.writeText(text); }"
+    )]
     extern "C" {
         fn copy_to_clipboard_js(text: &str);
     }
@@ -32,13 +34,21 @@ fn copy_to_clipboard(_text: &str) {
 fn render_player_color_circle(ui: &mut egui::Ui, color: (u8, u8, u8), radius: f32) {
     let player_color_ui = egui::Color32::from_rgb(color.0, color.1, color.2);
     let circle_center = ui.cursor().min + egui::Vec2::new(radius + 4.0, radius + 4.0);
-    ui.painter().circle_filled(circle_center, radius, player_color_ui);
-    ui.painter().circle_stroke(circle_center, radius, (1.0, egui::Color32::WHITE));
+    ui.painter()
+        .circle_filled(circle_center, radius, player_color_ui);
+    ui.painter()
+        .circle_stroke(circle_center, radius, (1.0, egui::Color32::WHITE));
     ui.add_space(radius * 2.0 + 8.0);
 }
 
 /// Render the top panel with lobby information
-fn render_lobby_top_panel(ctx: &Context, lobby: &Lobby, show_start_button: bool, is_online: bool, sender: &mpsc::Sender<Message>) {
+fn render_lobby_top_panel(
+    ctx: &Context,
+    lobby: &Lobby,
+    show_start_button: bool,
+    is_online: bool,
+    sender: &mpsc::Sender<Message>,
+) {
     egui::TopBottomPanel::top("top_panel")
         .resizable(true)
         .min_height(32.0)
@@ -69,7 +79,11 @@ fn render_lobby_top_panel(ctx: &Context, lobby: &Lobby, show_start_button: bool,
                     ui.separator();
                 }
 
-                ui.label(format!("Players: {}/{}", lobby.players.len(), lobby.max_players));
+                ui.label(format!(
+                    "Players: {}/{}",
+                    lobby.players.len(),
+                    lobby.max_players
+                ));
 
                 if show_start_button {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -87,7 +101,12 @@ fn render_lobby_top_panel(ctx: &Context, lobby: &Lobby, show_start_button: bool,
 }
 
 /// Render the player list in the side panel
-fn render_player_list(ui: &mut egui::Ui, lobby: &Lobby, current_player_id: PlayerID, placing_for_id: Option<PlayerID>) {
+fn render_player_list(
+    ui: &mut egui::Ui,
+    lobby: &Lobby,
+    current_player_id: PlayerID,
+    placing_for_id: Option<PlayerID>,
+) {
     for (player_id, lobby_player) in &lobby.players {
         ui.horizontal(|ui| {
             render_player_color_circle(ui, lobby_player.color, 8.0);
@@ -114,7 +133,12 @@ fn render_player_list(ui: &mut egui::Ui, lobby: &Lobby, current_player_id: Playe
 }
 
 /// Render debug tools section
-fn render_debug_tools(ui: &mut egui::Ui, lobby: &Lobby, show_cycle_controls: bool, sender: &mpsc::Sender<Message>) {
+fn render_debug_tools(
+    ui: &mut egui::Ui,
+    lobby: &Lobby,
+    show_cycle_controls: bool,
+    sender: &mpsc::Sender<Message>,
+) {
     ui.separator();
     ui.heading("Debug Tools");
     ui.add_space(10.0);
@@ -151,7 +175,13 @@ fn render_debug_tools(ui: &mut egui::Ui, lobby: &Lobby, show_cycle_controls: boo
     }
 }
 
-pub fn render_lobby_ui(ctx: &Context, lobby: &mut Lobby, current_player_id: PlayerID, is_online: bool, sender: &mpsc::Sender<Message>) {
+pub fn render_lobby_ui(
+    ctx: &Context,
+    lobby: &mut Lobby,
+    current_player_id: PlayerID,
+    is_online: bool,
+    sender: &mpsc::Sender<Message>,
+) {
     render_lobby_top_panel(ctx, lobby, true, is_online, sender);
 
     egui::CentralPanel::default().show(ctx, |ui| {
@@ -185,12 +215,23 @@ pub fn render_lobby_ui(ctx: &Context, lobby: &mut Lobby, current_player_id: Play
     });
 }
 
-fn render_lobby_board(ui: &mut egui::Ui, lobby: &Lobby, current_player_id: PlayerID, sender: &mpsc::Sender<Message>) {
+fn render_lobby_board(
+    ui: &mut egui::Ui,
+    lobby: &Lobby,
+    current_player_id: PlayerID,
+    sender: &mpsc::Sender<Message>,
+) {
     let board = LobbyBoard::new(lobby, current_player_id);
     board.render(ui, 300.0, sender);
 }
 
-pub fn render_lobby_placing_ui(ctx: &Context, lobby: &mut Lobby, placing_for_id: PlayerID, is_online: bool, sender: &mpsc::Sender<Message>) {
+pub fn render_lobby_placing_ui(
+    ctx: &Context,
+    lobby: &mut Lobby,
+    placing_for_id: PlayerID,
+    is_online: bool,
+    sender: &mpsc::Sender<Message>,
+) {
     let placing_player = lobby.players.get(&placing_for_id);
     let player_name = placing_player.map(|p| p.name.as_str()).unwrap_or("Unknown");
     let player_color = placing_player.map(|p| p.color).unwrap_or((128, 128, 128));
