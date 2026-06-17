@@ -19,12 +19,10 @@
    - Add proper error handling and validation
 
 3. **Testing & Polish**
-   - **[CRITICAL]** Add integration tests for online multiplayer (tile placement, state sync)
-   - **[CRITICAL]** Add serialization tests for all protocol messages (prevent JSON key errors)
-   - Test multiple clients in same game
+   - Test 3+ clients in the same game (current integration tests cover 2)
    - Test network latency and disconnections
-   - Add reconnection logic with exponential backoff
-   - Test lobby flow (create, join, start game)
+   - Session-resume reconnection (proposals/004, Option A) — only if disconnect
+     telemetry or user reports justify it; fail-closed handling (Option B) is in place
 
 ---
 
@@ -56,8 +54,8 @@
 ## Technical Debt Log
 
 ### High Priority
-- **Serialization safety** - Add compile-time checks to prevent non-string HashMap keys in serializable structs
-  - TODO: Add tests that serialize/deserialize all protocol messages
+- **Serialization safety** - Consider compile-time checks to prevent non-string HashMap
+  keys in serializable structs (runtime round-trip tests now guard the protocol messages)
 
 ### Medium Priority
 - `common/src/lib.rs:14` - Rename TileEndpoint references to "entry point"
