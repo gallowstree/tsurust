@@ -12,8 +12,9 @@ use tokio::time::sleep;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
-use tsurust_common::board::{CellCoord, Move, PlayerPos};
-use tsurust_common::protocol::{ClientMessage, ServerMessage};
+use tsurust_common::board::{CellCoord, Move, PlayerID, PlayerPos};
+use tsurust_common::game::Game;
+use tsurust_common::protocol::{ClientMessage, RoomId, ServerMessage};
 
 use crate::handler::handle_connection;
 use crate::server::GameServer;
@@ -92,6 +93,96 @@ async fn recv_where(ws: &mut ClientWs, pred: impl Fn(&ServerMessage) -> bool) ->
             return msg;
         }
     }
+}
+
+/// Drive two clients through the full create → join → place-pawns → start flow.
+/// Returns the two connections, the room id, both player ids, and the started
+/// game state (as broadcast in GameStarted). Both clients' GameStarted messages
+/// are drained before returning.
+async fn setup_two_player_game(
+    addr: SocketAddr,
+) -> (ClientWs, ClientWs, RoomId, PlayerID, PlayerID, Game) {
+    let mut alice = connect_client(addr).await;
+    let mut bob = connect_client(addr).await;
+
+    send(
+        &mut alice,
+        ClientMessage::CreateRoom {
+            room_name: "Test Room".to_string(),
+            creator_name: "Alice".to_string(),
+        },
+    )
+    .await;
+    let ServerMessage::RoomCreated {
+        room_id,
+        player_id: alice_id,
+    } = recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::RoomCreated { .. })
+    })
+    .await
+    else {
+        panic!("Expected RoomCreated");
+    };
+
+    send(
+        &mut bob,
+        ClientMessage::JoinRoom {
+            room_id: room_id.clone(),
+            player_name: "Bob".to_string(),
+        },
+    )
+    .await;
+    let ServerMessage::PlayerJoined {
+        player_id: bob_id, ..
+    } = recv_where(&mut bob, |m| {
+        matches!(m, ServerMessage::PlayerJoined { .. })
+    })
+    .await
+    else {
+        panic!("Expected PlayerJoined");
+    };
+
+    send(
+        &mut alice,
+        ClientMessage::PlacePawn {
+            room_id: room_id.clone(),
+            player_id: alice_id,
+            position: PlayerPos::new(0, 2, 5),
+        },
+    )
+    .await;
+    recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::PawnPlaced { .. })
+    })
+    .await;
+    send(
+        &mut bob,
+        ClientMessage::PlacePawn {
+            room_id: room_id.clone(),
+            player_id: bob_id,
+            position: PlayerPos::new(5, 3, 0),
+        },
+    )
+    .await;
+    recv_where(&mut bob, |m| matches!(m, ServerMessage::PawnPlaced { .. })).await;
+
+    send(
+        &mut alice,
+        ClientMessage::StartGame {
+            room_id: room_id.clone(),
+        },
+    )
+    .await;
+    let ServerMessage::GameStarted { game, .. } = recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::GameStarted { .. })
+    })
+    .await
+    else {
+        panic!("Expected GameStarted");
+    };
+    recv_where(&mut bob, |m| matches!(m, ServerMessage::GameStarted { .. })).await;
+
+    (alice, bob, room_id, alice_id, bob_id, game)
 }
 
 // ============================================================
@@ -692,5 +783,213 @@ async fn test_last_player_disconnect_removes_room() {
     assert!(
         !rooms.contains_key(&room_id),
         "Room should be removed after last player disconnects"
+    );
+}
+
+/// Each player is dealt their own hand. Because tiles come from one shared deck
+/// drawn without replacement, the two hands must be full (3 tiles) and disjoint.
+/// Regression guard for the "both players see the same tiles" bug.
+#[tokio::test]
+async fn test_players_receive_distinct_disjoint_hands() {
+    let (_alice, _bob, _room_id, alice_id, bob_id, game) =
+        setup_two_player_game(start_test_server().await.0).await;
+
+    let alice_hand = game.hands.get(&alice_id).expect("Alice should have a hand");
+    let bob_hand = game.hands.get(&bob_id).expect("Bob should have a hand");
+
+    assert_eq!(alice_hand.len(), 3, "Alice should hold 3 tiles");
+    assert_eq!(bob_hand.len(), 3, "Bob should hold 3 tiles");
+
+    for tile in alice_hand {
+        assert!(
+            !bob_hand.contains(tile),
+            "Players must not share tiles: {:?} is in both hands",
+            tile
+        );
+    }
+}
+
+/// After a tile is placed, both clients receive a GameStateUpdate carrying the
+/// same authoritative state. Regression guard for client desync.
+#[tokio::test]
+async fn test_both_clients_observe_identical_state_after_move() {
+    let (mut alice, mut bob, room_id, alice_id, _bob_id, game) =
+        setup_two_player_game(start_test_server().await.0).await;
+
+    let tile = game
+        .hands
+        .get(&alice_id)
+        .and_then(|h| h.first())
+        .copied()
+        .expect("Alice should have a tile");
+
+    send(
+        &mut alice,
+        ClientMessage::PlaceTile {
+            room_id: room_id.clone(),
+            player_id: alice_id,
+            mov: Move {
+                tile,
+                cell: CellCoord { row: 0, col: 2 },
+                player_id: alice_id,
+            },
+        },
+    )
+    .await;
+
+    let ServerMessage::GameStateUpdate {
+        state: alice_state, ..
+    } = recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::GameStateUpdate { .. })
+    })
+    .await
+    else {
+        panic!()
+    };
+    let ServerMessage::GameStateUpdate {
+        state: bob_state, ..
+    } = recv_where(&mut bob, |m| {
+        matches!(m, ServerMessage::GameStateUpdate { .. })
+    })
+    .await
+    else {
+        panic!()
+    };
+
+    assert_eq!(
+        alice_state.board.history.len(),
+        1,
+        "exactly one tile placed"
+    );
+    assert_eq!(
+        alice_state.current_player_id, bob_state.current_player_id,
+        "both clients agree on whose turn it is"
+    );
+    assert_eq!(
+        alice_state.board.history, bob_state.board.history,
+        "both clients agree on the board"
+    );
+    assert_eq!(
+        alice_state.hands, bob_state.hands,
+        "both clients agree on all hands"
+    );
+    let positions = |g: &Game| {
+        g.players
+            .iter()
+            .map(|p| (p.id, p.pos, p.alive))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        positions(&alice_state),
+        positions(&bob_state),
+        "both clients agree on all player positions"
+    );
+}
+
+/// Two players take consecutive turns; the board history grows and both clients
+/// stay in sync across turns. Regression guard for "failing to play a tile".
+#[tokio::test]
+async fn test_consecutive_turns_keep_clients_in_sync() {
+    let (mut alice, mut bob, room_id, alice_id, bob_id, game) =
+        setup_two_player_game(start_test_server().await.0).await;
+
+    // === Alice's turn ===
+    let alice_tile = game
+        .hands
+        .get(&alice_id)
+        .and_then(|h| h.first())
+        .copied()
+        .expect("Alice should have a tile");
+    send(
+        &mut alice,
+        ClientMessage::PlaceTile {
+            room_id: room_id.clone(),
+            player_id: alice_id,
+            mov: Move {
+                tile: alice_tile,
+                cell: CellCoord { row: 0, col: 2 },
+                player_id: alice_id,
+            },
+        },
+    )
+    .await;
+    let ServerMessage::GameStateUpdate {
+        state: after_alice, ..
+    } = recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::GameStateUpdate { .. })
+    })
+    .await
+    else {
+        panic!()
+    };
+    recv_where(&mut bob, |m| {
+        matches!(m, ServerMessage::GameStateUpdate { .. })
+    })
+    .await;
+    assert_eq!(
+        after_alice.current_player_id, bob_id,
+        "turn should pass to Bob"
+    );
+
+    // === Bob's turn === (place at Bob's current cell, whatever it is now)
+    let bob_player = after_alice
+        .players
+        .iter()
+        .find(|p| p.id == bob_id)
+        .expect("Bob should be in the state");
+    assert!(bob_player.alive, "Bob should be alive for his turn");
+    let bob_cell = bob_player.pos.cell;
+    let bob_tile = after_alice
+        .hands
+        .get(&bob_id)
+        .and_then(|h| h.first())
+        .copied()
+        .expect("Bob should have a tile");
+    send(
+        &mut bob,
+        ClientMessage::PlaceTile {
+            room_id: room_id.clone(),
+            player_id: bob_id,
+            mov: Move {
+                tile: bob_tile,
+                cell: bob_cell,
+                player_id: bob_id,
+            },
+        },
+    )
+    .await;
+    let ServerMessage::GameStateUpdate {
+        state: after_bob_on_alice,
+        ..
+    } = recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::GameStateUpdate { .. })
+    })
+    .await
+    else {
+        panic!()
+    };
+    let ServerMessage::GameStateUpdate {
+        state: after_bob_on_bob,
+        ..
+    } = recv_where(&mut bob, |m| {
+        matches!(m, ServerMessage::GameStateUpdate { .. })
+    })
+    .await
+    else {
+        panic!()
+    };
+
+    assert_eq!(
+        after_bob_on_alice.board.history.len(),
+        2,
+        "two tiles placed across the two turns"
+    );
+    assert_eq!(
+        after_bob_on_alice.board.history, after_bob_on_bob.board.history,
+        "both clients agree on the board after two turns"
+    );
+    assert_eq!(
+        after_bob_on_alice.hands, after_bob_on_bob.hands,
+        "both clients agree on all hands after two turns"
     );
 }

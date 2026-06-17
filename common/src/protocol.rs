@@ -82,7 +82,28 @@ pub enum ServerMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::board::{CellCoord, Tile};
+    use crate::board::{CellCoord, Player, Tile};
+    use crate::game::Game;
+    use crate::lobby::LobbyEvent;
+
+    /// Build a two-player game that has actually had a tile played, so the
+    /// integer-keyed maps (hands, stats, player_trails, current_turn_trails) and
+    /// the board history are all populated — i.e. the shape that travels inside a
+    /// `GameStateUpdate` on the wire.
+    fn sample_mid_game() -> Game {
+        let mut game = Game::new(vec![
+            Player::new(1, PlayerPos::new(0, 2, 5)),
+            Player::new(2, PlayerPos::new(5, 3, 0)),
+        ]);
+        let tile = game.hands[&1][0];
+        game.perform_move(Move {
+            tile,
+            cell: CellCoord { row: 0, col: 2 },
+            player_id: 1,
+        })
+        .expect("placing a tile at the current player's cell should be legal");
+        game
+    }
 
     #[test]
     fn test_client_message_create_room_serialization() {
@@ -290,5 +311,226 @@ mod tests {
             }
             _ => panic!("Wrong message type after deserialization"),
         }
+    }
+
+    #[test]
+    fn test_client_message_place_pawn_serialization() {
+        let msg = ClientMessage::PlacePawn {
+            room_id: "ROOM1".to_string(),
+            player_id: 2,
+            position: PlayerPos::new(5, 3, 0),
+        };
+
+        let json = serde_json::to_string(&msg).expect("Failed to serialize");
+        let deserialized: ClientMessage =
+            serde_json::from_str(&json).expect("Failed to deserialize");
+
+        let ClientMessage::PlacePawn {
+            room_id,
+            player_id,
+            position,
+        } = deserialized
+        else {
+            panic!("Wrong message type after deserialization");
+        };
+        assert_eq!(room_id, "ROOM1");
+        assert_eq!(player_id, 2);
+        assert_eq!(position, PlayerPos::new(5, 3, 0));
+    }
+
+    #[test]
+    fn test_client_message_start_game_serialization() {
+        let msg = ClientMessage::StartGame {
+            room_id: "ROOM1".to_string(),
+        };
+
+        let json = serde_json::to_string(&msg).expect("Failed to serialize");
+        let deserialized: ClientMessage =
+            serde_json::from_str(&json).expect("Failed to deserialize");
+
+        let ClientMessage::StartGame { room_id } = deserialized else {
+            panic!("Wrong message type after deserialization");
+        };
+        assert_eq!(room_id, "ROOM1");
+    }
+
+    #[test]
+    fn test_server_message_pawn_placed_serialization() {
+        let msg = ServerMessage::PawnPlaced {
+            room_id: "ROOM1".to_string(),
+            player_id: 1,
+            position: PlayerPos::new(0, 2, 5),
+        };
+
+        let json = serde_json::to_string(&msg).expect("Failed to serialize");
+        let deserialized: ServerMessage =
+            serde_json::from_str(&json).expect("Failed to deserialize");
+
+        let ServerMessage::PawnPlaced {
+            room_id,
+            player_id,
+            position,
+        } = deserialized
+        else {
+            panic!("Wrong message type after deserialization");
+        };
+        assert_eq!(room_id, "ROOM1");
+        assert_eq!(player_id, 1);
+        assert_eq!(position, PlayerPos::new(0, 2, 5));
+    }
+
+    #[test]
+    fn test_server_message_turn_completed_serialization() {
+        // Cover every TurnResult variant. TurnResult has no PartialEq, so compare
+        // via debug formatting.
+        let results = [
+            TurnResult::TurnAdvanced {
+                turn_number: 3,
+                next_player: 2,
+                eliminated: vec![],
+            },
+            TurnResult::PlayerWins {
+                turn_number: 5,
+                winner: 1,
+                eliminated: vec![2],
+            },
+            TurnResult::Extinction {
+                turn_number: 7,
+                eliminated: vec![1, 2],
+            },
+        ];
+
+        for result in results {
+            let msg = ServerMessage::TurnCompleted {
+                room_id: "ROOM1".to_string(),
+                result: result.clone(),
+            };
+
+            let json = serde_json::to_string(&msg).expect("Failed to serialize");
+            let deserialized: ServerMessage =
+                serde_json::from_str(&json).expect("Failed to deserialize");
+
+            let ServerMessage::TurnCompleted {
+                room_id,
+                result: round_tripped,
+            } = deserialized
+            else {
+                panic!("Wrong message type after deserialization");
+            };
+            assert_eq!(room_id, "ROOM1");
+            assert_eq!(format!("{:?}", round_tripped), format!("{:?}", result));
+        }
+    }
+
+    #[test]
+    fn test_server_message_lobby_state_update_serialization() {
+        let mut lobby = Lobby::new("ROOM1".to_string(), "Test Room".to_string());
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: 1,
+                player_name: "Alice".to_string(),
+            })
+            .expect("join should succeed");
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
+                player_id: 2,
+                player_name: "Bob".to_string(),
+            })
+            .expect("join should succeed");
+        lobby
+            .handle_event(LobbyEvent::PawnPlaced {
+                player_id: 1,
+                position: PlayerPos::new(0, 2, 5),
+            })
+            .expect("pawn placement should succeed");
+
+        let msg = ServerMessage::LobbyStateUpdate {
+            room_id: "ROOM1".to_string(),
+            lobby: lobby.clone(),
+        };
+
+        let json = serde_json::to_string(&msg).expect("Failed to serialize");
+        let deserialized: ServerMessage =
+            serde_json::from_str(&json).expect("Failed to deserialize");
+
+        let ServerMessage::LobbyStateUpdate {
+            room_id,
+            lobby: round_tripped,
+        } = deserialized
+        else {
+            panic!("Wrong message type after deserialization");
+        };
+        assert_eq!(room_id, "ROOM1");
+        // The HashMap<PlayerID, LobbyPlayer> must survive the JSON round-trip.
+        assert_eq!(round_tripped.players.len(), 2);
+        assert_eq!(round_tripped.players[&1].name, "Alice");
+        assert_eq!(
+            round_tripped.players[&1].spawn_position,
+            Some(PlayerPos::new(0, 2, 5))
+        );
+        assert_eq!(round_tripped.players[&2].name, "Bob");
+        assert_eq!(round_tripped.players[&2].spawn_position, None);
+    }
+
+    #[test]
+    fn test_server_message_game_state_update_serialization() {
+        let game = sample_mid_game();
+        let msg = ServerMessage::GameStateUpdate {
+            room_id: "ROOM1".to_string(),
+            state: game.clone(),
+        };
+
+        let json = serde_json::to_string(&msg).expect("Failed to serialize");
+        let deserialized: ServerMessage =
+            serde_json::from_str(&json).expect("Failed to deserialize");
+
+        let ServerMessage::GameStateUpdate {
+            room_id,
+            state: round_tripped,
+        } = deserialized
+        else {
+            panic!("Wrong message type after deserialization");
+        };
+        assert_eq!(room_id, "ROOM1");
+        assert_eq!(round_tripped.current_player_id, game.current_player_id);
+        assert_eq!(round_tripped.board.history, game.board.history);
+        assert!(
+            !round_tripped.board.history.is_empty(),
+            "the sample game should have a move in its history"
+        );
+        // Every integer-keyed map must round-trip with all of its keys intact.
+        assert_eq!(round_tripped.hands, game.hands);
+        for id in game.hands.keys() {
+            assert!(round_tripped.stats.contains_key(id), "stats lost key {id}");
+            assert!(
+                round_tripped.player_trails.contains_key(id),
+                "player_trails lost key {id}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_server_message_game_started_serialization() {
+        let game = sample_mid_game();
+        let msg = ServerMessage::GameStarted {
+            room_id: "ROOM1".to_string(),
+            game: game.clone(),
+        };
+
+        let json = serde_json::to_string(&msg).expect("Failed to serialize");
+        let deserialized: ServerMessage =
+            serde_json::from_str(&json).expect("Failed to deserialize");
+
+        let ServerMessage::GameStarted {
+            room_id,
+            game: round_tripped,
+        } = deserialized
+        else {
+            panic!("Wrong message type after deserialization");
+        };
+        assert_eq!(room_id, "ROOM1");
+        assert_eq!(round_tripped.current_player_id, game.current_player_id);
+        assert_eq!(round_tripped.hands, game.hands);
+        assert_eq!(round_tripped.players.len(), game.players.len());
     }
 }
