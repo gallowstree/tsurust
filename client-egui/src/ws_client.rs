@@ -3,11 +3,24 @@ use ewebsock::{WsEvent, WsMessage, WsReceiver, WsSender};
 use tsurust_common::board::{Move, PlayerID, PlayerPos};
 use tsurust_common::protocol::{ClientMessage, RoomId, ServerMessage};
 
+#[derive(Debug, Clone)]
+pub enum ConnectionStatus {
+    Connecting,
+    Connected,
+    /// The socket closed or errored. The game is over for this client; there is
+    /// no automatic reconnection (see proposals/004-websocket-reconnection.md,
+    /// Option B). The UI surfaces this and routes back to the main menu.
+    Disconnected {
+        reason: String,
+    },
+}
+
 pub struct GameClient {
     ws_sender: WsSender,
     ws_receiver: WsReceiver,
     pub connected: bool,
     pending_messages: Vec<ClientMessage>,
+    pub status: ConnectionStatus,
 }
 
 impl GameClient {
@@ -21,6 +34,7 @@ impl GameClient {
             ws_receiver,
             connected: false,
             pending_messages: Vec::new(),
+            status: ConnectionStatus::Connecting,
         })
     }
 
@@ -28,7 +42,9 @@ impl GameClient {
         if !self.connected {
             #[cfg(target_arch = "wasm32")]
             {
-                web_sys::console::log_1(&format!("[WS_CLIENT] Queuing message (not connected yet): {:?}", msg).into());
+                web_sys::console::log_1(
+                    &format!("[WS_CLIENT] Queuing message (not connected yet): {:?}", msg).into(),
+                );
             }
             #[cfg(not(target_arch = "wasm32"))]
             {
@@ -38,8 +54,7 @@ impl GameClient {
             return;
         }
 
-        let json = serde_json::to_string(&msg)
-            .expect("Failed to serialize client message");
+        let json = serde_json::to_string(&msg).expect("Failed to serialize client message");
         #[cfg(target_arch = "wasm32")]
         {
             web_sys::console::log_1(&format!("[WS_CLIENT] Sending message: {}", json).into());
@@ -64,17 +79,10 @@ impl GameClient {
                         println!("[WS_CLIENT] WebSocket connection opened");
                     }
                     self.connected = true;
+                    self.status = ConnectionStatus::Connected;
 
                     // Send all queued messages
                     let pending = std::mem::take(&mut self.pending_messages);
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        web_sys::console::log_1(&format!("[WS_CLIENT] Flushing {} pending messages", pending.len()).into());
-                    }
-                    #[cfg(not(target_arch = "wasm32"))]
-                    {
-                        println!("[WS_CLIENT] Flushing {} pending messages", pending.len());
-                    }
                     for msg in pending {
                         self.send(msg);
                     }
@@ -82,20 +90,26 @@ impl GameClient {
                 WsEvent::Message(WsMessage::Text(json)) => {
                     #[cfg(target_arch = "wasm32")]
                     {
-                        web_sys::console::log_1(&format!("[WS_CLIENT] Received message: {}", json).into());
+                        web_sys::console::log_1(
+                            &format!("[WS_CLIENT] Received message: {}", json).into(),
+                        );
                     }
                     #[cfg(not(target_arch = "wasm32"))]
                     {
                         println!("[WS_CLIENT] Received message: {}", json);
                     }
                     match serde_json::from_str(&json) {
-                        Ok(msg) => {
-                            return Some(msg)
-                        },
+                        Ok(msg) => return Some(msg),
                         Err(e) => {
                             #[cfg(target_arch = "wasm32")]
                             {
-                                web_sys::console::error_1(&format!("Failed to parse server message: {}\nRaw: {}", e, json).into());
+                                web_sys::console::error_1(
+                                    &format!(
+                                        "Failed to parse server message: {}\nRaw: {}",
+                                        e, json
+                                    )
+                                    .into(),
+                                );
                             }
                             #[cfg(not(target_arch = "wasm32"))]
                             {
@@ -114,6 +128,7 @@ impl GameClient {
                     {
                         eprintln!("WebSocket error: {}", e);
                     }
+                    self.mark_disconnected(format!("connection error: {}", e));
                 }
                 WsEvent::Closed => {
                     #[cfg(target_arch = "wasm32")]
@@ -124,20 +139,25 @@ impl GameClient {
                     {
                         println!("WebSocket connection closed");
                     }
+                    self.mark_disconnected("connection closed".to_string());
                 }
-                _ => {
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        web_sys::console::log_1(&"[WS_CLIENT] Other event type".into());
-                    }
-                    #[cfg(not(target_arch = "wasm32"))]
-                    {
-                        println!("[WS_CLIENT] Other event type");
-                    }
-                }
+                _ => {}
             }
         }
         None
+    }
+
+    /// Mark the connection as permanently lost. Option B is fail-closed: there is
+    /// no reconnection, so any queued messages are dropped and the UI is expected
+    /// to route the user back to the main menu.
+    fn mark_disconnected(&mut self, reason: String) {
+        // Keep the first reason; a trailing Closed after an Error shouldn't clobber it.
+        if matches!(self.status, ConnectionStatus::Disconnected { .. }) {
+            return;
+        }
+        self.connected = false;
+        self.pending_messages.clear();
+        self.status = ConnectionStatus::Disconnected { reason };
     }
 
     pub fn create_room(&mut self, room_name: String, creator_name: String) {
@@ -155,10 +175,7 @@ impl GameClient {
     }
 
     pub fn leave_room(&mut self, room_id: RoomId, player_id: PlayerID) {
-        self.send(ClientMessage::LeaveRoom {
-            room_id,
-            player_id,
-        });
+        self.send(ClientMessage::LeaveRoom { room_id, player_id });
     }
 
     pub fn place_tile(&mut self, room_id: RoomId, player_id: PlayerID, mov: Move) {

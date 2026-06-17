@@ -10,7 +10,7 @@ use tsurust_common::lobby::{Lobby, LobbyEvent};
 use tsurust_common::protocol::{ClientMessage, ServerMessage};
 
 use crate::screens;
-use crate::ws_client::GameClient;
+use crate::ws_client::{ConnectionStatus, GameClient};
 
 // Cross-platform time support
 #[cfg(not(target_arch = "wasm32"))]
@@ -358,7 +358,7 @@ impl TemplateApp {
 impl eframe::App for TemplateApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
-        // Poll for server messages
+        // Poll for server messages from the WebSocket connection
         if let Some(client) = &mut self.game_client {
             while let Some(server_msg) = client.try_recv() {
                 Self::handle_server_message(
@@ -371,7 +371,7 @@ impl eframe::App for TemplateApp {
                 );
             }
 
-            // Request repaint if we're connected (to keep polling for messages)
+            // Keep repainting while a connection exists so messages keep flowing
             ctx.request_repaint();
         }
 
@@ -418,6 +418,31 @@ impl eframe::App for TemplateApp {
             // Update animations
             self.update_player_animations(ctx);
             self.update_tile_placement_animation(ctx);
+        }
+
+        // Fail-closed disconnect handling (see proposals/004, Option B): if the
+        // socket dropped, show a modal and route back to the main menu on confirm.
+        let disconnect_reason = self.game_client.as_ref().and_then(|c| match &c.status {
+            ConnectionStatus::Disconnected { reason } => Some(reason.clone()),
+            _ => None,
+        });
+        if let Some(reason) = disconnect_reason {
+            let mut return_to_menu = false;
+            egui::Window::new("⚠ Disconnected from server")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                .show(ctx, |ui| {
+                    ui.label(format!("Connection lost: {}", reason));
+                    ui.label("Your game has ended.");
+                    ui.add_space(8.0);
+                    if ui.button("Return to menu").clicked() {
+                        return_to_menu = true;
+                    }
+                });
+            if return_to_menu {
+                self.disconnect_and_return_to_menu();
+            }
         }
     }
 
@@ -713,6 +738,16 @@ impl TemplateApp {
                 self.app_state = AppState::MainMenu;
             }
         }
+    }
+
+    /// Tear down the WebSocket connection and return to the main menu. Used by the
+    /// fail-closed disconnect modal: there's no resume, so we drop all online state.
+    fn disconnect_and_return_to_menu(&mut self) {
+        self.game_client = None;
+        self.current_room_id = None;
+        self.player_animations.clear();
+        self.tile_placement_animation = None;
+        self.app_state = AppState::MainMenu;
     }
 
     fn handle_join_lobby(&mut self, player_name: String) {
