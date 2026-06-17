@@ -1,1 +1,0 @@
-export function copy_to_clipboard_js(text) { navigator.clipboard.writeText(text); }
