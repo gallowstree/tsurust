@@ -119,7 +119,11 @@ impl Tile {
             .into_iter()
             .map(|seg| seg.rotated(clockwise))
             .collect();
-        Tile::new(rotated_segments.into_inner().unwrap())
+        Tile::new(
+            rotated_segments
+                .into_inner()
+                .expect("rotating 4 segments always yields exactly 4 segments"),
+        )
     }
 
     /// Checks if this tile is the same as another tile, considering all rotations.
