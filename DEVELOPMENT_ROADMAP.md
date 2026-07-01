@@ -15,8 +15,7 @@
 
 2. **Server-Side Improvements**
    - Add room cleanup for abandoned games (timeout-based, currently immediate on last player leaving)
-   - Implement heartbeat/ping-pong for connection health
-   - Add proper error handling and validation
+   - Add proper error handling and validation (typed errors instead of `String`/`&'static str`)
 
 3. **Testing & Polish**
    - Test 3+ clients in the same game (current integration tests cover 2)
@@ -53,12 +52,7 @@
 
 ## Technical Debt Log
 
-### High Priority
-- **Serialization safety** - Consider compile-time checks to prevent non-string HashMap
-  keys in serializable structs (runtime round-trip tests now guard the protocol messages)
-
 ### Medium Priority
 - `common/src/lib.rs:14` - Rename TileEndpoint references to "entry point"
 - `common/src/board.rs:14` - Convert TileEndpoint from usize to enum
-- Trail system - Current tile-based approach should be replaced with TRAILS.md design
 - Unicode glyph rendering - Consider runtime detection if more rendering issues occur
