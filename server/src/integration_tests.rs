@@ -12,7 +12,7 @@ use tokio::time::sleep;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
-use tsurust_common::board::{CellCoord, Move, PlayerID, PlayerPos};
+use tsurust_common::board::{CellCoord, Move, PlayerID, PlayerPos, Tile};
 use tsurust_common::game::Game;
 use tsurust_common::protocol::{ClientMessage, RoomId, ServerMessage};
 
@@ -183,6 +183,235 @@ async fn setup_two_player_game(
     recv_where(&mut bob, |m| matches!(m, ServerMessage::GameStarted { .. })).await;
 
     (alice, bob, room_id, alice_id, bob_id, game)
+}
+
+// Distinct, valid edge spawn positions — one per player (up to four).
+const TOP: PlayerPos = PlayerPos {
+    cell: CellCoord { row: 0, col: 2 },
+    endpoint: 5,
+};
+const BOTTOM: PlayerPos = PlayerPos {
+    cell: CellCoord { row: 5, col: 3 },
+    endpoint: 0,
+};
+const LEFT: PlayerPos = PlayerPos {
+    cell: CellCoord { row: 2, col: 0 },
+    endpoint: 6,
+};
+const RIGHT: PlayerPos = PlayerPos {
+    cell: CellCoord { row: 3, col: 5 },
+    endpoint: 2,
+};
+
+/// Drive N clients through create → join → place-pawns → start. `positions`
+/// supplies one distinct edge spawn per player, and its length is the player
+/// count. Returns the connections (index `i` is `player_ids[i]`), the room id,
+/// the player ids in join order, and the started game state. Each player's own
+/// PawnPlaced is awaited so placement is committed before StartGame, and every
+/// client is drained through GameStarted before returning.
+async fn setup_n_player_game(
+    addr: SocketAddr,
+    positions: &[PlayerPos],
+) -> (Vec<ClientWs>, RoomId, Vec<PlayerID>, Game) {
+    assert!(positions.len() >= 2, "need at least two players");
+
+    let mut clients: Vec<ClientWs> = Vec::with_capacity(positions.len());
+    let mut player_ids: Vec<PlayerID> = Vec::with_capacity(positions.len());
+
+    // Creator opens the room.
+    let mut creator = connect_client(addr).await;
+    send(
+        &mut creator,
+        ClientMessage::CreateRoom {
+            room_name: "N-Player Room".to_string(),
+            creator_name: "Player1".to_string(),
+        },
+    )
+    .await;
+    let ServerMessage::RoomCreated { room_id, player_id } = recv_where(&mut creator, |m| {
+        matches!(m, ServerMessage::RoomCreated { .. })
+    })
+    .await
+    else {
+        panic!("Expected RoomCreated");
+    };
+    player_ids.push(player_id);
+    clients.push(creator);
+
+    // Remaining players join.
+    for i in 1..positions.len() {
+        let mut client = connect_client(addr).await;
+        send(
+            &mut client,
+            ClientMessage::JoinRoom {
+                room_id: room_id.clone(),
+                player_name: format!("Player{}", i + 1),
+            },
+        )
+        .await;
+        let ServerMessage::PlayerJoined { player_id, .. } = recv_where(&mut client, |m| {
+            matches!(m, ServerMessage::PlayerJoined { .. })
+        })
+        .await
+        else {
+            panic!("Expected PlayerJoined");
+        };
+        player_ids.push(player_id);
+        clients.push(client);
+    }
+
+    // Every player places their pawn. Wait for each player's *own* PawnPlaced so
+    // the placement is committed server-side before we try to start the game.
+    for i in 0..positions.len() {
+        let pid = player_ids[i];
+        send(
+            &mut clients[i],
+            ClientMessage::PlacePawn {
+                room_id: room_id.clone(),
+                player_id: pid,
+                position: positions[i],
+            },
+        )
+        .await;
+        recv_where(
+            &mut clients[i],
+            |m| matches!(m, ServerMessage::PawnPlaced { player_id, .. } if *player_id == pid),
+        )
+        .await;
+    }
+
+    // Creator starts the game; drain GameStarted (and all prior lobby traffic) on
+    // every client so no stale broadcasts remain buffered.
+    send(
+        &mut clients[0],
+        ClientMessage::StartGame {
+            room_id: room_id.clone(),
+        },
+    )
+    .await;
+    let mut game = None;
+    for client in clients.iter_mut() {
+        let ServerMessage::GameStarted { game: g, .. } =
+            recv_where(client, |m| matches!(m, ServerMessage::GameStarted { .. })).await
+        else {
+            panic!("Expected GameStarted");
+        };
+        game = Some(g);
+    }
+
+    (
+        clients,
+        room_id,
+        player_ids,
+        game.expect("at least one GameStarted"),
+    )
+}
+
+/// The board cell a player currently occupies in the given game state.
+fn player_cell(game: &Game, id: PlayerID) -> CellCoord {
+    game.players
+        .iter()
+        .find(|p| p.id == id)
+        .expect("player present in game")
+        .pos
+        .cell
+}
+
+/// The first tile in a player's hand.
+fn first_hand_tile(game: &Game, id: PlayerID) -> Tile {
+    game.hands
+        .get(&id)
+        .and_then(|hand| hand.first())
+        .copied()
+        .expect("player should have at least one tile")
+}
+
+/// Find a move for `player_id`, placed at their current cell, that keeps them on
+/// the board (does not run them off an edge), trying every hand tile in all four
+/// rotations. This makes "the placer survives their turn" deterministic despite
+/// the randomly dealt hand — a raw first tile can send a player straight off the
+/// edge. Panics if no surviving move exists (not expected from a fresh spawn).
+fn find_surviving_move(game: &Game, player_id: PlayerID) -> Move {
+    let start = game
+        .players
+        .iter()
+        .find(|p| p.id == player_id)
+        .expect("player present in game")
+        .pos;
+    let cell = start.cell;
+    for tile in game.hands.get(&player_id).expect("player has a hand") {
+        let mut candidate = *tile;
+        for _ in 0..4 {
+            let mut board = game.board.clone();
+            board.place_tile(Move {
+                tile: candidate,
+                cell,
+                player_id,
+            });
+            if !board.traverse_from(start).end_pos.on_edge() {
+                return Move {
+                    tile: candidate,
+                    cell,
+                    player_id,
+                };
+            }
+            candidate = candidate.rotated(true);
+        }
+    }
+    panic!("no surviving move found for player {player_id}");
+}
+
+/// Receive, from every client in order, the next GameStateUpdate whose state
+/// satisfies `accept`. The predicate lets callers skip stale updates (e.g. an
+/// earlier disconnect broadcast) and wait for the one they care about.
+async fn collect_states(
+    clients: &mut [ClientWs],
+    accept: impl Fn(&Game) -> bool + Copy,
+) -> Vec<Game> {
+    let mut states = Vec::with_capacity(clients.len());
+    for client in clients.iter_mut() {
+        let state = loop {
+            let ServerMessage::GameStateUpdate { state, .. } = recv_where(client, |m| {
+                matches!(m, ServerMessage::GameStateUpdate { .. })
+            })
+            .await
+            else {
+                unreachable!("recv_where matched GameStateUpdate")
+            };
+            if accept(&state) {
+                break state;
+            }
+        };
+        states.push(state);
+    }
+    states
+}
+
+/// Assert every client's snapshot agrees on the authoritative game fields.
+fn assert_states_agree(states: &[Game]) {
+    let positions = |g: &Game| {
+        g.players
+            .iter()
+            .map(|p| (p.id, p.pos, p.alive))
+            .collect::<Vec<_>>()
+    };
+    let first = &states[0];
+    for other in &states[1..] {
+        assert_eq!(
+            other.current_player_id, first.current_player_id,
+            "clients disagree on current player"
+        );
+        assert_eq!(
+            other.board.history, first.board.history,
+            "clients disagree on board history"
+        );
+        assert_eq!(other.hands, first.hands, "clients disagree on hands");
+        assert_eq!(
+            positions(other),
+            positions(first),
+            "clients disagree on player positions"
+        );
+    }
 }
 
 // ============================================================
@@ -474,24 +703,16 @@ async fn test_tile_placement_broadcasts_state_update() {
     recv_where(&mut bob, |m| matches!(m, ServerMessage::GameStarted { .. })).await;
 
     // === Place a tile ===
-    // Use whatever tile is actually in Alice's hand (first tile)
-    let tile = game
-        .hands
-        .get(&alice_id)
-        .and_then(|h| h.first())
-        .copied()
-        .expect("Alice should have tiles in hand");
+    // Choose a tile that keeps Alice on the board, so the turn deterministically
+    // advances to Bob (a random hand tile can run her off the top edge).
+    let mov = find_surviving_move(&game, alice_id);
 
     send(
         &mut alice,
         ClientMessage::PlaceTile {
             room_id: room_id.clone(),
             player_id: alice_id,
-            mov: Move {
-                tile,
-                cell: CellCoord { row: 0, col: 2 }, // Alice starts at (0,2)
-                player_id: alice_id,
-            },
+            mov,
         },
     )
     .await;
@@ -893,23 +1114,14 @@ async fn test_consecutive_turns_keep_clients_in_sync() {
     let (mut alice, mut bob, room_id, alice_id, bob_id, game) =
         setup_two_player_game(start_test_server().await.0).await;
 
-    // === Alice's turn ===
-    let alice_tile = game
-        .hands
-        .get(&alice_id)
-        .and_then(|h| h.first())
-        .copied()
-        .expect("Alice should have a tile");
+    // === Alice's turn === (pick a surviving tile so the turn passes to Bob)
+    let alice_mov = find_surviving_move(&game, alice_id);
     send(
         &mut alice,
         ClientMessage::PlaceTile {
             room_id: room_id.clone(),
             player_id: alice_id,
-            mov: Move {
-                tile: alice_tile,
-                cell: CellCoord { row: 0, col: 2 },
-                player_id: alice_id,
-            },
+            mov: alice_mov,
         },
     )
     .await;
@@ -991,5 +1203,176 @@ async fn test_consecutive_turns_keep_clients_in_sync() {
     assert_eq!(
         after_bob_on_alice.hands, after_bob_on_bob.hands,
         "both clients agree on all hands after two turns"
+    );
+}
+
+/// Three players each receive a full hand of three tiles and no tile appears in
+/// more than one hand. Extends the two-player disjoint-hands guard to three.
+#[tokio::test]
+async fn test_three_players_receive_distinct_disjoint_hands() {
+    let (addr, _server) = start_test_server().await;
+    let (_clients, _room_id, ids, game) = setup_n_player_game(addr, &[TOP, BOTTOM, LEFT]).await;
+
+    for id in &ids {
+        assert_eq!(
+            game.hands.get(id).expect("player has a hand").len(),
+            3,
+            "player {id} should hold 3 tiles"
+        );
+    }
+    for i in 0..ids.len() {
+        for j in (i + 1)..ids.len() {
+            let a = &game.hands[&ids[i]];
+            let b = &game.hands[&ids[j]];
+            for tile in a {
+                assert!(
+                    !b.contains(tile),
+                    "players {} and {} share tile {:?}",
+                    ids[i],
+                    ids[j],
+                    tile
+                );
+            }
+        }
+    }
+}
+
+/// In a three-player game, after the first player moves every client observes
+/// the same authoritative state and the turn passes to the second player.
+#[tokio::test]
+async fn test_three_players_agree_on_state_after_move() {
+    let (addr, _server) = start_test_server().await;
+    let (mut clients, room_id, ids, game) = setup_n_player_game(addr, &[TOP, BOTTOM, LEFT]).await;
+
+    let current = ids[0];
+    let mov = Move {
+        tile: first_hand_tile(&game, current),
+        cell: player_cell(&game, current),
+        player_id: current,
+    };
+    send(
+        &mut clients[0],
+        ClientMessage::PlaceTile {
+            room_id: room_id.clone(),
+            player_id: current,
+            mov,
+        },
+    )
+    .await;
+
+    let states = collect_states(&mut clients, |_| true).await;
+    assert_states_agree(&states);
+    assert_eq!(states[0].board.history.len(), 1, "exactly one tile placed");
+    assert_eq!(
+        states[0].current_player_id, ids[1],
+        "turn should pass to the second player"
+    );
+}
+
+/// Four players take one turn each in join order; the current player advances
+/// 1 → 2 → 3 → 4 and all clients stay in sync at every step.
+#[tokio::test]
+async fn test_four_player_turn_order_cycles_through_players() {
+    let (addr, _server) = start_test_server().await;
+    let (mut clients, room_id, ids, game) =
+        setup_n_player_game(addr, &[TOP, BOTTOM, LEFT, RIGHT]).await;
+
+    let mut state = game;
+    for turn in 0..ids.len() {
+        let current = ids[turn];
+        assert_eq!(
+            state.current_player_id, current,
+            "expected player {current} to be current on turn {turn}"
+        );
+
+        let mov = Move {
+            tile: first_hand_tile(&state, current),
+            cell: player_cell(&state, current),
+            player_id: current,
+        };
+        send(
+            &mut clients[turn],
+            ClientMessage::PlaceTile {
+                room_id: room_id.clone(),
+                player_id: current,
+                mov,
+            },
+        )
+        .await;
+
+        let states = collect_states(&mut clients, |_| true).await;
+        assert_states_agree(&states);
+        assert_eq!(
+            states[0].board.history.len(),
+            turn + 1,
+            "one tile placed per turn"
+        );
+        state = states.into_iter().next().expect("a state per client");
+    }
+
+    assert_eq!(
+        state.board.history.len(),
+        4,
+        "four tiles placed across four turns"
+    );
+}
+
+/// When a player disconnects mid-game, the turn order skips the eliminated
+/// player: with player 2 gone, play advances from player 1 straight to player 3.
+#[tokio::test]
+async fn test_disconnected_player_is_skipped_in_turn_order() {
+    let (addr, server) = start_test_server().await;
+    let (mut clients, room_id, ids, game) =
+        setup_n_player_game(addr, &[TOP, BOTTOM, LEFT, RIGHT]).await;
+
+    // Player 2 (not the current player) drops. `clients` is now [p1, p3, p4].
+    let player_two = clients.remove(1);
+    drop(player_two);
+    sleep(Duration::from_millis(200)).await;
+
+    {
+        let rooms = server.rooms.read().await;
+        let room = rooms.get(&room_id).expect("room should still exist");
+        let p2 = room
+            .game
+            .players
+            .iter()
+            .find(|p| p.id == ids[1])
+            .expect("player 2 still listed");
+        assert!(!p2.alive, "disconnected player 2 should be eliminated");
+    }
+
+    // Player 1 (still the current player) takes a turn.
+    let current = ids[0];
+    let mov = Move {
+        tile: first_hand_tile(&game, current),
+        cell: player_cell(&game, current),
+        player_id: current,
+    };
+    send(
+        &mut clients[0],
+        ClientMessage::PlaceTile {
+            room_id: room_id.clone(),
+            player_id: current,
+            mov,
+        },
+    )
+    .await;
+
+    // Skip the disconnect's empty-history update; take the post-move one.
+    let states = collect_states(&mut clients, |g| !g.board.history.is_empty()).await;
+    assert_states_agree(&states);
+    assert_eq!(
+        states[0].current_player_id, ids[2],
+        "turn should skip eliminated player 2 and land on player 3"
+    );
+    let p2 = states[0]
+        .players
+        .iter()
+        .find(|p| p.id == ids[1])
+        .expect("player 2 still listed");
+    assert!(
+        !p2.alive,
+        "player 2 remains eliminated in the broadcast state"
     );
 }
