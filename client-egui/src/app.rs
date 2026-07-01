@@ -22,6 +22,9 @@ use web_time::Instant;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
+/// How long a transient error toast stays visible before it auto-dismisses.
+const ERROR_TOAST_DURATION: std::time::Duration = std::time::Duration::from_secs(6);
+
 /// Get WebSocket server URL from browser configuration or use default
 #[cfg(target_arch = "wasm32")]
 fn get_websocket_url() -> String {
@@ -146,6 +149,8 @@ pub struct TemplateApp {
     player_animations: std::collections::HashMap<PlayerID, PlayerAnimation>, // Active player movement animations
     #[serde(skip)]
     tile_placement_animation: Option<TilePlacementAnimation>, // Animation for the most recently placed tile
+    #[serde(skip)]
+    last_error: Option<(String, Instant)>, // (message, shown_at) for the transient error toast
 }
 
 /// Tracks animation state for a player moving along their trail
@@ -192,6 +197,7 @@ impl Default for TemplateApp {
             game_client: None,
             current_room_id: None,
             local_server_status: LocalServerStatus::NotStarted,
+            last_error: None,
         }
     }
 }
@@ -368,6 +374,7 @@ impl eframe::App for TemplateApp {
                     &mut self.app_state,
                     &mut self.player_animations,
                     &mut self.tile_placement_animation,
+                    &mut self.last_error,
                 );
             }
 
@@ -444,6 +451,10 @@ impl eframe::App for TemplateApp {
                 self.disconnect_and_return_to_menu();
             }
         }
+
+        // Transient error toast (server errors, failed connects). Rendered last so
+        // it floats above whatever screen is active.
+        self.render_error_toast(ctx);
     }
 
     /// Called by the framework to save state before shutdown.
@@ -511,6 +522,7 @@ impl TemplateApp {
         app_state: &mut AppState,
         player_animations: &mut std::collections::HashMap<PlayerID, PlayerAnimation>,
         tile_placement_animation: &mut Option<TilePlacementAnimation>,
+        last_error: &mut Option<(String, Instant)>,
     ) {
         println!("[SERVER->CLIENT] Received: {:?}", server_msg);
         match server_msg {
@@ -587,6 +599,8 @@ impl TemplateApp {
                 {
                     *waiting_for_server = false;
                 }
+                // Surface the error to the player via a transient toast.
+                *last_error = Some((message, Instant::now()));
             }
             ServerMessage::PlayerLeft {
                 room_id: _,
@@ -693,6 +707,10 @@ impl TemplateApp {
             }
             Err(e) => {
                 eprintln!("Failed to connect to server: {}", e);
+                self.last_error = Some((
+                    format!("Couldn't connect to server: {e}. Started a local lobby instead."),
+                    Instant::now(),
+                ));
                 let (lobby, player_id) = Lobby::new_with_creator(lobby_name, player_name);
                 self.current_player_id = player_id;
                 self.app_state = AppState::Lobby(lobby);
@@ -723,8 +741,9 @@ impl TemplateApp {
             }
             Err(e) => {
                 eprintln!("Failed to connect to server: {}", e);
-                // Stay on join form so user can try again
-                // TODO: Display error message in UI
+                // Stay on the join form so the user can retry; surface the failure.
+                self.last_error =
+                    Some((format!("Couldn't connect to server: {e}"), Instant::now()));
             }
         }
     }
@@ -737,6 +756,48 @@ impl TemplateApp {
             _ => {
                 self.app_state = AppState::MainMenu;
             }
+        }
+    }
+
+    /// Render the transient error toast, if one is active. Auto-expires after
+    /// `ERROR_TOAST_DURATION` and can be dismissed early with the ✕ button.
+    fn render_error_toast(&mut self, ctx: &Context) {
+        let Some((message, shown_at)) = &self.last_error else {
+            return;
+        };
+
+        // Auto-expire once the toast has been on screen long enough.
+        let remaining = ERROR_TOAST_DURATION.checked_sub(shown_at.elapsed());
+        let Some(remaining) = remaining else {
+            self.last_error = None;
+            return;
+        };
+
+        let message = message.clone();
+        let mut dismiss = false;
+        egui::Area::new(egui::Id::new("error_toast"))
+            .anchor(egui::Align2::CENTER_BOTTOM, egui::Vec2::new(0.0, -16.0))
+            .interactable(true)
+            .show(ctx, |ui| {
+                egui::Frame::popup(ui.style())
+                    .fill(egui::Color32::from_rgb(120, 30, 30))
+                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(210, 90, 90)))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.colored_label(egui::Color32::WHITE, format!("⚠ {message}"));
+                            if ui.button("✕").on_hover_text("Dismiss").clicked() {
+                                dismiss = true;
+                            }
+                        });
+                    });
+            });
+
+        if dismiss {
+            self.last_error = None;
+        } else {
+            // Keep repainting so the toast expires on time even when the app is
+            // otherwise idle (e.g. a connect failure with no active game loop).
+            ctx.request_repaint_after(remaining);
         }
     }
 
