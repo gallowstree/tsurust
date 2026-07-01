@@ -947,4 +947,120 @@ mod tests {
         assert_eq!(rebuilt.players.len(), game.players.len());
         assert_eq!(rebuilt.board.history[0].player_id, 1);
     }
+
+    #[test]
+    fn test_turn_skips_eliminated_player() {
+        // Three players; the middle one is already out. Player 1 makes a surviving
+        // move, so the turn must jump straight to player 3, skipping player 2.
+        let mut game = Game::new(vec![
+            Player::new(1, PlayerPos::new(2, 2, 0)),
+            Player::new(2, PlayerPos::new(5, 3, 0)),
+            Player::new(3, PlayerPos::new(2, 0, 6)),
+        ]);
+        game.players[1].alive = false; // player 2 eliminated before this turn
+
+        // A straight tile at (2,2) carries player 1 from endpoint 0 into the empty
+        // interior cell (3,2), so they survive.
+        let tile = create_straight_tile();
+        game.hands
+            .get_mut(&1)
+            .expect("player 1 has a hand")
+            .push(tile);
+
+        let result = game
+            .perform_move(Move {
+                tile,
+                cell: CellCoord { row: 2, col: 2 },
+                player_id: 1,
+            })
+            .expect("player 1's move should be legal");
+
+        match result {
+            TurnResult::TurnAdvanced {
+                next_player,
+                eliminated,
+                ..
+            } => {
+                assert_eq!(next_player, 3, "turn should skip eliminated player 2");
+                assert!(eliminated.is_empty(), "player 1 should survive this move");
+            }
+            other => panic!("expected TurnAdvanced, got {:?}", other),
+        }
+        assert_eq!(game.current_player_id, 3);
+    }
+
+    #[test]
+    fn test_last_survivor_wins_when_move_eliminates_the_rest() {
+        // Players 1 and 3 are alive (player 2 already out). Player 1 drives off the
+        // top edge, leaving player 3 as the sole survivor.
+        let mut game = Game::new(vec![
+            Player::new(1, PlayerPos::new(0, 2, 5)),
+            Player::new(2, PlayerPos::new(5, 3, 0)),
+            Player::new(3, PlayerPos::new(2, 0, 6)),
+        ]);
+        game.players[1].alive = false;
+
+        // The straight tile connects endpoints 5 and 4, both on the top edge, so
+        // player 1 immediately exits the board and is eliminated.
+        let tile = create_straight_tile();
+        game.hands
+            .get_mut(&1)
+            .expect("player 1 has a hand")
+            .push(tile);
+
+        let result = game
+            .perform_move(Move {
+                tile,
+                cell: CellCoord { row: 0, col: 2 },
+                player_id: 1,
+            })
+            .expect("player 1's move should be legal");
+
+        match result {
+            TurnResult::PlayerWins {
+                winner, eliminated, ..
+            } => {
+                assert_eq!(winner, 3, "player 3 is the last one standing");
+                assert_eq!(eliminated, vec![1], "player 1 eliminated themselves");
+            }
+            other => panic!("expected PlayerWins, got {:?}", other),
+        }
+        assert!(!game.players.iter().find(|p| p.id == 1).unwrap().alive);
+    }
+
+    #[test]
+    fn test_extinction_when_final_move_eliminates_all_remaining() {
+        // Both remaining players share the top-edge cell and are driven off it by
+        // the same tile, leaving nobody alive.
+        let mut game = Game::new(vec![
+            Player::new(1, PlayerPos::new(0, 2, 5)),
+            Player::new(2, PlayerPos::new(0, 2, 4)),
+        ]);
+
+        let tile = create_straight_tile();
+        game.hands
+            .get_mut(&1)
+            .expect("player 1 has a hand")
+            .push(tile);
+
+        let result = game
+            .perform_move(Move {
+                tile,
+                cell: CellCoord { row: 0, col: 2 },
+                player_id: 1,
+            })
+            .expect("player 1's move should be legal");
+
+        match result {
+            TurnResult::Extinction { eliminated, .. } => {
+                assert_eq!(
+                    eliminated,
+                    vec![1, 2],
+                    "both players are eliminated together"
+                );
+            }
+            other => panic!("expected Extinction, got {:?}", other),
+        }
+        assert!(game.players.iter().all(|p| !p.alive));
+    }
 }
