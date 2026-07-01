@@ -18,7 +18,6 @@
    - Add proper error handling and validation (typed errors instead of `String`/`&'static str`)
 
 3. **Testing & Polish**
-   - Test 3+ clients in the same game (current integration tests cover 2)
    - Test network latency and disconnections
    - Session-resume reconnection (proposals/004, Option A) — only if disconnect
      telemetry or user reports justify it; fail-closed handling (Option B) is in place
