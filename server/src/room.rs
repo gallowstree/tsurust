@@ -140,24 +140,17 @@ impl GameRoom {
             };
             self.broadcast(lobby_update);
         } else {
-            // Game in progress: eliminate the disconnected player
-            if let Some(player) = self.game.players.iter_mut().find(|p| p.id == player_id) {
-                player.alive = false;
-            }
+            // Game in progress: same bookkeeping as an on-board elimination —
+            // hand back to deck, stats closed, turn passed in rotation order
+            self.game.eliminate_player(player_id);
 
             let alive_count = self.game.players.iter().filter(|p| p.alive).count();
             if alive_count == 0 {
                 return true; // Empty room
             }
 
-            // If it was this player's turn, advance to the next player
-            if self.game.current_player_id == player_id {
-                if let Some(next_id) = self.game.players.iter().find(|p| p.alive).map(|p| p.id) {
-                    self.game.current_player_id = next_id;
-                }
-            }
-
-            // Broadcast updated game state
+            // Broadcast updated game state; clients derive a win from
+            // is_game_over() when one player remains
             let state_update = ServerMessage::GameStateUpdate {
                 room_id: self.id.clone(),
                 state: self.game.clone(),

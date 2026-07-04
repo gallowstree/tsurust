@@ -380,6 +380,40 @@ impl Game {
         }
     }
 
+    /// Remove a player from active play outside of a normal move (disconnect,
+    /// forfeit). Mirrors the bookkeeping of an on-board elimination: the player
+    /// is marked dead, their stats are closed out, their hand returns to the
+    /// deck, and — if it was their turn — the turn passes to the next alive
+    /// player in rotation order.
+    /// Returns false (and does nothing) if the player is unknown or already out.
+    pub fn eliminate_player(&mut self, player_id: PlayerID) -> bool {
+        let Some(player) = self
+            .players
+            .iter_mut()
+            .find(|p| p.id == player_id && p.alive)
+        else {
+            return false;
+        };
+        player.alive = false;
+
+        if let Some(stats) = self.stats.get_mut(&player_id) {
+            stats.elimination_turn = Some(self.board.history.len());
+            stats.hand_tiles_remaining = self.hands.get(&player_id).map(|h| h.len()).unwrap_or(0);
+        }
+
+        if let Some(hand) = self.hands.get_mut(&player_id) {
+            self.deck.put(hand);
+        }
+
+        if self.current_player_id == player_id {
+            if let Some(next_id) = self.next_active_player_id() {
+                self.current_player_id = next_id;
+            }
+        }
+
+        true
+    }
+
     fn next_active_player_id(&self) -> Option<PlayerID> {
         // Find the current player index
         if let Some(current_index) = self
@@ -1111,5 +1145,62 @@ mod tests {
             player_id: 1,
         })
         .expect("placing on the pawn's cell is legal");
+    }
+
+    #[test]
+    fn test_eliminate_current_player_passes_turn_forward_in_rotation() {
+        // Current player is 2 (mid-rotation). Eliminating them must pass the
+        // turn forward to player 3 — not back to the first alive player (1).
+        let mut game = Game::new(vec![
+            Player::new(1, PlayerPos::new(2, 2, 0)),
+            Player::new(2, PlayerPos::new(5, 3, 0)),
+            Player::new(3, PlayerPos::new(2, 0, 6)),
+        ]);
+        game.current_player_id = 2;
+        let deck_before = game.deck.remaining();
+
+        assert!(game.eliminate_player(2));
+
+        assert!(!game.players[1].alive, "player 2 is out");
+        assert_eq!(
+            game.current_player_id, 3,
+            "turn continues forward in rotation, not back to player 1"
+        );
+        assert_eq!(
+            game.deck.remaining(),
+            deck_before + 3,
+            "the eliminated player's hand returns to the deck"
+        );
+        assert!(game.hands[&2].is_empty(), "hand is emptied");
+        assert_eq!(game.stats[&2].elimination_turn, Some(0));
+        assert_eq!(game.stats[&2].hand_tiles_remaining, 3);
+
+        // Eliminating an already-dead or unknown player is a no-op.
+        assert!(!game.eliminate_player(2));
+        assert!(!game.eliminate_player(99));
+        assert_eq!(game.current_player_id, 3);
+    }
+
+    #[test]
+    fn test_eliminate_non_current_player_leaves_turn_untouched() {
+        let mut game = Game::new(vec![
+            Player::new(1, PlayerPos::new(2, 2, 0)),
+            Player::new(2, PlayerPos::new(5, 3, 0)),
+            Player::new(3, PlayerPos::new(2, 0, 6)),
+        ]);
+        assert_eq!(game.current_player_id, 1);
+
+        assert!(game.eliminate_player(3));
+
+        assert_eq!(game.current_player_id, 1, "turn stays with player 1");
+        assert!(!game.players[2].alive);
+        assert!(
+            !game.is_game_over(),
+            "two players remain, the game continues"
+        );
+
+        // Eliminating one of the two survivors ends the game.
+        assert!(game.eliminate_player(2));
+        assert!(game.is_game_over(), "one player left means game over");
     }
 }

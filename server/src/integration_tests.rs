@@ -1377,6 +1377,59 @@ async fn test_disconnected_player_is_skipped_in_turn_order() {
     );
 }
 
+/// When the *current* player disconnects, the turn passes forward in rotation
+/// order (player 2 out → player 3 up), not back to the first alive player, and
+/// the disconnected player's hand is returned to the deck like any elimination.
+#[tokio::test]
+async fn test_current_player_disconnect_passes_turn_in_rotation_order() {
+    let (addr, server) = start_test_server().await;
+    let (mut clients, room_id, ids, game) = setup_n_player_game(addr, &[TOP, BOTTOM, LEFT]).await;
+
+    // Player 1 takes a surviving turn so player 2 becomes the current player.
+    let mov = find_surviving_move(&game, ids[0]);
+    send(
+        &mut clients[0],
+        ClientMessage::PlaceTile {
+            room_id: room_id.clone(),
+            player_id: ids[0],
+            mov,
+        },
+    )
+    .await;
+    let states = collect_states(&mut clients, |g| !g.board.history.is_empty()).await;
+    assert_eq!(
+        states[0].current_player_id, ids[1],
+        "player 2 should be current before the disconnect"
+    );
+
+    // Player 2 — the current player — disconnects.
+    let player_two = clients.remove(1);
+    drop(player_two);
+    sleep(Duration::from_millis(200)).await;
+
+    let rooms = server.rooms.read().await;
+    let room = rooms.get(&room_id).expect("room should still exist");
+    assert_eq!(
+        room.game.current_player_id, ids[2],
+        "turn should pass forward to player 3, not back to player 1"
+    );
+    let p2_hand = room
+        .game
+        .hands
+        .get(&ids[1])
+        .expect("player 2 still has a hand entry");
+    assert!(
+        p2_hand.is_empty(),
+        "player 2's hand should return to the deck on disconnect"
+    );
+    let p2_stats = room.game.stats.get(&ids[1]).expect("player 2 has stats");
+    assert_eq!(
+        p2_stats.elimination_turn,
+        Some(1),
+        "the disconnect elimination is recorded in stats"
+    );
+}
+
 /// A connection cannot act as another player: Bob claims Alice's player_id on
 /// a move that would be legal had Alice sent it herself, and gets an Error.
 #[tokio::test]

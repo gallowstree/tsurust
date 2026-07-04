@@ -13,12 +13,7 @@
    - Online lobby buttons clarified with "Online" prefix
    - Maintain sample game for quick testing
 
-2. **Server Authority & Rule Enforcement** (see proposals/005)
-   - Add `Game::eliminate_player(id)` in `common` and use it for in-game
-     disconnects: fixes turn advancing to first-alive instead of next-in-rotation,
-     hand not returned to deck, missing stats, and missing win-check
-
-3. **Server-Side Improvements**
+2. **Server-Side Improvements**
    - Add room cleanup for abandoned games (timeout-based, currently immediate on last player leaving)
    - Add proper error handling and validation (typed errors instead of `String`/`&'static str`)
    - Remove hand-content debug prints from server logs (`room.rs`, `handler.rs`
@@ -30,7 +25,7 @@
    - Refactor `GameRoom`'s dual state (placeholder `Game` + `Option<Lobby>`,
      player lists kept in sync by hand) into `enum RoomPhase { Lobby, Playing }`
 
-4. **Testing & Polish**
+3. **Testing & Polish**
    - Test network latency and disconnections
    - Session-resume reconnection (proposals/004, Option A) — only if disconnect
      telemetry or user reports justify it; fail-closed handling (Option B) is in place
