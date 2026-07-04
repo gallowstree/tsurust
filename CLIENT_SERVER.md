@@ -301,6 +301,32 @@ Using `tokio::sync::broadcast` for room updates:
 - **Non-blocking**: Slow clients don't block fast ones
 - **Backpressure**: Lagging clients get errors and can resync
 
+### Trust Model & Hidden Information (decided 2026-07)
+
+`GameStateUpdate`/`GameStarted` broadcast the full `Game` — including every
+player's hand and the deck order — to every client in the room. The honest
+client only renders the viewer's own hand, but any client inspecting the wire
+(browser devtools is enough) can read opponents' hands and upcoming draws.
+
+**Decision: accepted for the current trust model.** Online play targets small
+groups of people who know each other; the in-game advantage from peeking is
+modest in Tsuro; and fixing it properly touches the protocol and the client.
+This is a *documented limitation*, not an endorsement — the server otherwise
+enforces all rules (turn order, identity, placement, phase).
+
+**When online play grows beyond trusted groups**, implement per-connection
+redacted views (design agreed, queued in DEVELOPMENT_ROADMAP.md):
+1. `Game::view_for(viewer: PlayerID) -> Game` in `common` — other players'
+   hands emptied, deck emptied (reuse `Game::export`'s filtering logic).
+2. Redact at the connection boundary in `handler.rs`: the broadcast channel
+   stays server-internal and carries full state; each connection task applies
+   `view_for(current_player_id)` to `GameStateUpdate`/`GameStarted` (and the
+   `GetGameState` response) before serializing to its client.
+3. Add `hand_counts: HashMap<PlayerID, usize>` and `deck_count: usize` to
+   those messages so the UI can keep showing opponents' tile counts.
+4. Rework the state-sync integration tests: the invariant becomes "each client
+   sees its own hand and everyone's counts", not "all clients see all hands".
+
 ## Connection Lifecycle
 
 ### 1. Client Connects
