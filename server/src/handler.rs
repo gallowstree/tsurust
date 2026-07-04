@@ -23,8 +23,9 @@ pub async fn handle_connection(
     let mut update_rx: Option<broadcast::Receiver<ServerMessage>> = None;
     let mut current_room: Option<RoomId> = None;
     let mut current_player_id: Option<PlayerID> = None;
-    let mut ping_interval = time::interval(PING_INTERVAL);
-    ping_interval.tick().await; // consume the immediate first tick
+    // Heartbeat: ping every PING_INTERVAL; after a ping, the deadline shortens
+    // to PING_TIMEOUT and a pong stretches it back to PING_INTERVAL
+    let mut ping_deadline = time::Instant::now() + PING_INTERVAL;
     let mut waiting_for_pong = false;
 
     loop {
@@ -38,6 +39,7 @@ pub async fn handle_connection(
                     }
                     Some(Ok(Message::Pong(_))) => {
                         waiting_for_pong = false;
+                        ping_deadline = time::Instant::now() + PING_INTERVAL;
                     }
                     Some(Ok(msg)) => {
                         if let Err(e) = handle_client_message(
@@ -92,7 +94,7 @@ pub async fn handle_connection(
             }
 
             // Send periodic pings; close connection if pong not received
-            _ = ping_interval.tick() => {
+            _ = time::sleep_until(ping_deadline) => {
                 if waiting_for_pong {
                     eprintln!(
                         "Connection {} timed out (no pong in {}s), closing",
@@ -105,9 +107,7 @@ pub async fn handle_connection(
                     break;
                 }
                 waiting_for_pong = true;
-                // Reset interval to PING_TIMEOUT so we detect the missing pong promptly
-                ping_interval = time::interval(PING_TIMEOUT);
-                ping_interval.tick().await; // consume immediate tick
+                ping_deadline = time::Instant::now() + PING_TIMEOUT;
             }
         }
     }
