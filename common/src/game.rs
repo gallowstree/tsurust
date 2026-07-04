@@ -59,6 +59,31 @@ pub struct PlayerStats {
     pub cells_visited: std::collections::HashMap<CellCoord, usize>, // Visit count per cell (not exported)
 }
 
+/// Why a move was rejected by the engine. The `Display` text is what players
+/// ultimately see (the server forwards it in `ServerMessage::Error`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MoveError {
+    NotYourTurn,
+    PlayerNotInGame,
+    WrongCell,
+    CellOccupied,
+    TileNotInHand,
+}
+
+impl std::fmt::Display for MoveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            MoveError::NotYourTurn => "it's not this player's turn",
+            MoveError::PlayerNotInGame => "the player is not in the game or was eliminated",
+            MoveError::WrongCell => "the tile must be placed on the player's current cell",
+            MoveError::CellOccupied => "that cell already has a tile",
+            MoveError::TileNotInHand => "the player does not have this tile in hand",
+        })
+    }
+}
+
+impl std::error::Error for MoveError {}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum TurnResult {
     TurnAdvanced {
@@ -186,10 +211,10 @@ impl Game {
         self.players.iter().filter(|p| p.alive).count() <= 1
     }
 
-    pub fn perform_move(&mut self, mov: Move) -> Result<TurnResult, &'static str> {
+    pub fn perform_move(&mut self, mov: Move) -> Result<TurnResult, MoveError> {
         // Validate it's this player's turn
         if mov.player_id != self.current_player_id {
-            return Err("Not this player's turn");
+            return Err(MoveError::NotYourTurn);
         }
 
         // Basic validation
@@ -197,18 +222,18 @@ impl Game {
             .players
             .iter()
             .find(|p| p.id == mov.player_id && p.alive)
-            .ok_or("Invalid player or player is eliminated")?;
+            .ok_or(MoveError::PlayerNotInGame)?;
 
         // The tile must go on the cell the player's pawn occupies — the UI already
         // enforces this, but the engine is the authority (hand-rolled clients must
         // not be able to place tiles elsewhere on the board)
         if player.pos.cell != mov.cell {
-            return Err("Tile must be placed on the player's current cell");
+            return Err(MoveError::WrongCell);
         }
 
         // Check if cell is already occupied
         if self.board.get_tile_at(mov.cell).is_some() {
-            return Err("Cell already occupied");
+            return Err(MoveError::CellOccupied);
         }
 
         // Validate player has the tile in hand
@@ -243,7 +268,7 @@ impl Game {
         Ok(turn_result)
     }
 
-    fn deduct_tile_from_hand(&mut self, mov: Move) -> Result<(), &'static str> {
+    fn deduct_tile_from_hand(&mut self, mov: Move) -> Result<(), MoveError> {
         let hand = self
             .hands
             .get_mut(&mov.player_id)
@@ -253,7 +278,7 @@ impl Game {
             hand.remove(pos);
             Ok(())
         } else {
-            Err("Player does not have this tile in hand")
+            Err(MoveError::TileNotInHand)
         }
     }
 
@@ -549,7 +574,7 @@ impl Game {
     pub fn rebuild_from_history(
         initial_players: Vec<Player>,
         moves: &[Move],
-    ) -> Result<Game, &'static str> {
+    ) -> Result<Game, MoveError> {
         let mut game = Game::new(initial_players);
 
         for mov in moves {
@@ -1119,10 +1144,7 @@ mod tests {
                 player_id: 1,
             })
             .expect_err("placing away from the pawn must be rejected");
-        assert!(
-            err.contains("current cell"),
-            "error should explain the placement rule, got: {err}"
-        );
+        assert_eq!(err, MoveError::WrongCell);
         assert!(
             game.board.history.is_empty(),
             "rejected move must not reach the board"

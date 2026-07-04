@@ -70,7 +70,7 @@ impl GameRoom {
         // Validate and perform move
         let result = game
             .perform_move(mov)
-            .map_err(|e| format!("Invalid move: {:?}", e))?;
+            .map_err(|e| format!("Invalid move: {}", e))?;
 
         // Broadcast game state update to all clients in this room
         // This contains all information clients need (game state, current player, etc.)
@@ -100,7 +100,7 @@ impl GameRoom {
                 player_id,
                 position,
             })
-            .map_err(|e| format!("Failed to place pawn: {:?}", e))?;
+            .map_err(|e| format!("Failed to place pawn: {}", e))?;
 
         let lobby_snapshot = lobby.clone();
 
@@ -177,10 +177,10 @@ impl GameRoom {
         // success, so a failed start leaves the room in a usable lobby phase
         lobby
             .handle_event(LobbyEvent::StartGame)
-            .map_err(|e| format!("Failed to start game in lobby: {:?}", e))?;
+            .map_err(|e| format!("Failed to start game: {}", e))?;
         let game = lobby
             .to_game()
-            .map_err(|e| format!("Failed to convert lobby to game: {:?}", e))?;
+            .map_err(|e| format!("Failed to start game: {}", e))?;
 
         self.phase = RoomPhase::Playing(game.clone());
 

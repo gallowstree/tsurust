@@ -58,7 +58,7 @@ impl GameServer {
                     player_id,
                     player_name: creator_name,
                 })
-                .map_err(|e| format!("Failed to add creator to lobby: {:?}", e))?;
+                .map_err(|e| format!("Failed to add creator to lobby: {}", e))?;
         }
 
         rooms.insert(room_id.clone(), room);
@@ -90,7 +90,7 @@ impl GameServer {
                 player_id,
                 player_name: player_name.clone(),
             })
-            .map_err(|e| format!("Failed to join room '{}': {:?}", room_id, e))?;
+            .map_err(|e| format!("Failed to join room '{}': {}", room_id, e))?;
 
         let lobby_snapshot = lobby.clone();
 

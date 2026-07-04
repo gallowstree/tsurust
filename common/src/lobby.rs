@@ -242,6 +242,27 @@ pub enum LobbyError {
     NoAvailableColors,
 }
 
+/// The `Display` text is what players ultimately see (the server forwards it
+/// in `ServerMessage::Error`).
+impl std::fmt::Display for LobbyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            LobbyError::LobbyFull => "the lobby is full",
+            LobbyError::PlayerNotFound => "the player is not in this lobby",
+            LobbyError::InvalidSpawnPosition => "spawn positions must be on the board edge",
+            LobbyError::PositionTaken => "that spawn position is already taken",
+            LobbyError::NotReadyToStart => {
+                "the game needs at least 2 players and every pawn placed before starting"
+            }
+            LobbyError::GameNotStarted => "the game has not been started",
+            LobbyError::NotEnoughPlayers => "at least 2 players are needed to start",
+            LobbyError::NoAvailableColors => "no player colors are left — the lobby is full",
+        })
+    }
+}
+
+impl std::error::Error for LobbyError {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
