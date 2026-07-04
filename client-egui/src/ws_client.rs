@@ -24,9 +24,11 @@ pub struct GameClient {
 }
 
 impl GameClient {
-    pub fn connect(url: &str) -> Result<Self, String> {
+    /// Connect to the server. `wake_up` is invoked whenever a socket event
+    /// arrives so the UI can request a repaint instead of polling every frame.
+    pub fn connect(url: &str, wake_up: impl Fn() + Send + Sync + 'static) -> Result<Self, String> {
         let options = ewebsock::Options::default();
-        let (ws_sender, ws_receiver) = ewebsock::connect(url, options)
+        let (ws_sender, ws_receiver) = ewebsock::connect_with_wakeup(url, options, wake_up)
             .map_err(|e| format!("Failed to connect to {}: {}", url, e))?;
 
         Ok(Self {

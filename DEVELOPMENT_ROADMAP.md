@@ -16,8 +16,8 @@
 2. **Server-Side Improvements**
    - Add room cleanup for abandoned games (timeout-based, currently immediate on last player leaving)
    - Add proper error handling and validation (typed errors instead of `String`/`&'static str`)
-   - Remove hand-content debug prints from server logs (`room.rs`, `handler.rs`
-     dump every player's hidden hand each turn); migrate the rest to `tracing`
+   - Migrate server `println!`/`eprintln!` logging to `tracing` with leveled
+     events and room/player/connection fields
    - Decide hidden-information policy: `GameStateUpdate` broadcasts all hands to
      every client (wire-level leak; `Game::export` already has per-perspective
      filtering, the live protocol does not) — per-connection filtered sends or
@@ -72,8 +72,6 @@
   `cells_visited` records only the final cell (iterate `trail.segments` instead)
 - `server/src/handler.rs` - heartbeat pings every `PING_TIMEOUT` (10s) after the
   first cycle instead of `PING_INTERVAL` (30s); the interval swap never reverts
-- `client-egui/src/app.rs` - unconditional `request_repaint()` every frame while
-  a `game_client` exists burns CPU at max FPS; use `ewebsock::connect_with_wakeup`
 - Client tile rotations snap back on every `GameStateUpdate` (rotation mutates
   the client's copy of server state); keep a client-side rotation overlay
 - Dragon tile is half-built: `Game.dragon` is never assigned, `dragon_turns` and

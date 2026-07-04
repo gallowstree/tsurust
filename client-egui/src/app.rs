@@ -151,6 +151,8 @@ pub struct TemplateApp {
     tile_placement_animation: Option<TilePlacementAnimation>, // Animation for the most recently placed tile
     #[serde(skip)]
     last_error: Option<(String, Instant)>, // (message, shown_at) for the transient error toast
+    #[serde(skip)]
+    egui_ctx: Option<Context>, // For repaint wakeups from the WebSocket thread
 }
 
 /// Tracks animation state for a player moving along their trail
@@ -198,6 +200,7 @@ impl Default for TemplateApp {
             current_room_id: None,
             local_server_status: LocalServerStatus::NotStarted,
             last_error: None,
+            egui_ctx: None,
         }
     }
 }
@@ -205,10 +208,24 @@ impl Default for TemplateApp {
 impl TemplateApp {
     /// Called once before the first frame.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        if let Some(storage) = cc.storage {
-            return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+        let mut app: TemplateApp = cc
+            .storage
+            .and_then(|storage| eframe::get_value(storage, eframe::APP_KEY))
+            .unwrap_or_default();
+        app.egui_ctx = Some(cc.egui_ctx.clone());
+        app
+    }
+
+    /// Wakeup callback handed to the WebSocket client: request a repaint when a
+    /// socket event arrives, so `update` gets called to drain it. This replaces
+    /// polling with `request_repaint()` every frame while a connection exists.
+    fn ws_wakeup(&self) -> impl Fn() + Send + Sync + 'static {
+        let ctx = self.egui_ctx.clone();
+        move || {
+            if let Some(ctx) = &ctx {
+                ctx.request_repaint();
+            }
         }
-        Default::default()
     }
 
     fn start_player_animations(&mut self, game: &Game) {
@@ -377,9 +394,8 @@ impl eframe::App for TemplateApp {
                     &mut self.last_error,
                 );
             }
-
-            // Keep repainting while a connection exists so messages keep flowing
-            ctx.request_repaint();
+            // No polling needed here: the ws_wakeup callback requests a repaint
+            // whenever a socket event arrives.
         }
 
         // Process received UI messages
@@ -686,7 +702,7 @@ impl TemplateApp {
 
     fn handle_create_and_join_lobby(&mut self, lobby_name: String, player_name: String) {
         let ws_url = get_websocket_url();
-        match GameClient::connect(&ws_url) {
+        match GameClient::connect(&ws_url, self.ws_wakeup()) {
             Ok(client) => {
                 self.game_client = Some(client);
 
@@ -720,7 +736,7 @@ impl TemplateApp {
 
     fn handle_join_lobby_with_id(&mut self, lobby_id: String, player_name: String) {
         let ws_url = get_websocket_url();
-        match GameClient::connect(&ws_url) {
+        match GameClient::connect(&ws_url, self.ws_wakeup()) {
             Ok(client) => {
                 self.game_client = Some(client);
 
