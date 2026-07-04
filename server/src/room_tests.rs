@@ -1,4 +1,4 @@
-use crate::room::GameRoom;
+use crate::room::{GameRoom, RoomPhase};
 use tsurust_common::board::{CellCoord, Move, Player, PlayerPos, Segment, Tile};
 use tsurust_common::game::Game;
 
@@ -12,29 +12,25 @@ fn create_test_tile() -> Tile {
     ])
 }
 
-/// A room whose game is in progress: `GameRoom::new` always starts in the lobby
-/// phase, so drop the lobby the way `start_game` does.
+fn two_player_game() -> Game {
+    Game::new(vec![
+        Player::new(1, PlayerPos::new(0, 0, 4)),
+        Player::new(2, PlayerPos::new(2, 5, 2)),
+    ])
+}
+
+/// A room whose game is in progress (rooms are born in the lobby phase).
 fn in_game_room(game: Game) -> GameRoom {
-    let mut room = GameRoom::new("TEST".to_string(), "Test Room".to_string(), game);
-    room.lobby = None;
+    let mut room = GameRoom::new("TEST".to_string(), "Test Room".to_string());
+    room.phase = RoomPhase::Playing(game);
     room
 }
 
 #[test]
 fn test_place_tile_validates_turn() {
-    // Setup: Create a game with 2 players
-    let players = vec![
-        Player::new(1, PlayerPos::new(0, 0, 4)),
-        Player::new(2, PlayerPos::new(2, 5, 2)),
-    ];
-    let game = Game::new(players);
+    let game = two_player_game();
+    assert_eq!(game.current_player_id, 1);
     let mut room = in_game_room(game);
-
-    // Start the game
-    room.game.deck.take_up_to(3); // Simulate taking tiles for hands
-
-    // Player 1's turn (current_player_id should be 1)
-    assert_eq!(room.game.current_player_id, 1);
 
     // Player 2 tries to place a tile (should fail - not their turn!)
     let mov = Move {
@@ -54,16 +50,9 @@ fn test_place_tile_validates_turn() {
 
 #[test]
 fn test_place_tile_validates_move_player_id() {
-    // Setup
-    let players = vec![
-        Player::new(1, PlayerPos::new(0, 0, 4)),
-        Player::new(2, PlayerPos::new(2, 5, 2)),
-    ];
-    let game = Game::new(players);
+    let game = two_player_game();
+    assert_eq!(game.current_player_id, 1);
     let mut room = in_game_room(game);
-
-    // Player 1's turn
-    assert_eq!(room.game.current_player_id, 1);
 
     // Player 1 tries to place a tile but the Move has wrong player_id
     let mov = Move {
@@ -86,22 +75,15 @@ fn test_place_tile_validates_move_player_id() {
 
 #[test]
 fn test_place_tile_accepts_valid_move() {
-    // Setup
-    let players = vec![
-        Player::new(1, PlayerPos::new(0, 0, 4)),
-        Player::new(2, PlayerPos::new(2, 5, 2)),
-    ];
-    let game = Game::new(players);
+    let mut game = two_player_game();
+    assert_eq!(game.current_player_id, 1);
+
+    // Add tile to player 1's hand before the room takes ownership
+    let tile = create_test_tile();
+    game.hands.get_mut(&1).unwrap().push(tile);
     let mut room = in_game_room(game);
 
-    // Player 1's turn
-    assert_eq!(room.game.current_player_id, 1);
-
-    // Add tile to player 1's hand
-    let tile = create_test_tile();
-    room.game.hands.get_mut(&1).unwrap().push(tile);
-
-    // Player 1 places a valid tile
+    // Player 1 places a valid tile on their own cell
     let mov = Move {
         tile,
         cell: CellCoord { row: 0, col: 0 },
@@ -118,18 +100,11 @@ fn test_place_tile_accepts_valid_move() {
 
 #[test]
 fn test_place_tile_rejected_during_lobby_phase() {
-    let players = vec![
-        Player::new(1, PlayerPos::new(0, 0, 4)),
-        Player::new(2, PlayerPos::new(2, 5, 2)),
-    ];
-    let game = Game::new(players);
-    // GameRoom::new starts in the lobby phase — keep the lobby in place.
-    let mut room = GameRoom::new("TEST".to_string(), "Test Room".to_string(), game);
+    // Rooms are born in the lobby phase — there is no game to place tiles in.
+    let mut room = GameRoom::new("TEST".to_string(), "Test Room".to_string());
 
-    let tile = create_test_tile();
-    room.game.hands.get_mut(&1).unwrap().push(tile);
     let mov = Move {
-        tile,
+        tile: create_test_tile(),
         cell: CellCoord { row: 0, col: 0 },
         player_id: 1,
     };
@@ -143,5 +118,25 @@ fn test_place_tile_rejected_during_lobby_phase() {
     assert!(
         result.unwrap_err().contains("not started"),
         "Error message should mention the game hasn't started"
+    );
+}
+
+#[test]
+fn test_failed_start_leaves_room_joinable() {
+    // Starting with an unready lobby (no players placed) must fail — and must
+    // NOT consume the lobby, or the room would be bricked in a phantom
+    // "playing" phase with no game.
+    let mut room = GameRoom::new("TEST".to_string(), "Test Room".to_string());
+
+    let result = room.start_game();
+    assert!(result.is_err(), "an empty lobby cannot start a game");
+
+    assert!(
+        room.lobby().is_some(),
+        "the lobby must survive a failed start"
+    );
+    assert!(
+        room.place_pawn(1, PlayerPos::new(0, 2, 5)).is_err(),
+        "pawn placement still validates (player 1 never joined)"
     );
 }

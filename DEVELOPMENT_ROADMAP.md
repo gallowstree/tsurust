@@ -23,8 +23,6 @@
      Information"): `Game::view_for` in common, redaction at the connection
      boundary in `handler.rs`, `hand_counts`/`deck_count` protocol fields,
      reworked state-sync test invariants
-   - Refactor `GameRoom`'s dual state (placeholder `Game` + `Option<Lobby>`,
-     player lists kept in sync by hand) into `enum RoomPhase { Lobby, Playing }`
 
 3. **Testing & Polish**
    - Test network latency and disconnections
@@ -80,6 +78,3 @@
 - Real-Tsuro fidelity variant (draw one tile per turn + dragon-tile queue) — the
   current refill-to-3 rule is a deliberate house variant; if fidelity becomes a
   goal, implement both together as one feature (Phase 3, custom game variants)
-- `server/src/server.rs::create_room` - room-ID uniqueness checked under a read
-  lock but inserted under a later write lock; a colliding ID silently replaces an
-  existing room (use the entry API under one write lock)

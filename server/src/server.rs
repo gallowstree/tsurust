@@ -3,13 +3,12 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 
-use tsurust_common::board::{CellCoord, Player, PlayerID, PlayerPos};
-use tsurust_common::game::Game;
+use tsurust_common::board::PlayerID;
 use tsurust_common::lobby::{next_lobby_id, LobbyEvent};
 
 use tsurust_common::protocol::{RoomId, ServerMessage};
 
-use crate::room::GameRoom;
+use crate::room::{GameRoom, RoomPhase};
 
 pub type ConnectionId = usize;
 
@@ -41,41 +40,27 @@ impl GameServer {
         room_name: String,
         creator_name: String,
     ) -> Result<(RoomId, PlayerID), String> {
-        // Generate a unique short room ID
+        // Hold the write lock across generate-check-insert so two concurrent
+        // creates can't race into the same room ID
+        let mut rooms = self.rooms.write().await;
         let room_id = loop {
             let id = next_lobby_id();
-            let rooms = self.rooms.read().await;
             if !rooms.contains_key(&id) {
                 break id;
             }
         };
 
-        // Create initial player at default starting position
         let player_id = 1;
-        let start_pos = PlayerPos {
-            cell: CellCoord { row: 0, col: 0 },
-            endpoint: 0,
-        };
-        let player_color = tsurust_common::colors::get_player_color(player_id);
-        let player =
-            Player::new_with_name(player_id, creator_name.clone(), start_pos, player_color);
-
-        // Create game with single player
-        let game = Game::new(vec![player]);
-        let mut room = GameRoom::new(room_id.clone(), room_name, game);
-
-        // Add creator to lobby
-        if let Some(lobby) = &mut room.lobby {
-            if let Err(e) = lobby.handle_event(LobbyEvent::PlayerJoined {
-                player_id,
-                player_name: creator_name,
-            }) {
-                eprintln!("Failed to add creator to lobby: {:?}", e);
-            }
+        let mut room = GameRoom::new(room_id.clone(), room_name);
+        if let RoomPhase::Lobby(lobby) = &mut room.phase {
+            lobby
+                .handle_event(LobbyEvent::PlayerJoined {
+                    player_id,
+                    player_name: creator_name,
+                })
+                .map_err(|e| format!("Failed to add creator to lobby: {:?}", e))?;
         }
 
-        // Store room
-        let mut rooms = self.rooms.write().await;
         rooms.insert(room_id.clone(), room);
 
         Ok((room_id, player_id))
@@ -91,35 +76,23 @@ impl GameServer {
             .get_mut(&room_id)
             .ok_or_else(|| format!("Room '{}' not found", room_id))?;
 
-        // A started game has no lobby; joining it would add a ghost player with no
-        // hand or stats that wedges the turn rotation
-        if room.lobby.is_none() {
+        // A started game has no lobby; joining it would add a ghost player with
+        // no hand or stats that wedges the turn rotation
+        let RoomPhase::Lobby(lobby) = &mut room.phase else {
             return Err(format!("Room '{}' has already started its game", room_id));
-        }
+        };
 
         // Determine next player ID (start from 1, not 0)
-        let player_id = room.game.players.iter().map(|p| p.id).max().unwrap_or(0) + 1;
+        let player_id = lobby.players.keys().max().copied().unwrap_or(0) + 1;
 
-        // Create player at default starting position (will be customized in lobby)
-        let start_pos = PlayerPos {
-            cell: CellCoord { row: 0, col: 0 },
-            endpoint: 0,
-        };
-        let player_color = tsurust_common::colors::get_player_color(player_id);
-        let player = Player::new_with_name(player_id, player_name.clone(), start_pos, player_color);
-
-        // Add player to game
-        room.game.players.push(player);
-
-        // Add player to lobby if it exists
-        if let Some(lobby) = &mut room.lobby {
-            if let Err(e) = lobby.handle_event(LobbyEvent::PlayerJoined {
+        lobby
+            .handle_event(LobbyEvent::PlayerJoined {
                 player_id,
                 player_name: player_name.clone(),
-            }) {
-                eprintln!("Failed to add player to lobby: {:?}", e);
-            }
-        }
+            })
+            .map_err(|e| format!("Failed to join room '{}': {:?}", room_id, e))?;
+
+        let lobby_snapshot = lobby.clone();
 
         // Broadcast player joined
         let join_msg = ServerMessage::PlayerJoined {
@@ -129,21 +102,12 @@ impl GameServer {
         };
         room.broadcast(join_msg);
 
-        // Send lobby state update if lobby exists
-        if let Some(lobby) = &room.lobby {
-            let lobby_update = ServerMessage::LobbyStateUpdate {
-                room_id: room_id.clone(),
-                lobby: lobby.clone(),
-            };
-            room.broadcast(lobby_update);
-        }
-
-        // Send updated game state
-        let state_msg = ServerMessage::GameStateUpdate {
+        // Broadcast updated lobby state
+        let lobby_update = ServerMessage::LobbyStateUpdate {
             room_id: room_id.clone(),
-            state: room.game.clone(),
+            lobby: lobby_snapshot,
         };
-        room.broadcast(state_msg);
+        room.broadcast(lobby_update);
 
         Ok(player_id)
     }

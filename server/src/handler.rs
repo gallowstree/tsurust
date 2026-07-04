@@ -176,7 +176,7 @@ async fn handle_client_message(
                 *current_player_id = Some(player_id);
 
                 // Send current lobby state to the creator
-                if let Some(lobby) = &room.lobby {
+                if let Some(lobby) = room.lobby() {
                     let lobby_state = ServerMessage::LobbyStateUpdate {
                         room_id: room_id.clone(),
                         lobby: lobby.clone(),
@@ -215,7 +215,7 @@ async fn handle_client_message(
                 *current_player_id = Some(player_id);
 
                 // Send current lobby state directly to the joining player
-                if let Some(lobby) = &room.lobby {
+                if let Some(lobby) = room.lobby() {
                     let lobby_state = ServerMessage::LobbyStateUpdate {
                         room_id: room_id.clone(),
                         lobby: lobby.clone(),
@@ -279,10 +279,13 @@ async fn handle_client_message(
             let room = rooms
                 .get(&room_id)
                 .ok_or_else(|| format!("Room '{}' not found", room_id))?;
+            let game = room
+                .game()
+                .ok_or_else(|| format!("Room '{}' has not started its game", room_id))?;
 
             let response = ServerMessage::GameStateUpdate {
                 room_id: room_id.clone(),
-                state: room.game.clone(),
+                state: game.clone(),
             };
             let json = serde_json::to_string(&response)
                 .map_err(|e| format!("Failed to serialize response: {}", e))?;

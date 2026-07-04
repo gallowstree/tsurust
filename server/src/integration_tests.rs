@@ -957,8 +957,8 @@ async fn test_disconnect_eliminates_player_and_advances_turn() {
     let room = rooms
         .get(&room_id)
         .expect("Room should still exist (Bob is alive)");
-    let alice_player = room
-        .game
+    let game = room.game().expect("room should be in the playing phase");
+    let alice_player = game
         .players
         .iter()
         .find(|p| p.id == alice_id)
@@ -969,7 +969,7 @@ async fn test_disconnect_eliminates_player_and_advances_turn() {
         "Alice should be marked as not alive after disconnect"
     );
     assert_eq!(
-        room.game.current_player_id, bob_id,
+        game.current_player_id, bob_id,
         "Turn should have advanced to Bob after Alice disconnected"
     );
 }
@@ -1334,7 +1334,8 @@ async fn test_disconnected_player_is_skipped_in_turn_order() {
         let rooms = server.rooms.read().await;
         let room = rooms.get(&room_id).expect("room should still exist");
         let p2 = room
-            .game
+            .game()
+            .expect("room should be in the playing phase")
             .players
             .iter()
             .find(|p| p.id == ids[1])
@@ -1409,12 +1410,12 @@ async fn test_current_player_disconnect_passes_turn_in_rotation_order() {
 
     let rooms = server.rooms.read().await;
     let room = rooms.get(&room_id).expect("room should still exist");
+    let game = room.game().expect("room should be in the playing phase");
     assert_eq!(
-        room.game.current_player_id, ids[2],
+        game.current_player_id, ids[2],
         "turn should pass forward to player 3, not back to player 1"
     );
-    let p2_hand = room
-        .game
+    let p2_hand = game
         .hands
         .get(&ids[1])
         .expect("player 2 still has a hand entry");
@@ -1422,7 +1423,7 @@ async fn test_current_player_disconnect_passes_turn_in_rotation_order() {
         p2_hand.is_empty(),
         "player 2's hand should return to the deck on disconnect"
     );
-    let p2_stats = room.game.stats.get(&ids[1]).expect("player 2 has stats");
+    let p2_stats = game.stats.get(&ids[1]).expect("player 2 has stats");
     assert_eq!(
         p2_stats.elimination_turn,
         Some(1),
