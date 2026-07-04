@@ -13,15 +13,7 @@
    - Online lobby buttons clarified with "Online" prefix
    - Maintain sample game for quick testing
 
-2. **Server Authority & Rule Enforcement** (ship-blockers — see proposals/005)
-   - Enforce the core placement rule in `Game::perform_move`: `mov.cell` must be
-     the current player's pawn cell (currently only the honest client enforces
-     this — cheat/desync vector for any hand-rolled WS client)
-   - Bind connections to identities in `handler.rs`: validate client-supplied
-     `player_id` against the connection's tracked player for
-     `PlaceTile`/`PlacePawn`/`LeaveRoom` (impersonation is trivial today)
-   - Add phase guards: reject `JoinRoom` after game start (ghost player with no
-     hand wedges turn rotation) and `PlaceTile` during the lobby phase
+2. **Server Authority & Rule Enforcement** (see proposals/005)
    - Add `Game::eliminate_player(id)` in `common` and use it for in-game
      disconnects: fixes turn advancing to first-alive instead of next-in-rotation,
      hand not returned to deck, missing stats, and missing win-check

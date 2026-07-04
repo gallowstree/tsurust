@@ -30,6 +30,11 @@ impl GameRoom {
     }
 
     pub fn place_tile(&mut self, player_id: PlayerID, mov: Move) -> Result<TurnResult, String> {
+        // While the lobby exists the game hasn't started; self.game is a placeholder
+        if self.lobby.is_some() {
+            return Err("Game has not started yet".to_string());
+        }
+
         // Validate it's this player's turn
         if self.game.current_player_id != player_id {
             return Err(format!(

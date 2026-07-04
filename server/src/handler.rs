@@ -122,6 +122,28 @@ pub async fn handle_connection(
     }
 }
 
+/// Reject messages whose claimed identity doesn't match what this connection was
+/// assigned when it created or joined a room. Without this, any client can act
+/// as any player (or on any room) just by writing a different id into the message.
+fn verify_sender(
+    claimed_room: &RoomId,
+    claimed_player: Option<PlayerID>,
+    current_room: &Option<RoomId>,
+    current_player_id: &Option<PlayerID>,
+) -> Result<(), String> {
+    match current_room {
+        Some(room) if room == claimed_room => {}
+        _ => return Err(format!("This connection is not in room '{}'", claimed_room)),
+    }
+    if let Some(claimed) = claimed_player {
+        match current_player_id {
+            Some(own) if *own == claimed => {}
+            _ => return Err(format!("This connection cannot act as player {}", claimed)),
+        }
+    }
+    Ok(())
+}
+
 async fn handle_client_message(
     ws: &mut WebSocketStream<tokio::net::TcpStream>,
     msg: Message,
@@ -221,6 +243,7 @@ async fn handle_client_message(
         }
 
         ClientMessage::LeaveRoom { room_id, player_id } => {
+            verify_sender(&room_id, Some(player_id), current_room, current_player_id)?;
             server.leave_room(room_id, player_id).await?;
             *update_rx = None;
             *current_room = None;
@@ -232,6 +255,7 @@ async fn handle_client_message(
             player_id,
             mov,
         } => {
+            verify_sender(&room_id, Some(player_id), current_room, current_player_id)?;
             let mut rooms = server.rooms.write().await;
             let room = rooms
                 .get_mut(&room_id)
@@ -289,6 +313,7 @@ async fn handle_client_message(
             player_id,
             position,
         } => {
+            verify_sender(&room_id, Some(player_id), current_room, current_player_id)?;
             let mut rooms = server.rooms.write().await;
             let room = rooms
                 .get_mut(&room_id)
@@ -299,6 +324,7 @@ async fn handle_client_message(
         }
 
         ClientMessage::StartGame { room_id } => {
+            verify_sender(&room_id, None, current_room, current_player_id)?;
             let mut rooms = server.rooms.write().await;
             let room = rooms
                 .get_mut(&room_id)

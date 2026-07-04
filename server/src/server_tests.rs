@@ -1,4 +1,5 @@
 use crate::server::GameServer;
+use tsurust_common::board::PlayerPos;
 
 #[tokio::test]
 async fn test_create_room_assigns_player_id_1() {
@@ -72,6 +73,39 @@ async fn test_player_ids_use_max_plus_one() {
 
     // Even if we had a gap (like player 2 left), next player should get max+1
     // This validates our use of max() rather than len()
+}
+
+#[tokio::test]
+async fn test_join_after_game_started_is_rejected() {
+    let server = GameServer::new();
+
+    let (room_id, _) = server
+        .create_room("Test Room".to_string(), "Alice".to_string())
+        .await
+        .expect("Failed to create room");
+    server
+        .join_room(room_id.clone(), "Bob".to_string())
+        .await
+        .expect("Failed to join room");
+
+    // Place both pawns and start the game.
+    {
+        let mut rooms = server.rooms.write().await;
+        let room = rooms.get_mut(&room_id).expect("room exists");
+        room.place_pawn(1, PlayerPos::new(0, 2, 5))
+            .expect("Alice's pawn placement");
+        room.place_pawn(2, PlayerPos::new(5, 3, 0))
+            .expect("Bob's pawn placement");
+        room.start_game().expect("game should start");
+    }
+
+    // A third player joining now would be a ghost with no hand; reject it.
+    let result = server.join_room(room_id, "Charlie".to_string()).await;
+    assert!(result.is_err(), "joining a started game must fail");
+    assert!(
+        result.unwrap_err().contains("already started"),
+        "error should say the game already started"
+    );
 }
 
 #[tokio::test]

@@ -12,6 +12,14 @@ fn create_test_tile() -> Tile {
     ])
 }
 
+/// A room whose game is in progress: `GameRoom::new` always starts in the lobby
+/// phase, so drop the lobby the way `start_game` does.
+fn in_game_room(game: Game) -> GameRoom {
+    let mut room = GameRoom::new("TEST".to_string(), "Test Room".to_string(), game);
+    room.lobby = None;
+    room
+}
+
 #[test]
 fn test_place_tile_validates_turn() {
     // Setup: Create a game with 2 players
@@ -20,7 +28,7 @@ fn test_place_tile_validates_turn() {
         Player::new(2, PlayerPos::new(2, 5, 2)),
     ];
     let game = Game::new(players);
-    let mut room = GameRoom::new("TEST".to_string(), "Test Room".to_string(), game);
+    let mut room = in_game_room(game);
 
     // Start the game
     room.game.deck.take_up_to(3); // Simulate taking tiles for hands
@@ -52,7 +60,7 @@ fn test_place_tile_validates_move_player_id() {
         Player::new(2, PlayerPos::new(2, 5, 2)),
     ];
     let game = Game::new(players);
-    let mut room = GameRoom::new("TEST".to_string(), "Test Room".to_string(), game);
+    let mut room = in_game_room(game);
 
     // Player 1's turn
     assert_eq!(room.game.current_player_id, 1);
@@ -84,7 +92,7 @@ fn test_place_tile_accepts_valid_move() {
         Player::new(2, PlayerPos::new(2, 5, 2)),
     ];
     let game = Game::new(players);
-    let mut room = GameRoom::new("TEST".to_string(), "Test Room".to_string(), game);
+    let mut room = in_game_room(game);
 
     // Player 1's turn
     assert_eq!(room.game.current_player_id, 1);
@@ -105,5 +113,35 @@ fn test_place_tile_accepts_valid_move() {
     assert!(
         result.is_ok(),
         "Should accept valid move from current player"
+    );
+}
+
+#[test]
+fn test_place_tile_rejected_during_lobby_phase() {
+    let players = vec![
+        Player::new(1, PlayerPos::new(0, 0, 4)),
+        Player::new(2, PlayerPos::new(2, 5, 2)),
+    ];
+    let game = Game::new(players);
+    // GameRoom::new starts in the lobby phase — keep the lobby in place.
+    let mut room = GameRoom::new("TEST".to_string(), "Test Room".to_string(), game);
+
+    let tile = create_test_tile();
+    room.game.hands.get_mut(&1).unwrap().push(tile);
+    let mov = Move {
+        tile,
+        cell: CellCoord { row: 0, col: 0 },
+        player_id: 1,
+    };
+
+    let result = room.place_tile(1, mov);
+
+    assert!(
+        result.is_err(),
+        "Should reject moves before the game starts"
+    );
+    assert!(
+        result.unwrap_err().contains("not started"),
+        "Error message should mention the game hasn't started"
     );
 }

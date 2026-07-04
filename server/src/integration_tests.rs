@@ -12,7 +12,7 @@ use tokio::time::sleep;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
-use tsurust_common::board::{CellCoord, Move, PlayerID, PlayerPos, Tile};
+use tsurust_common::board::{seg, CellCoord, Move, PlayerID, PlayerPos, Tile};
 use tsurust_common::game::Game;
 use tsurust_common::protocol::{ClientMessage, RoomId, ServerMessage};
 
@@ -1374,5 +1374,148 @@ async fn test_disconnected_player_is_skipped_in_turn_order() {
     assert!(
         !p2.alive,
         "player 2 remains eliminated in the broadcast state"
+    );
+}
+
+/// A connection cannot act as another player: Bob claims Alice's player_id on
+/// a move that would be legal had Alice sent it herself, and gets an Error.
+#[tokio::test]
+async fn test_impersonating_another_player_returns_error() {
+    let (_alice, mut bob, room_id, alice_id, _bob_id, game) =
+        setup_two_player_game(start_test_server().await.0).await;
+
+    // It's Alice's turn; the move itself is perfectly valid for Alice.
+    let mov = find_surviving_move(&game, alice_id);
+    send(
+        &mut bob,
+        ClientMessage::PlaceTile {
+            room_id: room_id.clone(),
+            player_id: alice_id,
+            mov,
+        },
+    )
+    .await;
+
+    let ServerMessage::Error { message } =
+        recv_where(&mut bob, |m| matches!(m, ServerMessage::Error { .. })).await
+    else {
+        unreachable!("recv_where matched Error");
+    };
+    assert!(
+        message.contains("cannot act as player"),
+        "error should reject the impersonation, got: {message}"
+    );
+}
+
+/// Joining a room whose game has already started is rejected instead of adding
+/// a ghost player that would wedge the turn rotation.
+#[tokio::test]
+async fn test_joining_a_started_game_returns_error() {
+    let (addr, _server) = start_test_server().await;
+    let (_alice, _bob, room_id, _alice_id, _bob_id, _game) = setup_two_player_game(addr).await;
+
+    let mut charlie = connect_client(addr).await;
+    send(
+        &mut charlie,
+        ClientMessage::JoinRoom {
+            room_id,
+            player_name: "Charlie".to_string(),
+        },
+    )
+    .await;
+
+    let ServerMessage::Error { message } =
+        recv_where(&mut charlie, |m| matches!(m, ServerMessage::Error { .. })).await
+    else {
+        unreachable!("recv_where matched Error");
+    };
+    assert!(
+        message.contains("already started"),
+        "error should say the game already started, got: {message}"
+    );
+}
+
+/// Placing a tile while the room is still in the lobby phase is rejected.
+#[tokio::test]
+async fn test_placing_a_tile_before_game_starts_returns_error() {
+    let (addr, _server) = start_test_server().await;
+    let mut alice = connect_client(addr).await;
+
+    send(
+        &mut alice,
+        ClientMessage::CreateRoom {
+            room_name: "Lobby Phase Test".to_string(),
+            creator_name: "Alice".to_string(),
+        },
+    )
+    .await;
+    let ServerMessage::RoomCreated {
+        room_id,
+        player_id: alice_id,
+    } = recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::RoomCreated { .. })
+    })
+    .await
+    else {
+        panic!("Expected RoomCreated");
+    };
+
+    let tile = Tile::new([seg(0, 1), seg(2, 3), seg(4, 5), seg(6, 7)]);
+    send(
+        &mut alice,
+        ClientMessage::PlaceTile {
+            room_id,
+            player_id: alice_id,
+            mov: Move {
+                tile,
+                cell: CellCoord { row: 0, col: 0 },
+                player_id: alice_id,
+            },
+        },
+    )
+    .await;
+
+    let ServerMessage::Error { message } =
+        recv_where(&mut alice, |m| matches!(m, ServerMessage::Error { .. })).await
+    else {
+        unreachable!("recv_where matched Error");
+    };
+    assert!(
+        message.contains("not started"),
+        "error should say the game has not started, got: {message}"
+    );
+}
+
+/// The engine's placement rule is enforced over the wire: a tile placed on an
+/// empty cell away from the player's pawn is rejected.
+#[tokio::test]
+async fn test_tile_placed_away_from_pawn_returns_error() {
+    let (mut alice, _bob, room_id, alice_id, _bob_id, game) =
+        setup_two_player_game(start_test_server().await.0).await;
+
+    // Alice's pawn is at (0,2); (3,3) is empty but not her cell.
+    let tile = first_hand_tile(&game, alice_id);
+    send(
+        &mut alice,
+        ClientMessage::PlaceTile {
+            room_id: room_id.clone(),
+            player_id: alice_id,
+            mov: Move {
+                tile,
+                cell: CellCoord { row: 3, col: 3 },
+                player_id: alice_id,
+            },
+        },
+    )
+    .await;
+
+    let ServerMessage::Error { message } =
+        recv_where(&mut alice, |m| matches!(m, ServerMessage::Error { .. })).await
+    else {
+        unreachable!("recv_where matched Error");
+    };
+    assert!(
+        message.contains("current cell"),
+        "error should explain the placement rule, got: {message}"
     );
 }

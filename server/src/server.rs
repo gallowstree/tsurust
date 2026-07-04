@@ -91,6 +91,12 @@ impl GameServer {
             .get_mut(&room_id)
             .ok_or_else(|| format!("Room '{}' not found", room_id))?;
 
+        // A started game has no lobby; joining it would add a ghost player with no
+        // hand or stats that wedges the turn rotation
+        if room.lobby.is_none() {
+            return Err(format!("Room '{}' has already started its game", room_id));
+        }
+
         // Determine next player ID (start from 1, not 0)
         let player_id = room.game.players.iter().map(|p| p.id).max().unwrap_or(0) + 1;
 
