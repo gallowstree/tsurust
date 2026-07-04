@@ -197,12 +197,17 @@ impl Game {
         }
 
         // Basic validation
-        if !self
+        let player = self
             .players
             .iter()
-            .any(|p| p.id == mov.player_id && p.alive)
-        {
-            return Err("Invalid player or player is eliminated");
+            .find(|p| p.id == mov.player_id && p.alive)
+            .ok_or("Invalid player or player is eliminated")?;
+
+        // The tile must go on the cell the player's pawn occupies — the UI already
+        // enforces this, but the engine is the authority (hand-rolled clients must
+        // not be able to place tiles elsewhere on the board)
+        if player.pos.cell != mov.cell {
+            return Err("Tile must be placed on the player's current cell");
         }
 
         // Check if cell is already occupied
@@ -1062,5 +1067,49 @@ mod tests {
             other => panic!("expected Extinction, got {:?}", other),
         }
         assert!(game.players.iter().all(|p| !p.alive));
+    }
+
+    #[test]
+    fn test_move_rejected_unless_placed_on_players_cell() {
+        let mut game = Game::new(vec![
+            Player::new(1, PlayerPos::new(2, 2, 0)),
+            Player::new(2, PlayerPos::new(5, 3, 0)),
+        ]);
+        let tile = create_straight_tile();
+        game.hands
+            .get_mut(&1)
+            .expect("player 1 has a hand")
+            .push(tile);
+
+        // Player 1's pawn is at (2,2); placing on any other cell is illegal even
+        // though the cell is empty and the tile is in hand.
+        let err = game
+            .perform_move(Move {
+                tile,
+                cell: CellCoord { row: 4, col: 4 },
+                player_id: 1,
+            })
+            .expect_err("placing away from the pawn must be rejected");
+        assert!(
+            err.contains("current cell"),
+            "error should explain the placement rule, got: {err}"
+        );
+        assert!(
+            game.board.history.is_empty(),
+            "rejected move must not reach the board"
+        );
+        assert_eq!(
+            game.hands[&1].len(),
+            4,
+            "rejected move must not consume the tile"
+        );
+
+        // The same tile on the pawn's own cell is legal.
+        game.perform_move(Move {
+            tile,
+            cell: CellCoord { row: 2, col: 2 },
+            player_id: 1,
+        })
+        .expect("placing on the pawn's cell is legal");
     }
 }

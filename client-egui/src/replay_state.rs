@@ -185,7 +185,7 @@ mod tests {
             name: "Player 1".to_string(),
             pos: PlayerPos {
                 cell: CellCoord { row: 1, col: 1 },
-                endpoint: 0,
+                endpoint: 7,
             },
             alive: true,
             has_moved: false,
@@ -193,26 +193,26 @@ mod tests {
         }];
         let mut game = Game::new(players);
 
-        // Make a few moves
+        // Make a few moves. Tiles must be placed on the cell the pawn occupies,
+        // so use a tile whose 3-7 and 2-6 segments carry the pawn one cell to the
+        // right each turn: (1,1) entry 7 -> (1,2) entry 6 -> (1,3) entry 7 -> ...
         for i in 0..3 {
             let tile = Tile {
                 segments: [
                     Segment { a: 0, b: 1 },
-                    Segment { a: 2, b: 3 },
+                    Segment { a: 2, b: 6 },
+                    Segment { a: 3, b: 7 },
                     Segment { a: 4, b: 5 },
-                    Segment { a: 6, b: 7 },
                 ],
             };
             game.hands.get_mut(&1).unwrap().push(tile);
             let mov = tsurust_common::board::Move {
                 player_id: 1,
-                cell: CellCoord {
-                    row: i + 1,
-                    col: i + 1,
-                },
+                cell: CellCoord { row: 1, col: i + 1 },
                 tile,
             };
-            game.perform_move(mov).ok();
+            game.perform_move(mov)
+                .expect("replay fixture moves should be legal");
         }
 
         let metadata = GameMetadata {
