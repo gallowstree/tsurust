@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use tokio::sync::broadcast;
 
 use tsurust_common::board::{Move, PlayerID, PlayerPos};
@@ -19,6 +21,9 @@ pub struct GameRoom {
     pub phase: RoomPhase,
     // Broadcast channel for pushing updates to all connected clients
     pub update_tx: broadcast::Sender<ServerMessage>,
+    /// When this room was last created/acted on — used by the idle-room reaper
+    /// as a grace period for rooms with no connected clients.
+    pub last_activity: Instant,
 }
 
 impl GameRoom {
@@ -29,7 +34,12 @@ impl GameRoom {
             phase: RoomPhase::Lobby(Lobby::new(id.clone(), room_name)),
             id,
             update_tx,
+            last_activity: Instant::now(),
         }
+    }
+
+    pub(crate) fn touch(&mut self) {
+        self.last_activity = Instant::now();
     }
 
     pub fn lobby(&self) -> Option<&Lobby> {
@@ -47,6 +57,7 @@ impl GameRoom {
     }
 
     pub fn place_tile(&mut self, player_id: PlayerID, mov: Move) -> Result<TurnResult, String> {
+        self.touch();
         let RoomPhase::Playing(game) = &mut self.phase else {
             return Err("Game has not started yet".to_string());
         };
@@ -90,6 +101,7 @@ impl GameRoom {
     }
 
     pub fn place_pawn(&mut self, player_id: PlayerID, position: PlayerPos) -> Result<(), String> {
+        self.touch();
         let RoomPhase::Lobby(lobby) = &mut self.phase else {
             return Err("Game has already started, cannot place pawns".to_string());
         };
@@ -124,6 +136,7 @@ impl GameRoom {
 
     /// Returns true if the room is now empty and should be removed.
     pub fn handle_disconnect(&mut self, player_id: PlayerID) -> bool {
+        self.touch();
         match &mut self.phase {
             RoomPhase::Lobby(lobby) => {
                 // Lobby phase: remove the player entirely
@@ -169,6 +182,7 @@ impl GameRoom {
     }
 
     pub fn start_game(&mut self) -> Result<(), String> {
+        self.touch();
         let RoomPhase::Lobby(lobby) = &mut self.phase else {
             return Err("Game has already started".to_string());
         };

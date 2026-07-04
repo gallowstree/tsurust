@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::sync::RwLock;
 
@@ -78,6 +79,7 @@ impl GameServer {
 
         // A started game has no lobby; joining it would add a ghost player with
         // no hand or stats that wedges the turn rotation
+        room.touch();
         let RoomPhase::Lobby(lobby) = &mut room.phase else {
             return Err(format!("Room '{}' has already started its game", room_id));
         };
@@ -110,6 +112,25 @@ impl GameServer {
         room.broadcast(lobby_update);
 
         Ok(player_id)
+    }
+
+    /// Remove rooms that have no connected clients and have been idle past the
+    /// timeout. A room with any live broadcast subscriber is never reaped, so a
+    /// game waiting on a slow player stays alive indefinitely; the timeout is a
+    /// grace period for rooms whose last connection is gone (or was orphaned by
+    /// a client that created/joined another room). Returns how many were reaped.
+    pub async fn reap_idle_rooms(&self, idle_timeout: Duration) -> usize {
+        let mut rooms = self.rooms.write().await;
+        let before = rooms.len();
+        rooms.retain(|id, room| {
+            let reap = room.update_tx.receiver_count() == 0
+                && room.last_activity.elapsed() >= idle_timeout;
+            if reap {
+                println!("[SERVER] Reaping idle room '{}' (no connected clients)", id);
+            }
+            !reap
+        });
+        before - rooms.len()
     }
 
     pub async fn leave_room(&self, room_id: RoomId, player_id: PlayerID) -> Result<(), String> {

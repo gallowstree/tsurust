@@ -1431,6 +1431,63 @@ async fn test_current_player_disconnect_passes_turn_in_rotation_order() {
     );
 }
 
+/// A connection that creates a second room orphans its first one — the
+/// connection's subscription and identity move to the new room, so nothing can
+/// ever act on the old one again. The reaper removes the orphan and leaves the
+/// room with the live connection alone.
+#[tokio::test]
+async fn test_reaper_removes_room_orphaned_by_second_create() {
+    let (addr, server) = start_test_server().await;
+    let mut alice = connect_client(addr).await;
+
+    send(
+        &mut alice,
+        ClientMessage::CreateRoom {
+            room_name: "First".to_string(),
+            creator_name: "Alice".to_string(),
+        },
+    )
+    .await;
+    let ServerMessage::RoomCreated { room_id: first, .. } = recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::RoomCreated { .. })
+    })
+    .await
+    else {
+        panic!("Expected RoomCreated");
+    };
+
+    send(
+        &mut alice,
+        ClientMessage::CreateRoom {
+            room_name: "Second".to_string(),
+            creator_name: "Alice".to_string(),
+        },
+    )
+    .await;
+    let ServerMessage::RoomCreated {
+        room_id: second, ..
+    } = recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::RoomCreated { .. })
+    })
+    .await
+    else {
+        panic!("Expected RoomCreated");
+    };
+
+    let reaped = server.reap_idle_rooms(Duration::ZERO).await;
+
+    assert_eq!(reaped, 1, "only the orphaned first room is reaped");
+    let rooms = server.rooms.read().await;
+    assert!(
+        !rooms.contains_key(&first),
+        "the orphaned room is gone (its only subscriber moved on)"
+    );
+    assert!(
+        rooms.contains_key(&second),
+        "the room with the live connection survives"
+    );
+}
+
 /// A connection cannot act as another player: Bob claims Alice's player_id on
 /// a move that would be legal had Alice sent it herself, and gets an Error.
 #[tokio::test]

@@ -14,8 +14,6 @@
    - Maintain sample game for quick testing
 
 2. **Server-Side Improvements**
-   - Add room cleanup for abandoned games (timeout-based, currently immediate on last player leaving)
-   - Add proper error handling and validation (typed errors instead of `String`/`&'static str`)
    - Migrate server `println!`/`eprintln!` logging to `tracing` with leveled
      events and room/player/connection fields
    - Per-connection redacted game views, when online play grows beyond trusted
@@ -45,8 +43,6 @@
 #### Lower Priority:
 1. **Type System Improvements**
    - Convert `TileEndpoint` to enum with named directions
-   - Add proper error types instead of string literals
-   - Implement comprehensive validation
 
 2. **Advanced Features**
    - Add AI opponents that can join multiplayer games

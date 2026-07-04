@@ -121,6 +121,64 @@ async fn test_join_nonexistent_room_fails() {
 }
 
 #[tokio::test]
+async fn test_reap_removes_only_idle_disconnected_rooms() {
+    let server = GameServer::new();
+    let (idle_id, _) = server
+        .create_room("Idle Room".to_string(), "Alice".to_string())
+        .await
+        .expect("create idle room");
+    let (live_id, _) = server
+        .create_room("Live Room".to_string(), "Bob".to_string())
+        .await
+        .expect("create live room");
+
+    // The "live" room has a connected client: a live broadcast subscriber,
+    // exactly what a connection handler holds while attached to a room.
+    let _rx = {
+        let rooms = server.rooms.read().await;
+        rooms
+            .get(&live_id)
+            .expect("live room exists")
+            .update_tx
+            .subscribe()
+    };
+
+    let reaped = server.reap_idle_rooms(std::time::Duration::ZERO).await;
+
+    assert_eq!(reaped, 1, "exactly the unconnected room is reaped");
+    let rooms = server.rooms.read().await;
+    assert!(
+        !rooms.contains_key(&idle_id),
+        "the room with no connected clients is removed"
+    );
+    assert!(
+        rooms.contains_key(&live_id),
+        "a room with a live connection survives regardless of idle time"
+    );
+}
+
+#[tokio::test]
+async fn test_reap_leaves_fresh_rooms_within_grace_period() {
+    let server = GameServer::new();
+    let (room_id, _) = server
+        .create_room("Fresh Room".to_string(), "Alice".to_string())
+        .await
+        .expect("create room");
+
+    // No client has subscribed yet (the handler does that just after create),
+    // but the room is younger than the idle timeout — it must survive.
+    let reaped = server
+        .reap_idle_rooms(std::time::Duration::from_secs(300))
+        .await;
+
+    assert_eq!(reaped, 0);
+    assert!(
+        server.rooms.read().await.contains_key(&room_id),
+        "a fresh room survives the grace period"
+    );
+}
+
+#[tokio::test]
 async fn test_create_multiple_rooms_generates_unique_ids() {
     let server = GameServer::new();
 
