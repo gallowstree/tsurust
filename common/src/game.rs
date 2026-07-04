@@ -297,22 +297,28 @@ impl Game {
                     player_trail.completed = trail.completed;
                 }
 
-                // Update stats: increment path_length for each new cell visited
-                if old_pos.cell != new_pos.cell {
-                    if let Some(stats) = self.stats.get_mut(&player.id) {
+                // Update stats: count every cell the trail entered this move,
+                // revisits included. Each segment is one tile traversed, so the
+                // cells entered are each segment's cell after the first, plus the
+                // final position when the path ran off the last tile into a new
+                // cell (an edge exit stays on the same cell and enters nothing).
+                if let Some(stats) = self.stats.get_mut(&player.id) {
+                    let segment_cell = |s: &crate::trail::TrailSegment| CellCoord {
+                        row: s.board_pos.0,
+                        col: s.board_pos.1,
+                    };
+                    let entered = trail.segments.iter().skip(1).map(segment_cell).chain(
+                        (trail.segments.last().map(segment_cell) != Some(new_pos.cell))
+                            .then_some(new_pos.cell),
+                    );
+                    for cell in entered {
                         stats.path_length += 1;
-
-                        // Track cell visits
-                        let visit_count = *stats.cells_visited.entry(new_pos.cell).or_insert(0) + 1;
-                        stats.cells_visited.insert(new_pos.cell, visit_count);
-
-                        // Update unique tiles visited
-                        stats.unique_tiles_visited = stats.cells_visited.len();
-
-                        // Update max visits to single tile
+                        let visit_count = stats.cells_visited.entry(cell).or_insert(0);
+                        *visit_count += 1;
                         stats.max_visits_to_single_tile =
-                            stats.max_visits_to_single_tile.max(visit_count);
+                            stats.max_visits_to_single_tile.max(*visit_count);
                     }
+                    stats.unique_tiles_visited = stats.cells_visited.len();
                 }
             }
 
@@ -1134,6 +1140,55 @@ mod tests {
             player_id: 1,
         })
         .expect("placing on the pawn's cell is legal");
+    }
+
+    #[test]
+    fn test_stats_count_every_cell_of_a_multi_tile_move() {
+        // Player 1 sits at (1,1) entry 7. A tile is already on the board at
+        // (1,2); placing one at (1,1) carries the pawn through BOTH tiles to
+        // (1,3). Path length and cell visits must count each cell entered.
+        let mut game = Game::new(vec![
+            Player::new(1, PlayerPos::new(1, 1, 7)),
+            Player::new(2, PlayerPos::new(5, 3, 0)),
+        ]);
+        // Tile whose 3-7 and 2-6 segments carry the pawn one cell to the right
+        let tile = Tile::new([seg(0, 1), seg(2, 6), seg(3, 7), seg(4, 5)]);
+
+        // Pre-place a tile at (1,2) directly on the board (as if from earlier play)
+        game.board.place_tile(Move {
+            tile,
+            cell: CellCoord { row: 1, col: 2 },
+            player_id: 2,
+        });
+
+        game.hands
+            .get_mut(&1)
+            .expect("player 1 has a hand")
+            .push(tile);
+        game.perform_move(Move {
+            tile,
+            cell: CellCoord { row: 1, col: 1 },
+            player_id: 1,
+        })
+        .expect("placing on the pawn's cell is legal");
+
+        assert_eq!(
+            game.players[0].pos.cell,
+            CellCoord { row: 1, col: 3 },
+            "pawn should traverse both tiles"
+        );
+        let stats = &game.stats[&1];
+        assert_eq!(
+            stats.path_length, 3,
+            "start cell + two cells entered during the move"
+        );
+        assert_eq!(
+            stats.unique_tiles_visited, 3,
+            "cells (1,1), (1,2), (1,3) all visited"
+        );
+        assert_eq!(stats.cells_visited[&CellCoord { row: 1, col: 2 }], 1);
+        assert_eq!(stats.cells_visited[&CellCoord { row: 1, col: 3 }], 1);
+        assert_eq!(stats.max_visits_to_single_tile, 1);
     }
 
     #[test]
