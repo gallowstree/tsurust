@@ -14,8 +14,6 @@
    - Maintain sample game for quick testing
 
 2. **Server-Side Improvements**
-   - Migrate server `println!`/`eprintln!` logging to `tracing` with leveled
-     events and room/player/connection fields
    - Per-connection redacted game views, when online play grows beyond trusted
      groups (decision + design in CLIENT_SERVER.md "Trust Model & Hidden
      Information"): `Game::view_for` in common, redaction at the connection

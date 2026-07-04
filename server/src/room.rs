@@ -89,8 +89,9 @@ impl GameRoom {
             room_id: self.id.clone(),
             state: game.clone(),
         };
-        if let Err(e) = self.update_tx.send(state_update) {
-            eprintln!("Failed to broadcast GameStateUpdate: {:?}", e);
+        if self.update_tx.send(state_update).is_err() {
+            // Benign: broadcast::send only fails when no client is subscribed
+            tracing::debug!(room_id = %self.id, "no subscribers for GameStateUpdate broadcast");
         }
 
         Ok(result)
@@ -198,11 +199,11 @@ impl GameRoom {
 
         self.phase = RoomPhase::Playing(game.clone());
 
-        println!(
-            "[SERVER] Game started in room '{}' - players: {:?}, first turn: {}",
-            self.id,
-            game.players.iter().map(|p| p.id).collect::<Vec<_>>(),
-            game.current_player_id
+        tracing::info!(
+            room_id = %self.id,
+            players = ?game.players.iter().map(|p| p.id).collect::<Vec<_>>(),
+            first_turn = game.current_player_id,
+            "game started"
         );
 
         // Broadcast game started to all clients

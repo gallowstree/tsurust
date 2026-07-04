@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio_tungstenite::accept_async;
+use tracing::{debug, info, warn};
 
 use crate::handler::handle_connection;
 use crate::server::GameServer;
@@ -24,6 +25,14 @@ const DEFAULT_ROOM_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Leveled logging, filterable per module via RUST_LOG (default: info)
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
+
     // Read configuration from environment variables with defaults
     let host = std::env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
@@ -33,7 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .expect("Failed to bind to address");
 
-    println!("Tsurust WebSocket server listening on {}", addr);
+    info!(%addr, "Tsurust WebSocket server listening");
 
     let game_server = Arc::new(GameServer::new());
 
@@ -54,18 +63,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     while let Ok((stream, peer_addr)) = listener.accept().await {
-        println!("Incoming TCP connection from {}", peer_addr);
+        debug!(%peer_addr, "incoming TCP connection");
 
         let game_server = Arc::clone(&game_server);
         tokio::spawn(async move {
             match accept_async(stream).await {
                 Ok(ws_stream) => {
                     let connection_id = game_server.next_connection_id().await;
-                    println!("New WebSocket connection: {}", connection_id);
+                    info!(connection_id, "new WebSocket connection");
                     handle_connection(ws_stream, connection_id, game_server).await;
                 }
                 Err(e) => {
-                    eprintln!("Failed to accept WebSocket connection: {}", e);
+                    warn!(error = %e, "failed to accept WebSocket connection");
                 }
             }
         });

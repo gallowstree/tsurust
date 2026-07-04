@@ -6,6 +6,7 @@ use tokio::sync::broadcast;
 use tokio::time;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
+use tracing::{debug, error, info, warn};
 
 use tsurust_common::board::PlayerID;
 use tsurust_common::protocol::{ClientMessage, RoomId, ServerMessage};
@@ -15,6 +16,9 @@ use crate::server::{ConnectionId, GameServer};
 const PING_INTERVAL: Duration = Duration::from_secs(30);
 const PING_TIMEOUT: Duration = Duration::from_secs(10);
 
+// The span carries connection_id, so every event in this task (including the
+// ones from handle_client_message) is tagged with the connection it came from.
+#[tracing::instrument(name = "conn", skip(ws, server))]
 pub async fn handle_connection(
     mut ws: WebSocketStream<tokio::net::TcpStream>,
     connection_id: ConnectionId,
@@ -50,7 +54,7 @@ pub async fn handle_connection(
                             &mut current_room,
                             &mut current_player_id,
                         ).await {
-                            eprintln!("Error handling client message: {}", e);
+                            info!(error = %e, "rejected client message");
                             let error_msg = ServerMessage::Error {
                                 message: e.to_string(),
                             };
@@ -60,11 +64,11 @@ pub async fn handle_connection(
                         }
                     }
                     Some(Err(e)) => {
-                        eprintln!("WebSocket error for connection {}: {}", connection_id, e);
+                        warn!(error = %e, "websocket error");
                         break;
                     }
                     None => {
-                        println!("WebSocket connection {} closed by client", connection_id);
+                        info!("connection closed by client");
                         break;
                     }
                 }
@@ -82,12 +86,12 @@ pub async fn handle_connection(
                     match serde_json::to_string(&update) {
                         Ok(json) => {
                             if let Err(e) = ws.send(Message::Text(json.into())).await {
-                                eprintln!("Failed to send update to connection {}: {}", connection_id, e);
+                                warn!(error = %e, "failed to send update");
                                 break;
                             }
                         }
                         Err(e) => {
-                            eprintln!("Failed to serialize broadcast message for connection {}: {}", connection_id, e);
+                            error!(error = %e, "failed to serialize broadcast message");
                         }
                     }
                 }
@@ -96,14 +100,11 @@ pub async fn handle_connection(
             // Send periodic pings; close connection if pong not received
             _ = time::sleep_until(ping_deadline) => {
                 if waiting_for_pong {
-                    eprintln!(
-                        "Connection {} timed out (no pong in {}s), closing",
-                        connection_id, PING_TIMEOUT.as_secs()
-                    );
+                    info!(timeout_secs = PING_TIMEOUT.as_secs(), "no pong received, closing connection");
                     break;
                 }
                 if let Err(e) = ws.send(Message::Ping(vec![].into())).await {
-                    eprintln!("Failed to send ping to connection {}: {}", connection_id, e);
+                    warn!(error = %e, "failed to send ping");
                     break;
                 }
                 waiting_for_pong = true;
@@ -114,10 +115,7 @@ pub async fn handle_connection(
 
     // Cleanup on disconnect
     if let (Some(room_id), Some(player_id)) = (current_room, current_player_id) {
-        println!(
-            "Connection {} (player {}) disconnected from room {}",
-            connection_id, player_id, room_id
-        );
+        info!(player_id, %room_id, "player disconnected");
         server.handle_disconnect(room_id, player_id).await;
     }
 }
@@ -159,7 +157,7 @@ async fn handle_client_message(
     let client_msg: ClientMessage = serde_json::from_str(&text)
         .map_err(|e| format!("Failed to parse client message: {}", e))?;
 
-    println!("[SERVER] Received from client: {:?}", client_msg);
+    debug!(msg = ?client_msg, "received client message");
 
     match client_msg {
         ClientMessage::CreateRoom {
@@ -261,15 +259,10 @@ async fn handle_client_message(
                 .get_mut(&room_id)
                 .ok_or_else(|| format!("Room '{}' not found", room_id))?;
 
-            match room.place_tile(player_id, mov) {
-                Ok(result) => {
-                    println!("[SERVER] PlaceTile success: {:?}", result);
-                }
-                Err(e) => {
-                    println!("[SERVER] PlaceTile error: {}", e);
-                    return Err(e);
-                }
-            }
+            // A rejected move propagates as Err and is logged (and sent back to
+            // the client) by the connection loop
+            let result = room.place_tile(player_id, mov)?;
+            debug!(player_id, result = ?result, "tile placed");
             // Updates are broadcast automatically by place_tile
             drop(rooms); // Explicitly drop the lock to allow broadcast messages to be received
         }

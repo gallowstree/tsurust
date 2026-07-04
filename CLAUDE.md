@@ -21,6 +21,7 @@ Tsurust is a Rust implementation of the Tsuro board game with an egui-based GUI 
 
 ### Debugging
 - `RUST_LOG=debug cargo run --bin client-egui_bin` - Run with debug logging
+- `RUST_LOG=debug cargo run --bin server` - Server with debug logging (`tracing`; default level is info, per-module filters work, e.g. `RUST_LOG=tsurust_server::handler=debug`)
 
 ## Architecture
 

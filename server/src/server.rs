@@ -126,7 +126,7 @@ impl GameServer {
             let reap = room.update_tx.receiver_count() == 0
                 && room.last_activity.elapsed() >= idle_timeout;
             if reap {
-                println!("[SERVER] Reaping idle room '{}' (no connected clients)", id);
+                tracing::info!(room_id = %id, "reaping idle room with no connected clients");
             }
             !reap
         });
@@ -143,7 +143,7 @@ impl GameServer {
         if let Some(room) = rooms.get_mut(&room_id) {
             let should_remove = room.handle_disconnect(player_id);
             if should_remove {
-                println!("[SERVER] Room '{}' is empty, removing it", room_id);
+                tracing::info!(%room_id, "room empty, removing");
                 rooms.remove(&room_id);
             }
         }
