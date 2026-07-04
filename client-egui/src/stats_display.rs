@@ -158,7 +158,7 @@ impl<'a> Widget for PlayerStatsDisplay<'a> {
                 value_color,
             );
 
-            // Row 2: Tiles Placed | Dragon Turns
+            // Row 2: Tiles Placed
             ui.painter().text(
                 stats_start + Vec2::new(0.0, line_height),
                 egui::Align2::LEFT_TOP,
@@ -170,21 +170,6 @@ impl<'a> Widget for PlayerStatsDisplay<'a> {
                 stats_start + Vec2::new(80.0, line_height),
                 egui::Align2::LEFT_TOP,
                 format!("{}", self.stats.tiles_placed),
-                stats_font.clone(),
-                value_color,
-            );
-
-            ui.painter().text(
-                stats_start + Vec2::new(140.0, line_height),
-                egui::Align2::LEFT_TOP,
-                "Dragon:",
-                stats_font.clone(),
-                label_color,
-            );
-            ui.painter().text(
-                stats_start + Vec2::new(200.0, line_height),
-                egui::Align2::LEFT_TOP,
-                format!("{}", self.stats.dragon_turns),
                 stats_font.clone(),
                 value_color,
             );

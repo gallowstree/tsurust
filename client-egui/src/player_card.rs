@@ -7,19 +7,17 @@ pub struct PlayerCard<'a> {
     hand_size: usize,
     max_hand_size: usize,
     is_current: bool,
-    has_dragon: bool,
     is_winner: bool,
     is_you: bool,
 }
 
 impl<'a> PlayerCard<'a> {
-    pub fn new(player: &'a Player, hand_size: usize, has_dragon: bool) -> Self {
+    pub fn new(player: &'a Player, hand_size: usize) -> Self {
         Self {
             player,
             hand_size,
             max_hand_size: 3,
             is_current: false,
-            has_dragon,
             is_winner: false,
             is_you: false,
         }
@@ -150,18 +148,6 @@ impl<'a> Widget for PlayerCard<'a> {
 
                     ui.painter()
                         .rect(tile_rect, 2.0, fill_color, (1.0, stroke_color));
-                }
-
-                // Dragon indicator (only for alive players)
-                if self.has_dragon && self.player.alive {
-                    let dragon_pos = rect.min + Vec2::new(32.0, 45.0);
-                    ui.painter().text(
-                        dragon_pos,
-                        egui::Align2::LEFT_TOP,
-                        "🐉",
-                        egui::FontId::default(),
-                        Color32::GOLD,
-                    );
                 }
             }
 

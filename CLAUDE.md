@@ -63,7 +63,6 @@ The game tracks comprehensive player statistics during gameplay:
 - **Tiles Placed**: Total tiles placed during the game
 - **Path Length**: Total cells traversed (including revisits)
 - **Trail Distance**: Actual geometric distance traveled along tile paths, calculated using Euclidean distance between entry/exit points on a 3×3 coordinate grid
-- **Dragon Turns**: Number of turns holding the dragon tile
 - **Players Eliminated**: Count of other players eliminated by this player
 - **Unique Tiles Visited**: Number of distinct board cells visited
 - **Board Coverage**: Percentage of the 6×6 board explored

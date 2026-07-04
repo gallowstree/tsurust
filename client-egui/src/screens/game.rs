@@ -176,7 +176,6 @@ pub fn render_game_ui(
 
                 for player in sorted_players {
                     let hand_size = game.hands.get(&player.id).map(|h| h.len()).unwrap_or(0);
-                    let has_dragon = game.dragon == Some(player.id);
                     let is_current = player.id == game.current_player_id;
                     let is_winner = winner_id == Some(player.id);
 
@@ -204,7 +203,7 @@ pub fn render_game_ui(
                             ));
                         }
 
-                        let mut card = PlayerCard::new(player, hand_size, has_dragon);
+                        let mut card = PlayerCard::new(player, hand_size);
                         if is_current {
                             card = card.current_player();
                         }

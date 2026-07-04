@@ -50,7 +50,6 @@ pub struct PlayerStats {
     pub tiles_placed: usize,   // Number of tiles placed before elimination
     pub path_length: usize,    // Number of cells traversed (counts revisits)
     pub trail_distance: f32,   // Actual geometric distance traveled along paths
-    pub dragon_turns: usize,   // Number of turns holding the dragon
     pub hand_tiles_remaining: usize, // Tiles in hand when eliminated
     pub elimination_turn: Option<usize>, // Turn number when eliminated (None if winner)
     pub players_eliminated: usize, // Number of other players this player eliminated
@@ -120,7 +119,6 @@ pub struct Game {
     pub player_trails: HashMap<PlayerID, crate::trail::Trail>, // Complete cumulative trail for each player
     pub current_turn_trails: HashMap<PlayerID, crate::trail::Trail>, // Trails from just this turn (for animation)
     pub current_player_id: PlayerID,
-    pub dragon: Option<PlayerID>,
     pub stats: HashMap<PlayerID, PlayerStats>, // Statistics for each player
 }
 
@@ -156,7 +154,6 @@ impl Game {
                     tiles_placed: 0,
                     path_length: 1,      // Start with 1 for their starting position
                     trail_distance: 0.0, // No distance traveled yet
-                    dragon_turns: 0,
                     hand_tiles_remaining: 3, // Starting hand size
                     elimination_turn: None,
                     players_eliminated: 0,
@@ -176,7 +173,6 @@ impl Game {
             player_trails,
             current_turn_trails: HashMap::new(),
             current_player_id,
-            dragon: None,
             stats,
         }
     }
@@ -453,13 +449,6 @@ impl Game {
                 if let Some(stats) = self.stats.get_mut(&player.id) {
                     stats.turns_survived += 1;
                 }
-            }
-        }
-
-        // Increment dragon_turns for the player holding the dragon
-        if let Some(dragon_holder) = self.dragon {
-            if let Some(stats) = self.stats.get_mut(&dragon_holder) {
-                stats.dragon_turns += 1;
             }
         }
 

@@ -18,10 +18,11 @@
    - Add proper error handling and validation (typed errors instead of `String`/`&'static str`)
    - Migrate server `println!`/`eprintln!` logging to `tracing` with leveled
      events and room/player/connection fields
-   - Decide hidden-information policy: `GameStateUpdate` broadcasts all hands to
-     every client (wire-level leak; `Game::export` already has per-perspective
-     filtering, the live protocol does not) — per-connection filtered sends or
-     an explicit open-hands ruling
+   - Per-connection redacted game views, when online play grows beyond trusted
+     groups (decision + design in CLIENT_SERVER.md "Trust Model & Hidden
+     Information"): `Game::view_for` in common, redaction at the connection
+     boundary in `handler.rs`, `hand_counts`/`deck_count` protocol fields,
+     reworked state-sync test invariants
    - Refactor `GameRoom`'s dual state (placeholder `Game` + `Option<Lobby>`,
      player lists kept in sync by hand) into `enum RoomPhase { Lobby, Playing }`
 
@@ -74,11 +75,11 @@
   first cycle instead of `PING_INTERVAL` (30s); the interval swap never reverts
 - Client tile rotations snap back on every `GameStateUpdate` (rotation mutates
   the client's copy of server state); keep a client-side rotation overlay
-- Dragon tile is half-built: `Game.dragon` is never assigned, `dragon_turns` and
-  the PlayerCard dragon flag are dead paths — implement the Tsuro dragon rule or
-  remove the field
 - Head-on pawn collisions (both die in real Tsuro) are not implemented — document
   as a house rule or implement
+- Real-Tsuro fidelity variant (draw one tile per turn + dragon-tile queue) — the
+  current refill-to-3 rule is a deliberate house variant; if fidelity becomes a
+  goal, implement both together as one feature (Phase 3, custom game variants)
 - `server/src/server.rs::create_room` - room-ID uniqueness checked under a read
   lock but inserted under a later write lock; a colliding ID silently replaces an
   existing room (use the entry API under one write lock)
