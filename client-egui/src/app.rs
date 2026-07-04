@@ -509,12 +509,7 @@ impl TemplateApp {
             Message::ImportReplay => self.handle_import_replay(),
             Message::ReplayLoaded(export) => {
                 // Replay file loaded asynchronously (WASM only)
-                let replay_state = crate::replay_state::ReplayState::new(*export);
-                let current_game = replay_state.current_game_state();
-                self.app_state = AppState::ReplayViewer {
-                    replay_state,
-                    current_game,
-                };
+                self.open_replay(*export);
             }
             // Replay controls
             Message::ReplayPlay => self.handle_replay_play(),
@@ -1308,16 +1303,28 @@ impl TemplateApp {
         crate::file_io::save_game_export(&export);
     }
 
+    /// Open the replay viewer for a loaded export, or surface a toast if the
+    /// file can't be replayed (e.g. its history doesn't replay through the
+    /// engine, as happens when a disconnect force-advanced the turn).
+    fn open_replay(&mut self, export: tsurust_common::game::GameExport) {
+        match crate::replay_state::ReplayState::new(export) {
+            Ok(replay_state) => {
+                let current_game = replay_state.current_game_state();
+                self.app_state = AppState::ReplayViewer {
+                    replay_state,
+                    current_game,
+                };
+            }
+            Err(e) => {
+                self.last_error = Some((e, Instant::now()));
+            }
+        }
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     fn handle_import_replay(&mut self) {
         if let Some(export) = crate::file_io::load_game_export() {
-            let replay_state = crate::replay_state::ReplayState::new(export);
-            let current_game = replay_state.current_game_state();
-
-            self.app_state = AppState::ReplayViewer {
-                replay_state,
-                current_game,
-            };
+            self.open_replay(export);
         }
     }
 

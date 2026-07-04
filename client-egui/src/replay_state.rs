@@ -20,54 +20,69 @@ pub struct ReplayState {
 }
 
 impl ReplayState {
-    /// Create a new replay state from an exported game
-    pub fn new(export: GameExport) -> Self {
-        Self {
+    /// Create a new replay state from an exported game.
+    ///
+    /// The export is validated up front: every player needs a trail (its start
+    /// is their initial position) and the full move history must replay through
+    /// the engine. If the full history replays, every prefix replays too, so
+    /// the playback controls can never hit a rebuild error afterwards.
+    pub fn new(export: GameExport) -> Result<Self, String> {
+        let state = Self {
             export,
             current_move_index: 0,
             playback_status: PlaybackStatus::Paused,
             playback_speed: 1.0,
             last_step_time: None,
-        }
+        };
+
+        let initial_players = state.initial_players()?;
+        Game::rebuild_from_history(initial_players, &state.export.game_state.board.history)
+            .map_err(|e| format!("This file can't be replayed: {e}"))?;
+
+        Ok(state)
     }
 
     /// Reconstruct the game state at the current move index
     pub fn current_game_state(&self) -> Game {
-        let initial_players = self.extract_initial_players();
+        let initial_players = self
+            .initial_players()
+            .expect("validated in ReplayState::new");
         let moves = &self.export.game_state.board.history[0..self.current_move_index];
 
         Game::rebuild_from_history(initial_players, moves)
-            .expect("Failed to rebuild game state from history")
+            .expect("validated in ReplayState::new: prefixes of a replayable history replay too")
     }
 
-    /// Extract initial player positions from the export
-    fn extract_initial_players(&self) -> Vec<Player> {
+    /// Initial player positions from the export: each player's trail starts at
+    /// their spawn position.
+    fn initial_players(&self) -> Result<Vec<Player>, String> {
         self.export
             .game_state
             .players
             .iter()
-            .map(|p| Player {
-                id: p.id,
-                name: p.name.clone(),
-                pos: self.get_initial_position(p.id),
-                alive: true,
-                has_moved: false,
-                color: p.color,
+            .map(|p| {
+                let pos = self
+                    .export
+                    .game_state
+                    .player_trails
+                    .get(&p.id)
+                    .map(|trail| trail.start_pos)
+                    .ok_or_else(|| {
+                        format!(
+                            "This file can't be replayed: no trail for player {} to derive a starting position from",
+                            p.id
+                        )
+                    })?;
+                Ok(Player {
+                    id: p.id,
+                    name: p.name.clone(),
+                    pos,
+                    alive: true,
+                    has_moved: false,
+                    color: p.color,
+                })
             })
             .collect()
-    }
-
-    /// Get the starting position for a player from their trail
-    fn get_initial_position(
-        &self,
-        player_id: tsurust_common::board::PlayerID,
-    ) -> tsurust_common::board::PlayerPos {
-        self.export
-            .game_state
-            .player_trails
-            .get(&player_id)
-            .map(|trail| trail.start_pos)
-            .expect("Player should have a trail")
     }
 
     /// Check if we can step forward
@@ -229,9 +244,36 @@ mod tests {
     }
 
     #[test]
+    fn test_unreplayable_export_is_rejected_at_load() {
+        let mut export = create_test_export();
+        // Tamper with the history: a move on a cell the pawn never occupies
+        // cannot replay through the engine (e.g. an export from a game whose
+        // turn order was force-advanced by a disconnect).
+        let tile = export.game_state.board.history[0].tile;
+        export
+            .game_state
+            .board
+            .history
+            .push(tsurust_common::board::Move {
+                player_id: 1,
+                cell: CellCoord { row: 4, col: 4 },
+                tile,
+            });
+
+        let result = ReplayState::new(export);
+        let err = result
+            .err()
+            .expect("an unreplayable export must be rejected at load, not panic later");
+        assert!(
+            err.contains("can't be replayed"),
+            "error should explain the file is unreplayable, got: {err}"
+        );
+    }
+
+    #[test]
     fn test_replay_step_forward_backward() {
         let export = create_test_export();
-        let mut replay_state = ReplayState::new(export);
+        let mut replay_state = ReplayState::new(export).expect("test export should be replayable");
 
         // Initial state
         assert_eq!(replay_state.current_move_index, 0);
@@ -253,7 +295,7 @@ mod tests {
     #[test]
     fn test_replay_jump_to_move() {
         let export = create_test_export();
-        let mut replay_state = ReplayState::new(export);
+        let mut replay_state = ReplayState::new(export).expect("test export should be replayable");
 
         // Jump to middle
         replay_state.set_move_index(2);
@@ -269,7 +311,7 @@ mod tests {
     #[test]
     fn test_replay_speed_control() {
         let export = create_test_export();
-        let mut replay_state = ReplayState::new(export);
+        let mut replay_state = ReplayState::new(export).expect("test export should be replayable");
 
         replay_state.set_speed(2.0);
         assert_eq!(replay_state.playback_speed, 2.0);
@@ -281,7 +323,7 @@ mod tests {
     #[test]
     fn test_replay_playback_status() {
         let export = create_test_export();
-        let mut replay_state = ReplayState::new(export);
+        let mut replay_state = ReplayState::new(export).expect("test export should be replayable");
 
         assert_eq!(replay_state.playback_status, PlaybackStatus::Paused);
 
