@@ -567,7 +567,10 @@ impl TemplateApp {
                     }
                 }
             }
-            ServerMessage::GameStateUpdate { room_id: _, state } => {
+            ServerMessage::GameStateUpdate {
+                room_id: _,
+                mut state,
+            } => {
                 // Server is source of truth - update our game state
                 if let AppState::OnlineGame {
                     game,
@@ -575,6 +578,23 @@ impl TemplateApp {
                     ..
                 } = app_state
                 {
+                    // Rotation is presentation-only (the server matches tiles
+                    // rotation-invariantly), so keep the locally rotated tile
+                    // wherever the server's hand still holds the same tile in
+                    // the same slot — otherwise every update snaps them back.
+                    let me = *current_player_id;
+                    if let (Some(old_hand), Some(new_hand)) =
+                        (game.hands.get(&me), state.hands.get_mut(&me))
+                    {
+                        for (slot, tile) in new_hand.iter_mut().enumerate() {
+                            if let Some(old) = old_hand.get(slot) {
+                                if old.is_same_tile(tile) {
+                                    *tile = *old;
+                                }
+                            }
+                        }
+                    }
+
                     *game = state.clone();
                     *waiting_for_server = false;
 
@@ -1431,5 +1451,65 @@ impl TemplateApp {
 
     fn handle_exit_replay(&mut self) {
         self.app_state = AppState::MainMenu;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tsurust_common::board::{seg, Player, Tile};
+
+    /// Local tile rotations are presentation-only and must survive a
+    /// GameStateUpdate; the server's (unrotated) tiles would otherwise snap
+    /// rotated tiles back after every opponent move.
+    #[test]
+    fn local_rotations_survive_game_state_updates() {
+        let me: PlayerID = 1;
+        let mut server_game = Game::new(vec![
+            Player::new(1, PlayerPos::new(0, 2, 5)),
+            Player::new(2, PlayerPos::new(5, 3, 0)),
+        ]);
+        // Pin a rotation-asymmetric tile into my first slot on both sides.
+        let known = Tile::new([seg(0, 2), seg(1, 3), seg(4, 6), seg(5, 7)]);
+        server_game.hands.get_mut(&me).expect("my hand")[0] = known;
+
+        let rotated = known.rotated(true);
+        assert_ne!(rotated, known, "test tile must be rotation-asymmetric");
+
+        // The client's copy has the tile rotated for planning.
+        let mut client_game = server_game.clone();
+        client_game.hands.get_mut(&me).expect("my hand")[0] = rotated;
+
+        let mut app_state = AppState::OnlineGame {
+            game: client_game,
+            room_id: "ROOM".to_string(),
+            lobby_name: "Room".to_string(),
+            waiting_for_server: true,
+        };
+
+        TemplateApp::handle_server_message(
+            ServerMessage::GameStateUpdate {
+                room_id: "ROOM".to_string(),
+                state: server_game.clone(),
+            },
+            &mut Some("ROOM".to_string()),
+            &mut { me },
+            &mut app_state,
+            &mut std::collections::HashMap::new(),
+            &mut None,
+            &mut None,
+        );
+
+        let AppState::OnlineGame { game, .. } = &app_state else {
+            panic!("should stay in the online game");
+        };
+        assert_eq!(
+            game.hands[&me][0], rotated,
+            "my local rotation should survive the server update"
+        );
+        assert_eq!(
+            game.hands[&2], server_game.hands[&2],
+            "the opponent's hand comes straight from the server"
+        );
     }
 }

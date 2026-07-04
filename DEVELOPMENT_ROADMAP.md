@@ -62,17 +62,6 @@
 - `common/src/lib.rs:14` - Rename TileEndpoint references to "entry point"
 - `common/src/board.rs:14` - Convert TileEndpoint from usize to enum
 - Unicode glyph rendering - Consider runtime detection if more rendering issues occur
-- `client-egui/src/replay_state.rs` - `current_game_state()` panics via `.expect()`
-  on exports whose turn order was force-advanced by the server (disconnects);
-  also rebuilds each step with a freshly shuffled deck so mid-replay hands are
-  noise. Propagate the error to a toast; consider hiding hands in replay.
-- `common/src/game.rs::update_players_and_trails` - stats undercount multi-tile
-  moves: `path_length` +1 per move regardless of cells traversed, and
-  `cells_visited` records only the final cell (iterate `trail.segments` instead)
-- `server/src/handler.rs` - heartbeat pings every `PING_TIMEOUT` (10s) after the
-  first cycle instead of `PING_INTERVAL` (30s); the interval swap never reverts
-- Client tile rotations snap back on every `GameStateUpdate` (rotation mutates
-  the client's copy of server state); keep a client-side rotation overlay
 - Head-on pawn collisions (both die in real Tsuro) are not implemented — document
   as a house rule or implement
 - Real-Tsuro fidelity variant (draw one tile per turn + dragon-tile queue) — the
