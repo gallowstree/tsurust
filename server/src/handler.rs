@@ -261,23 +261,6 @@ async fn handle_client_message(
                 .get_mut(&room_id)
                 .ok_or_else(|| format!("Room '{}' not found", room_id))?;
 
-            // Debug: show game state before placement
-            println!(
-                "[SERVER] PlaceTile request - player_id: {}, current_player: {}",
-                player_id, room.game.current_player_id
-            );
-            println!("[SERVER] Tile being placed: {:?}", mov.tile);
-            if let Some(hand) = room.game.hands.get(&player_id) {
-                println!("[SERVER] Player {} hand: {:?}", player_id, hand);
-                let has_tile = hand.iter().any(|t| t.is_same_tile(&mov.tile));
-                println!(
-                    "[SERVER] Player has tile in hand (rotation-invariant): {}",
-                    has_tile
-                );
-            } else {
-                println!("[SERVER] WARNING: Player {} has no hand!", player_id);
-            }
-
             match room.place_tile(player_id, mov) {
                 Ok(result) => {
                     println!("[SERVER] PlaceTile success: {:?}", result);
