@@ -250,17 +250,28 @@ fn two_clients_create_join_and_play_a_turn_over_a_real_server() {
         placed(a) && placed(b)
     });
 
-    // The turn passed to B on both clients (A either moved on or was
-    // eliminated by its own tile; with two players the next turn is B's
-    // either way).
-    assert_eq!(
-        b.state()
-            .visible_game()
-            .expect("B in game")
-            .current_player_id,
-        2,
-        "after A's move it should be B's turn"
-    );
+    // A's random opening tile has two legitimate outcomes: A survives and the
+    // turn passes to B, or A's own tile carries it off the board edge — and
+    // with two players that elimination ends the game with B the winner
+    // (complete_turn returns PlayerWins without advancing the turn pointer).
+    let game = b.state().visible_game().expect("B in game");
+    let a_alive = game
+        .players
+        .iter()
+        .find(|p| p.id == 1)
+        .expect("player 1 should be in the game")
+        .alive;
+    if a_alive {
+        assert_eq!(
+            game.current_player_id, 2,
+            "A survived its move, so it should be B's turn"
+        );
+    } else {
+        assert!(
+            game.is_game_over(),
+            "with two players, A eliminating itself should end the game"
+        );
+    }
 
     // The key regression guard: B's local rotation survived the authoritative
     // GameStateUpdate that A's move broadcast to everyone.
