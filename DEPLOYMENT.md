@@ -67,8 +67,5 @@ from the `gh-pages` branch.
 
 - The Dockerfiles run as non-root and use multi-stage builds (server image
   ~50–100 MB, client ~20–30 MB).
-- A second, dormant workflow (`deploy-pages.yml`) targets a `production` branch
-  that doesn't exist; `ci.yml` is the live deploy path. Reconcile to one before
-  relying on Pages deploys.
 - The server keeps all game state in memory, so horizontal scaling would need
   sticky sessions or shared state — out of scope while it's single-instance.

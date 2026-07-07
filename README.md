@@ -43,23 +43,15 @@ cargo build --workspace --release
 
 **Web Browser (WASM)**
 
-1. Build for WASM:
+The client builds to WASM with [Trunk](https://trunkrs.dev):
+
 ```bash
+cargo install trunk           # once
 cd client-egui
-./build_wasm.sh         # Unix/Linux/macOS
-# or
-.\build_wasm.ps1        # Windows
+trunk serve                   # builds and serves at http://127.0.0.1:8081
 ```
 
-2. Start a local web server:
-```bash
-python3 -m http.server 8000
-```
-
-3. Open http://localhost:8000/web/ in your browser
-
-See [DEPLOYMENT.md](DEPLOYMENT.md) for the canonical Trunk build and hosting the
-web client.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for release builds and hosting the web client.
 
 **Native Desktop - Local Game**
 ```bash

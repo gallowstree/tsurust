@@ -2,8 +2,12 @@
 .idea/
 .DS_Store
 
-# Build artifacts
+# Build artifacts (Trunk output is dist/; web/*.wasm + docs/ are legacy
+# wasm-bindgen outputs regenerated locally, never committed)
 client-egui/dist/
+client-egui/web/client_egui*.js
+client-egui/web/*.wasm
+client-egui/docs/
 
 # Claude Code local settings
 .claude/settings.local.json

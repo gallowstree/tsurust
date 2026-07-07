@@ -28,5 +28,3 @@ not here (see the documentation policy in CLAUDE.md).
 - Real-Tsuro fidelity variant (draw one tile per turn + dragon-tile queue). The
   current refill-to-3 rule is a deliberate house variant; if fidelity becomes a
   goal, implement both together as one feature (with custom game variants).
-- Two GitHub Pages deploy workflows (`ci.yml`'s `deploy-pages` job vs the dormant
-  `deploy-pages.yml`) — reconcile to one.

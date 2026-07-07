@@ -53,12 +53,10 @@
 
     <!-- Load environment-specific configuration -->
     <script>
-        // Configuration for different environments
-        // For GitHub Pages, this can be set via build-time env vars
-        // For local development, uses default
+        // WebSocket server URL. Defaults to localhost for local dev; the CI
+        // Pages deploy rewrites this line in the built dist/index.html using the
+        // WS_SERVER_URL repo variable (see .github/workflows/ci.yml).
         window.TSURUST_CONFIG = window.TSURUST_CONFIG || {
-            // Default to localhost for development
-            // GitHub Actions will inject production URL via config.js
             wsServerUrl: "ws://127.0.0.1:8080"
         };
     </script>
