@@ -36,7 +36,8 @@
 2. **Advanced Features**
    - Add AI opponents that can join multiplayer games
    - Tournament/ranking system
-   - Spectator mode with game history
+   - Spectator game-history scrubbing (step back through moves while
+     watching live; live spectating itself works via SpectateRoom)
    - Custom game variants and rule modifications
 
 

@@ -5,6 +5,8 @@ use eframe::egui;
 use tsurust_common::board::PlayerID;
 use tsurust_common::lobby::Lobby;
 
+use tsurust_common::lobby::Visibility;
+
 use crate::app::Message;
 use crate::components::LobbyBoard;
 use crate::messaging::send_ui_message;
@@ -77,6 +79,16 @@ fn render_lobby_top_panel(
                     // Copy button
                     if ui.button("📋").on_hover_text("Copy room ID").clicked() {
                         copy_to_clipboard(&lobby.id);
+                    }
+                    match lobby.visibility {
+                        Visibility::Public => {
+                            ui.label(egui::RichText::new("Public").weak())
+                                .on_hover_text("Listed in the lobby browser for anyone to join");
+                        }
+                        Visibility::Private => {
+                            ui.label(egui::RichText::new("Private").weak())
+                                .on_hover_text("Unlisted — players need the room code to join");
+                        }
                     }
                     ui.separator();
                 }

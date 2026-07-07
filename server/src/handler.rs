@@ -163,8 +163,11 @@ async fn handle_client_message(
         ClientMessage::CreateRoom {
             room_name,
             creator_name,
+            visibility,
         } => {
-            let (room_id, player_id) = server.create_room(room_name, creator_name).await?;
+            let (room_id, player_id) = server
+                .create_room(room_name, creator_name, visibility)
+                .await?;
 
             // Subscribe to room updates and send initial lobby state
             let rooms = server.rooms.read().await;
@@ -238,6 +241,45 @@ async fn handle_client_message(
             ws.send(Message::Text(json.into()))
                 .await
                 .map_err(|e| format!("Failed to send response: {}", e))?;
+        }
+
+        ClientMessage::ListLobbies => {
+            let lobbies = server.list_public_rooms().await;
+            let response = ServerMessage::LobbyList { lobbies };
+            let json = serde_json::to_string(&response)
+                .map_err(|e| format!("Failed to serialize lobby list: {}", e))?;
+            ws.send(Message::Text(json.into()))
+                .await
+                .map_err(|e| format!("Failed to send lobby list: {}", e))?;
+        }
+
+        ClientMessage::SpectateRoom { room_id } => {
+            let rooms = server.rooms.read().await;
+            let room = rooms
+                .get(&room_id)
+                .ok_or_else(|| format!("Room '{}' not found", room_id))?;
+            let game = room.game().ok_or_else(|| {
+                format!(
+                    "Room '{}' hasn't started its game yet — join it instead",
+                    room_id
+                )
+            })?;
+
+            // Spectators subscribe to the room's broadcasts but have no
+            // player identity, so verify_sender rejects any attempt to act.
+            *update_rx = Some(room.update_tx.subscribe());
+            *current_room = Some(room_id.clone());
+            *current_player_id = None;
+
+            let response = ServerMessage::GameStateUpdate {
+                room_id: room_id.clone(),
+                state: game.clone(),
+            };
+            let json = serde_json::to_string(&response)
+                .map_err(|e| format!("Failed to serialize game state: {}", e))?;
+            ws.send(Message::Text(json.into()))
+                .await
+                .map_err(|e| format!("Failed to send game state: {}", e))?;
         }
 
         ClientMessage::LeaveRoom { room_id, player_id } => {

@@ -4,7 +4,7 @@ use tokio::sync::broadcast;
 
 use tsurust_common::board::{Move, PlayerID, PlayerPos};
 use tsurust_common::game::{Game, TurnResult};
-use tsurust_common::lobby::{Lobby, LobbyEvent};
+use tsurust_common::lobby::{Lobby, LobbyEvent, Visibility};
 
 use tsurust_common::protocol::{RoomId, ServerMessage};
 
@@ -18,6 +18,12 @@ pub enum RoomPhase {
 
 pub struct GameRoom {
     pub id: RoomId,
+    /// Room name, kept here as well as in the lobby so it survives the
+    /// transition into the Playing phase (the lobby is consumed on start).
+    pub name: String,
+    /// Public rooms appear in the lobby directory; private rooms are
+    /// reachable only by their room code.
+    pub visibility: Visibility,
     pub phase: RoomPhase,
     // Broadcast channel for pushing updates to all connected clients
     pub update_tx: broadcast::Sender<ServerMessage>,
@@ -27,12 +33,17 @@ pub struct GameRoom {
 }
 
 impl GameRoom {
-    pub fn new(id: RoomId, room_name: String) -> Self {
+    pub fn new(id: RoomId, room_name: String, visibility: Visibility) -> Self {
         let (update_tx, _) = broadcast::channel(100);
 
+        let mut lobby = Lobby::new(id.clone(), room_name.clone());
+        lobby.visibility = visibility;
+
         Self {
-            phase: RoomPhase::Lobby(Lobby::new(id.clone(), room_name)),
+            phase: RoomPhase::Lobby(lobby),
             id,
+            name: room_name,
+            visibility,
             update_tx,
             last_activity: Instant::now(),
         }

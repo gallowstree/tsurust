@@ -5,9 +5,9 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 
 use tsurust_common::board::PlayerID;
-use tsurust_common::lobby::{next_lobby_id, LobbyEvent};
+use tsurust_common::lobby::{next_lobby_id, LobbyEvent, Visibility};
 
-use tsurust_common::protocol::{RoomId, ServerMessage};
+use tsurust_common::protocol::{LobbyListing, RoomId, ServerMessage};
 
 use crate::room::{GameRoom, RoomPhase};
 
@@ -46,6 +46,7 @@ impl GameServer {
         &self,
         room_name: String,
         creator_name: String,
+        visibility: Visibility,
     ) -> Result<(RoomId, PlayerID), String> {
         // Hold the write lock across generate-check-insert so two concurrent
         // creates can't race into the same room ID
@@ -58,7 +59,7 @@ impl GameServer {
         };
 
         let player_id = 1;
-        let mut room = GameRoom::new(room_id.clone(), room_name);
+        let mut room = GameRoom::new(room_id.clone(), room_name, visibility);
         if let RoomPhase::Lobby(lobby) = &mut room.phase {
             lobby
                 .handle_event(LobbyEvent::PlayerJoined {
@@ -118,6 +119,37 @@ impl GameServer {
         room.broadcast(lobby_update);
 
         Ok(player_id)
+    }
+
+    /// The public lobby directory: every public room, joinable ones first.
+    /// Private rooms never appear here — they are reachable only by code.
+    pub async fn list_public_rooms(&self) -> Vec<LobbyListing> {
+        let rooms = self.rooms.read().await;
+        let mut listings: Vec<LobbyListing> = rooms
+            .values()
+            .filter(|room| room.visibility == Visibility::Public)
+            .map(|room| {
+                let (player_count, max_players, in_progress) = match &room.phase {
+                    RoomPhase::Lobby(lobby) => (lobby.players.len(), lobby.max_players, false),
+                    // A started game is locked to its players; report the
+                    // count as the cap since nobody else can join.
+                    RoomPhase::Playing(game) => (game.players.len(), game.players.len(), true),
+                };
+                LobbyListing {
+                    room_id: room.id.clone(),
+                    name: room.name.clone(),
+                    player_count,
+                    max_players,
+                    in_progress,
+                }
+            })
+            .collect();
+        listings.sort_by(|a, b| {
+            a.in_progress
+                .cmp(&b.in_progress)
+                .then_with(|| a.name.cmp(&b.name))
+        });
+        listings
     }
 
     /// Remove rooms that have no connected clients and have been idle past the

@@ -2,11 +2,14 @@ use std::sync::mpsc;
 
 use eframe::egui;
 
-use crate::app::Message;
+use tsurust_common::lobby::Visibility;
+use tsurust_common::protocol::LobbyListing;
+
+use crate::app::{JoinScreenRequest, Message};
 use crate::messaging::send_ui_message;
 
 /// Width of the centered form column.
-const FORM_WIDTH: f32 = 380.0;
+const FORM_WIDTH: f32 = 420.0;
 
 /// Center a fixed-width column horizontally. Sub-uis (like a Grid of form
 /// rows) span the full width, so `vertical_centered` alone can't center
@@ -26,6 +29,7 @@ pub fn render_create_lobby_form(
     ui: &mut egui::Ui,
     lobby_name: &mut String,
     player_name: &mut String,
+    public: &mut bool,
     sender: &mpsc::Sender<Message>,
 ) {
     egui::CentralPanel::default().show(ui, |ui| {
@@ -52,15 +56,36 @@ pub fn render_create_lobby_form(
                     ui.text_edit_singleline(player_name);
                     ui.end_row();
                 });
-            ui.add_space(30.0);
+            ui.add_space(12.0);
+
+            ui.checkbox(public, "Public lobby (listed for anyone to join)");
+            ui.label(
+                egui::RichText::new(if *public {
+                    "Anyone browsing the server can join or watch."
+                } else {
+                    "Unlisted: players need the 4-character room code."
+                })
+                .weak()
+                .small(),
+            );
+            ui.add_space(20.0);
 
             let can_create = !lobby_name.trim().is_empty() && !player_name.trim().is_empty();
+            let visibility = if *public {
+                Visibility::Public
+            } else {
+                Visibility::Private
+            };
 
             // Submit on Enter key
             if ui.input(|i| i.key_pressed(egui::Key::Enter)) && can_create {
                 send_ui_message(
                     sender,
-                    Message::CreateAndJoinLobby(lobby_name.clone(), player_name.clone()),
+                    Message::CreateAndJoinLobby(
+                        lobby_name.clone(),
+                        player_name.clone(),
+                        visibility,
+                    ),
                 );
             }
 
@@ -71,7 +96,11 @@ pub fn render_create_lobby_form(
                 {
                     send_ui_message(
                         sender,
-                        Message::CreateAndJoinLobby(lobby_name.clone(), player_name.clone()),
+                        Message::CreateAndJoinLobby(
+                            lobby_name.clone(),
+                            player_name.clone(),
+                            visibility,
+                        ),
                     );
                 }
 
@@ -87,43 +116,149 @@ pub fn render_join_lobby_form(
     ui: &mut egui::Ui,
     lobby_id: &mut String,
     player_name: &mut String,
-    pending: bool,
+    pending: Option<&JoinScreenRequest>,
+    lobbies: &[LobbyListing],
     sender: &mpsc::Sender<Message>,
 ) {
     egui::CentralPanel::default().show(ui, |ui| {
         ui.vertical_centered(|ui| {
-            ui.add_space(100.0);
+            ui.add_space(60.0);
             ui.heading("Join Lobby");
-            ui.add_space(40.0);
+            ui.add_space(30.0);
         });
 
         centered_column(ui, |ui| {
+            let idle = pending.is_none();
+
+            // The player name applies to both paths (browser and code).
+            egui::Grid::new("join_name_form")
+                .num_columns(2)
+                .spacing([8.0, 12.0])
+                .show(ui, |ui| {
+                    ui.label("Your Name:");
+                    ui.text_edit_singleline(player_name);
+                    ui.end_row();
+                });
+            let has_name = !player_name.trim().is_empty();
+
+            ui.add_space(20.0);
+
+            // --- Public lobby browser ---
+            ui.horizontal(|ui| {
+                ui.strong("Public lobbies");
+                if ui
+                    .add_enabled(idle, egui::Button::new("🔄 Refresh"))
+                    .clicked()
+                {
+                    send_ui_message(sender, Message::RefreshLobbies);
+                }
+            });
+            ui.add_space(6.0);
+
+            if lobbies.is_empty() {
+                ui.label(
+                    egui::RichText::new("No public lobbies right now.")
+                        .weak()
+                        .italics(),
+                );
+            } else {
+                egui::Grid::new("public_lobby_browser")
+                    .num_columns(3)
+                    .spacing([16.0, 8.0])
+                    .show(ui, |ui| {
+                        for listing in lobbies {
+                            ui.label(&listing.name);
+                            if listing.in_progress {
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "In game · {} players",
+                                        listing.player_count
+                                    ))
+                                    .weak(),
+                                );
+                                let button = ui.add_enabled(idle, egui::Button::new("👁 Spectate"));
+                                // Row-scoped accessible label (also disambiguates
+                                // rows for screen readers).
+                                button.widget_info(|| {
+                                    egui::WidgetInfo::labeled(
+                                        egui::WidgetType::Button,
+                                        true,
+                                        format!("Spectate {}", listing.name),
+                                    )
+                                });
+                                if button.clicked() {
+                                    send_ui_message(
+                                        sender,
+                                        Message::SpectateLobby(
+                                            listing.room_id.clone(),
+                                            listing.name.clone(),
+                                        ),
+                                    );
+                                }
+                            } else {
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "{}/{} players",
+                                        listing.player_count, listing.max_players
+                                    ))
+                                    .weak(),
+                                );
+                                let full = listing.player_count >= listing.max_players;
+                                let can_join = idle && has_name && !full;
+                                let button = ui.add_enabled(can_join, egui::Button::new("Join"));
+                                // Row-scoped accessible label (also disambiguates
+                                // rows for screen readers).
+                                button.widget_info(|| {
+                                    egui::WidgetInfo::labeled(
+                                        egui::WidgetType::Button,
+                                        true,
+                                        format!("Join {}", listing.name),
+                                    )
+                                });
+                                if full {
+                                    button.on_hover_text("This lobby is full");
+                                } else if !has_name {
+                                    button.on_hover_text("Enter your name first");
+                                } else if button.clicked() {
+                                    send_ui_message(
+                                        sender,
+                                        Message::JoinLobbyWithId(
+                                            listing.room_id.clone(),
+                                            player_name.clone(),
+                                        ),
+                                    );
+                                }
+                            }
+                            ui.end_row();
+                        }
+                    });
+            }
+
+            ui.add_space(20.0);
+            ui.separator();
+            ui.add_space(12.0);
+
+            // --- Private lobby, by room code ---
+            ui.strong("Private lobby");
+            ui.add_space(6.0);
             egui::Grid::new("join_lobby_form")
                 .num_columns(2)
                 .spacing([8.0, 12.0])
                 .show(ui, |ui| {
-                    ui.label("Lobby ID:");
-                    let lobby_id_response = ui.text_edit_singleline(lobby_id);
-                    // Auto-focus on first render
-                    if lobby_id.is_empty() && player_name.is_empty() {
-                        lobby_id_response.request_focus();
-                    }
+                    ui.label("Room code:");
+                    ui.text_edit_singleline(lobby_id);
                     ui.end_row();
 
                     ui.label("");
                     ui.label(egui::RichText::new("(4-character code)").weak().small());
                     ui.end_row();
-
-                    ui.label("Your Name:");
-                    ui.text_edit_singleline(player_name);
-                    ui.end_row();
                 });
-            ui.add_space(30.0);
+            ui.add_space(12.0);
 
-            let can_join = lobby_id.trim().len() == 4 && !player_name.trim().is_empty() && !pending;
+            let can_join_by_code = lobby_id.trim().len() == 4 && has_name && idle;
 
             // Submit on Enter key
-            if ui.input(|i| i.key_pressed(egui::Key::Enter)) && can_join {
+            if ui.input(|i| i.key_pressed(egui::Key::Enter)) && can_join_by_code {
                 send_ui_message(
                     sender,
                     Message::JoinLobbyWithId(lobby_id.clone(), player_name.clone()),
@@ -132,7 +267,7 @@ pub fn render_join_lobby_form(
 
             ui.horizontal(|ui| {
                 if ui
-                    .add_enabled(can_join, egui::Button::new("Join"))
+                    .add_enabled(can_join_by_code, egui::Button::new("Join by code"))
                     .clicked()
                 {
                     send_ui_message(
@@ -145,11 +280,18 @@ pub fn render_join_lobby_form(
                     send_ui_message(sender, Message::BackToMainMenu);
                 }
 
-                // Loading state while the join request is in flight.
-                if pending {
+                // Loading state while a join/spectate request is in flight.
+                if let Some(request) = pending {
                     ui.add_space(12.0);
                     ui.spinner();
-                    ui.label(format!("Joining room {}…", lobby_id.trim().to_uppercase()));
+                    match request {
+                        JoinScreenRequest::Join => {
+                            ui.label("Joining…");
+                        }
+                        JoinScreenRequest::Spectate { room_name, .. } => {
+                            ui.label(format!("Connecting to spectate {room_name}…"));
+                        }
+                    }
                 }
             });
         });

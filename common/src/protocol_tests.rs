@@ -70,6 +70,7 @@ fn test_client_message_serialization() {
         ClientMessage::CreateRoom {
             room_name: "TEST123".to_string(),
             creator_name: "Alice".to_string(),
+            visibility: crate::lobby::Visibility::Public,
         },
         ClientMessage::JoinRoom {
             room_id: "TEST123".to_string(),
@@ -85,6 +86,10 @@ fn test_client_message_serialization() {
             position: PlayerPos::new(0, 0, 4),
         },
         ClientMessage::StartGame {
+            room_id: "TEST123".to_string(),
+        },
+        ClientMessage::ListLobbies,
+        ClientMessage::SpectateRoom {
             room_id: "TEST123".to_string(),
         },
         ClientMessage::PlaceTile {

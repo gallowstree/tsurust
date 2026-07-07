@@ -1,12 +1,17 @@
 use crate::server::GameServer;
 use tsurust_common::board::PlayerPos;
+use tsurust_common::lobby::Visibility;
 
 #[tokio::test]
 async fn test_create_room_assigns_player_id_1() {
     let server = GameServer::new();
 
     let result = server
-        .create_room("Test Room".to_string(), "Alice".to_string())
+        .create_room(
+            "Test Room".to_string(),
+            "Alice".to_string(),
+            Visibility::Private,
+        )
         .await;
 
     assert!(result.is_ok());
@@ -22,7 +27,11 @@ async fn test_join_room_assigns_sequential_ids() {
 
     // Create room (first player gets ID 1)
     let (room_id, first_player_id) = server
-        .create_room("Test Room".to_string(), "Alice".to_string())
+        .create_room(
+            "Test Room".to_string(),
+            "Alice".to_string(),
+            Visibility::Private,
+        )
         .await
         .expect("Failed to create room");
 
@@ -51,7 +60,11 @@ async fn test_player_ids_use_max_plus_one() {
 
     // Create room
     let (room_id, _) = server
-        .create_room("Test Room".to_string(), "Alice".to_string())
+        .create_room(
+            "Test Room".to_string(),
+            "Alice".to_string(),
+            Visibility::Private,
+        )
         .await
         .expect("Failed to create room");
 
@@ -80,7 +93,11 @@ async fn test_join_after_game_started_is_rejected() {
     let server = GameServer::new();
 
     let (room_id, _) = server
-        .create_room("Test Room".to_string(), "Alice".to_string())
+        .create_room(
+            "Test Room".to_string(),
+            "Alice".to_string(),
+            Visibility::Private,
+        )
         .await
         .expect("Failed to create room");
     server
@@ -124,11 +141,19 @@ async fn test_join_nonexistent_room_fails() {
 async fn test_reap_removes_only_idle_disconnected_rooms() {
     let server = GameServer::new();
     let (idle_id, _) = server
-        .create_room("Idle Room".to_string(), "Alice".to_string())
+        .create_room(
+            "Idle Room".to_string(),
+            "Alice".to_string(),
+            Visibility::Private,
+        )
         .await
         .expect("create idle room");
     let (live_id, _) = server
-        .create_room("Live Room".to_string(), "Bob".to_string())
+        .create_room(
+            "Live Room".to_string(),
+            "Bob".to_string(),
+            Visibility::Private,
+        )
         .await
         .expect("create live room");
 
@@ -161,7 +186,11 @@ async fn test_reap_removes_only_idle_disconnected_rooms() {
 async fn test_reap_leaves_fresh_rooms_within_grace_period() {
     let server = GameServer::new();
     let (room_id, _) = server
-        .create_room("Fresh Room".to_string(), "Alice".to_string())
+        .create_room(
+            "Fresh Room".to_string(),
+            "Alice".to_string(),
+            Visibility::Private,
+        )
         .await
         .expect("create room");
 
@@ -184,13 +213,17 @@ async fn test_create_multiple_rooms_generates_unique_ids() {
 
     // Create first room
     let (room_id1, _) = server
-        .create_room("Room 1".to_string(), "Alice".to_string())
+        .create_room(
+            "Room 1".to_string(),
+            "Alice".to_string(),
+            Visibility::Private,
+        )
         .await
         .expect("Failed to create first room");
 
     // Create second room
     let (room_id2, _) = server
-        .create_room("Room 2".to_string(), "Bob".to_string())
+        .create_room("Room 2".to_string(), "Bob".to_string(), Visibility::Private)
         .await
         .expect("Failed to create second room");
 
@@ -198,4 +231,92 @@ async fn test_create_multiple_rooms_generates_unique_ids() {
     assert_ne!(room_id1, room_id2, "Room IDs should be unique");
     assert_eq!(room_id1.len(), 4, "Room ID should be 4 characters");
     assert_eq!(room_id2.len(), 4, "Room ID should be 4 characters");
+}
+
+#[tokio::test]
+async fn test_lobby_directory_lists_only_public_rooms() {
+    let server = GameServer::new();
+
+    let (public_id, _) = server
+        .create_room(
+            "Open Table".to_string(),
+            "Alice".to_string(),
+            Visibility::Public,
+        )
+        .await
+        .expect("Failed to create public room");
+    server
+        .create_room(
+            "Secret Table".to_string(),
+            "Bob".to_string(),
+            Visibility::Private,
+        )
+        .await
+        .expect("Failed to create private room");
+
+    let listings = server.list_public_rooms().await;
+    assert_eq!(
+        listings.len(),
+        1,
+        "only the public room belongs in the directory"
+    );
+    let listing = &listings[0];
+    assert_eq!(listing.room_id, public_id);
+    assert_eq!(listing.name, "Open Table");
+    assert_eq!(listing.player_count, 1);
+    assert_eq!(listing.max_players, 8);
+    assert!(!listing.in_progress);
+}
+
+#[tokio::test]
+async fn test_lobby_directory_marks_started_games_and_sorts_joinable_first() {
+    let server = GameServer::new();
+
+    // A public room that starts its game (name sorts first alphabetically,
+    // to prove the ordering is by joinability, not by name).
+    let (playing_id, _) = server
+        .create_room(
+            "A Started Game".to_string(),
+            "Alice".to_string(),
+            Visibility::Public,
+        )
+        .await
+        .expect("Failed to create room");
+    server
+        .join_room(playing_id.clone(), "Bob".to_string())
+        .await
+        .expect("Failed to join room");
+    {
+        let mut rooms = server.rooms.write().await;
+        let room = rooms.get_mut(&playing_id).expect("room exists");
+        room.place_pawn(1, PlayerPos::new(0, 2, 5))
+            .expect("Alice's pawn placement");
+        room.place_pawn(2, PlayerPos::new(5, 3, 0))
+            .expect("Bob's pawn placement");
+        room.start_game().expect("game should start");
+    }
+
+    // A public room still gathering players.
+    server
+        .create_room(
+            "Z Open Lobby".to_string(),
+            "Carol".to_string(),
+            Visibility::Public,
+        )
+        .await
+        .expect("Failed to create room");
+
+    let listings = server.list_public_rooms().await;
+    assert_eq!(listings.len(), 2);
+    assert_eq!(
+        listings[0].name, "Z Open Lobby",
+        "joinable rooms come before in-progress games"
+    );
+    assert!(!listings[0].in_progress);
+    assert_eq!(listings[1].room_id, playing_id);
+    assert!(listings[1].in_progress);
+    assert_eq!(
+        listings[1].player_count, 2,
+        "a started game reports its locked-in player count"
+    );
 }

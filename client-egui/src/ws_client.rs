@@ -1,7 +1,6 @@
 use ewebsock::{WsEvent, WsMessage, WsReceiver, WsSender};
 
-use tsurust_common::board::{Move, PlayerID, PlayerPos};
-use tsurust_common::protocol::{ClientMessage, RoomId, ServerMessage};
+use tsurust_common::protocol::{ClientMessage, ServerMessage};
 
 #[derive(Debug, Clone)]
 pub enum ConnectionStatus {
@@ -160,47 +159,5 @@ impl GameClient {
         self.connected = false;
         self.pending_messages.clear();
         self.status = ConnectionStatus::Disconnected { reason };
-    }
-
-    pub fn create_room(&mut self, room_name: String, creator_name: String) {
-        self.send(ClientMessage::CreateRoom {
-            room_name,
-            creator_name,
-        });
-    }
-
-    pub fn join_room(&mut self, room_id: RoomId, player_name: String) {
-        self.send(ClientMessage::JoinRoom {
-            room_id,
-            player_name,
-        });
-    }
-
-    pub fn leave_room(&mut self, room_id: RoomId, player_id: PlayerID) {
-        self.send(ClientMessage::LeaveRoom { room_id, player_id });
-    }
-
-    pub fn place_tile(&mut self, room_id: RoomId, player_id: PlayerID, mov: Move) {
-        self.send(ClientMessage::PlaceTile {
-            room_id,
-            player_id,
-            mov,
-        });
-    }
-
-    pub fn get_game_state(&mut self, room_id: RoomId) {
-        self.send(ClientMessage::GetGameState { room_id });
-    }
-
-    pub fn place_pawn(&mut self, room_id: RoomId, player_id: PlayerID, position: PlayerPos) {
-        self.send(ClientMessage::PlacePawn {
-            room_id,
-            player_id,
-            position,
-        });
-    }
-
-    pub fn start_game(&mut self, room_id: RoomId) {
-        self.send(ClientMessage::StartGame { room_id });
     }
 }

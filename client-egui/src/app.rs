@@ -5,9 +5,9 @@ use egui::Context;
 
 use tsurust_common::board::*;
 use tsurust_common::game::Game;
-use tsurust_common::lobby::{Lobby, LobbyEvent};
+use tsurust_common::lobby::{Lobby, LobbyEvent, Visibility};
 
-use tsurust_common::protocol::{ClientMessage, ServerMessage};
+use tsurust_common::protocol::{ClientMessage, LobbyListing, ServerMessage};
 
 use crate::screens;
 use crate::ws_client::{ConnectionStatus, GameClient};
@@ -97,8 +97,10 @@ pub enum Message {
     StartGameFromLobby,       // start game from lobby
     ShowCreateLobbyForm,      // show create lobby form
     ShowJoinLobbyForm,        // show join lobby form
-    CreateAndJoinLobby(String, String), // (lobby_name, player_name)
+    CreateAndJoinLobby(String, String, Visibility), // (lobby_name, player_name, visibility)
     JoinLobbyWithId(String, String), // (lobby_id, player_name)
+    RefreshLobbies,           // re-fetch the public lobby directory
+    SpectateLobby(String, String), // (room_id, room_name) watch a game in progress
     BackToMainMenu,           // return to main menu
     DebugAddPlayer,           // debug: simulate player joining
     DebugPlacePawn(PlayerID), // debug: place pawn for specific player
@@ -122,6 +124,16 @@ pub enum Message {
     ExitReplay,              // Exit replay viewer and return to main menu
 }
 
+/// An in-flight request from the join screen; the form shows a spinner and
+/// stays put until the server confirms or rejects it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JoinScreenRequest {
+    /// Joining a lobby as a player (by code or from the public directory).
+    Join,
+    /// Spectating an in-progress game from the public directory.
+    Spectate { room_id: String, room_name: String },
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum AppState {
@@ -129,13 +141,16 @@ pub enum AppState {
     CreateLobbyForm {
         lobby_name: String,
         player_name: String,
+        /// Whether the room will be listed in the public lobby directory.
+        public: bool,
     },
     JoinLobbyForm {
         lobby_id: String,
         player_name: String,
-        /// True while a join request is in flight: the form shows a spinner
-        /// and stays put until the server confirms (or rejects) the join.
-        pending: bool,
+        pending: Option<JoinScreenRequest>,
+        /// The server's public lobby directory, fetched when the screen
+        /// opens and on demand via the refresh button.
+        lobbies: Vec<LobbyListing>,
     },
     Lobby(Lobby),                     // Normal lobby view (place own pawn)
     LobbyPlacingFor(Lobby, PlayerID), // Debug mode: placing pawn for specific player
@@ -145,6 +160,8 @@ pub enum AppState {
         room_id: String,
         lobby_name: String,       // Display name of the lobby/game
         waiting_for_server: bool, // Show loading state during server round-trip
+        /// Watching only: no hand, no moves; just the live board.
+        is_spectator: bool,
     },
     ReplayViewer {
         replay_state: crate::replay_state::ReplayState,
@@ -255,7 +272,8 @@ impl TemplateApp {
                 app.app_state = AppState::JoinLobbyForm {
                     lobby_id: room_id,
                     player_name: String::new(),
-                    pending: false,
+                    pending: None,
+                    lobbies: Vec::new(),
                 };
             }
         }
@@ -393,20 +411,27 @@ impl TemplateApp {
             AppState::CreateLobbyForm {
                 lobby_name,
                 player_name,
-            } => {
-                screens::lobby_forms::render_create_lobby_form(ui, lobby_name, player_name, sender)
-            }
+                public,
+            } => screens::lobby_forms::render_create_lobby_form(
+                ui,
+                lobby_name,
+                player_name,
+                public,
+                sender,
+            ),
             AppState::JoinLobbyForm {
                 lobby_id,
                 player_name,
                 pending,
+                lobbies,
             } => {
-                let pending = *pending;
+                let pending = pending.clone();
                 screens::lobby_forms::render_join_lobby_form(
                     ui,
                     lobby_id,
                     player_name,
-                    pending,
+                    pending.as_ref(),
+                    lobbies,
                     sender,
                 )
             }
@@ -429,6 +454,7 @@ impl TemplateApp {
                 false,
                 None,
                 None,
+                false,
                 sender,
                 last_rotated_tile,
                 player_animations,
@@ -438,6 +464,7 @@ impl TemplateApp {
                 game,
                 waiting_for_server,
                 lobby_name,
+                is_spectator,
                 ..
             } => screens::game::render_game_ui(
                 ui,
@@ -446,6 +473,7 @@ impl TemplateApp {
                 *waiting_for_server,
                 Some(lobby_name.as_str()),
                 connection,
+                *is_spectator,
                 sender,
                 last_rotated_tile,
                 player_animations,
@@ -537,7 +565,22 @@ impl eframe::App for TemplateApp {
             ConnectionStatus::Disconnected { reason } => Some(reason.clone()),
             _ => None,
         });
-        if let Some(reason) = disconnect_reason {
+        // Browsing lobbies (or idling in a menu) isn't a game: losing the
+        // socket there gets a toast and a re-enabled form, not the modal.
+        if let (Some(reason), None) = (&disconnect_reason, &self.current_room_id) {
+            self.last_error = Some((
+                format!("Lost connection to server: {reason}"),
+                Instant::now(),
+            ));
+            self.game_client = None;
+            if let AppState::JoinLobbyForm {
+                pending, lobbies, ..
+            } = &mut self.app_state
+            {
+                *pending = None;
+                lobbies.clear();
+            }
+        } else if let Some(reason) = disconnect_reason {
             let mut return_to_menu = false;
             egui::Window::new("⚠ Disconnected from server")
                 .collapsible(false)
@@ -576,10 +619,14 @@ impl TemplateApp {
             Message::StartSampleGame => self.handle_start_sample_game(),
             Message::ShowCreateLobbyForm => self.handle_show_create_lobby_form(),
             Message::ShowJoinLobbyForm => self.handle_show_join_lobby_form(),
-            Message::CreateAndJoinLobby(name, player) => {
-                self.handle_create_and_join_lobby(name, player)
+            Message::CreateAndJoinLobby(name, player, visibility) => {
+                self.handle_create_and_join_lobby(name, player, visibility)
             }
             Message::JoinLobbyWithId(id, player) => self.handle_join_lobby_with_id(id, player),
+            Message::RefreshLobbies => self.request_lobby_list(),
+            Message::SpectateLobby(room_id, room_name) => {
+                self.handle_spectate_lobby(room_id, room_name)
+            }
             Message::BackToMainMenu => self.handle_back_to_main_menu(),
             Message::JoinLobby(player_name) => self.handle_join_lobby(player_name),
             Message::PlacePawn(position) => self.handle_place_pawn(position),
@@ -649,7 +696,11 @@ impl TemplateApp {
                 // LobbyStateUpdate that normally precedes this transitions us;
                 // this is the fallback if it arrives out of order): enter a
                 // provisional lobby that the next lobby update fills in.
-                if let AppState::JoinLobbyForm { pending: true, .. } = app_state {
+                if let AppState::JoinLobbyForm {
+                    pending: Some(JoinScreenRequest::Join),
+                    ..
+                } = app_state
+                {
                     let mut lobby = Lobby::new(room_id.clone(), format!("Room {}", room_id));
                     if let Err(e) = lobby.handle_event(LobbyEvent::PlayerJoined {
                         player_id,
@@ -671,10 +722,34 @@ impl TemplateApp {
                     }
                 }
             }
-            ServerMessage::GameStateUpdate {
-                room_id: _,
-                mut state,
-            } => {
+            ServerMessage::GameStateUpdate { room_id, mut state } => {
+                // A pending spectate resolved: enter the game as an observer.
+                if let AppState::JoinLobbyForm {
+                    pending:
+                        Some(JoinScreenRequest::Spectate {
+                            room_id: wanted,
+                            room_name,
+                        }),
+                    ..
+                } = app_state
+                {
+                    if *wanted == room_id {
+                        let lobby_name = room_name.clone();
+                        *current_room_id = Some(room_id.clone());
+                        // Spectators are nobody: 0 matches no player, so no
+                        // "(You)" badge and no hand is ever considered ours.
+                        *current_player_id = 0;
+                        *app_state = AppState::OnlineGame {
+                            game: state,
+                            room_id,
+                            lobby_name,
+                            waiting_for_server: false,
+                            is_spectator: true,
+                        };
+                        return;
+                    }
+                }
+
                 // Server is source of truth - update our game state
                 if let AppState::OnlineGame {
                     game,
@@ -734,9 +809,9 @@ impl TemplateApp {
                 {
                     *waiting_for_server = false;
                 }
-                // A rejected join re-enables the form so the user can retry.
+                // A rejected join/spectate re-enables the form for a retry.
                 if let AppState::JoinLobbyForm { pending, .. } = app_state {
-                    *pending = false;
+                    *pending = None;
                 }
                 // Surface the error to the player via a transient toast.
                 *last_error = Some((message, Instant::now()));
@@ -746,6 +821,11 @@ impl TemplateApp {
                 player_id: _,
             } => {
                 // TODO: Update lobby state when PlayerLeft event is implemented in Lobby
+            }
+            ServerMessage::LobbyList { lobbies: list } => {
+                if let AppState::JoinLobbyForm { lobbies, .. } = app_state {
+                    *lobbies = list;
+                }
             }
             ServerMessage::LobbyStateUpdate { room_id: _, lobby } => {
                 match app_state {
@@ -758,7 +838,10 @@ impl TemplateApp {
                     // own identity (room + player id) is NOT set here — the
                     // PlayerJoined confirmation that follows carries it, and
                     // its "no room yet" check must still fire.
-                    AppState::JoinLobbyForm { pending: true, .. } => {
+                    AppState::JoinLobbyForm {
+                        pending: Some(JoinScreenRequest::Join),
+                        ..
+                    } => {
                         *app_state = AppState::Lobby(lobby);
                     }
                     _ => {}
@@ -793,6 +876,7 @@ impl TemplateApp {
                     room_id,
                     lobby_name,
                     waiting_for_server: false,
+                    is_spectator: false,
                 };
             }
         }
@@ -819,10 +903,43 @@ impl TemplateApp {
         self.app_state = AppState::Game(Game::new(players));
     }
 
+    /// Connect to the server if not already connected. On failure, surface a
+    /// toast and return false.
+    fn ensure_server_connection(&mut self) -> bool {
+        if self.game_client.is_some() {
+            return true;
+        }
+        let ws_url = get_websocket_url();
+        match GameClient::connect(&ws_url, self.ws_wakeup()) {
+            Ok(client) => {
+                self.game_client = Some(client);
+                true
+            }
+            Err(e) => {
+                eprintln!("Failed to connect to server: {}", e);
+                self.last_error =
+                    Some((format!("Couldn't connect to server: {e}"), Instant::now()));
+                false
+            }
+        }
+    }
+
+    /// Ask the server for its public lobby directory (the response updates
+    /// the join screen's browser).
+    fn request_lobby_list(&mut self) {
+        if !self.ensure_server_connection() {
+            return;
+        }
+        if let Some(sender) = &self.sender {
+            crate::messaging::send_server_message(sender, ClientMessage::ListLobbies);
+        }
+    }
+
     fn handle_show_create_lobby_form(&mut self) {
         self.app_state = AppState::CreateLobbyForm {
             lobby_name: "Test Lobby".to_string(),
             player_name: "Player 1".to_string(),
+            public: true,
         };
     }
 
@@ -830,73 +947,91 @@ impl TemplateApp {
         self.app_state = AppState::JoinLobbyForm {
             lobby_id: String::new(),
             player_name: "Player 1".to_string(),
-            pending: false,
+            pending: None,
+            lobbies: Vec::new(),
         };
+        // Populate the public-lobby browser right away.
+        self.request_lobby_list();
     }
 
-    fn handle_create_and_join_lobby(&mut self, lobby_name: String, player_name: String) {
-        let ws_url = get_websocket_url();
-        match GameClient::connect(&ws_url, self.ws_wakeup()) {
-            Ok(client) => {
-                self.game_client = Some(client);
-
-                // Send create room message via mpsc
-                if let Some(sender) = &self.sender {
-                    crate::messaging::send_server_message(
-                        sender,
-                        ClientMessage::CreateRoom {
-                            room_name: lobby_name.clone(),
-                            creator_name: player_name.clone(),
-                        },
-                    );
-                }
-
-                let (lobby, player_id) = Lobby::new_with_creator(lobby_name, player_name);
-                self.current_player_id = player_id;
-                self.app_state = AppState::Lobby(lobby);
+    fn handle_create_and_join_lobby(
+        &mut self,
+        lobby_name: String,
+        player_name: String,
+        visibility: Visibility,
+    ) {
+        if self.ensure_server_connection() {
+            // Send create room message via mpsc
+            if let Some(sender) = &self.sender {
+                crate::messaging::send_server_message(
+                    sender,
+                    ClientMessage::CreateRoom {
+                        room_name: lobby_name.clone(),
+                        creator_name: player_name.clone(),
+                        visibility,
+                    },
+                );
             }
-            Err(e) => {
-                eprintln!("Failed to connect to server: {}", e);
-                self.last_error = Some((
-                    format!("Couldn't connect to server: {e}. Started a local lobby instead."),
-                    Instant::now(),
-                ));
-                let (lobby, player_id) = Lobby::new_with_creator(lobby_name, player_name);
-                self.current_player_id = player_id;
-                self.app_state = AppState::Lobby(lobby);
-            }
+
+            let (mut lobby, player_id) = Lobby::new_with_creator(lobby_name, player_name);
+            lobby.visibility = visibility;
+            self.current_player_id = player_id;
+            self.app_state = AppState::Lobby(lobby);
+        } else {
+            // Fall back to an offline lobby; the connect failure is already
+            // toasted by ensure_server_connection.
+            self.last_error = Some((
+                "Couldn't reach the server, so a local lobby was started instead.".to_string(),
+                Instant::now(),
+            ));
+            let (lobby, player_id) = Lobby::new_with_creator(lobby_name, player_name);
+            self.current_player_id = player_id;
+            self.app_state = AppState::Lobby(lobby);
         }
     }
 
     fn handle_join_lobby_with_id(&mut self, lobby_id: String, player_name: String) {
-        let ws_url = get_websocket_url();
-        match GameClient::connect(&ws_url, self.ws_wakeup()) {
-            Ok(client) => {
-                self.game_client = Some(client);
+        if !self.ensure_server_connection() {
+            // Stay on the join form so the user can retry; the failure is toasted.
+            return;
+        }
 
-                // Send join room message via mpsc
-                if let Some(sender) = &self.sender {
-                    crate::messaging::send_server_message(
-                        sender,
-                        ClientMessage::JoinRoom {
-                            room_id: lobby_id.clone(),
-                            player_name: player_name.clone(),
-                        },
-                    );
-                }
+        // Send join room message via mpsc
+        if let Some(sender) = &self.sender {
+            crate::messaging::send_server_message(
+                sender,
+                ClientMessage::JoinRoom {
+                    room_id: lobby_id.clone(),
+                    player_name: player_name.clone(),
+                },
+            );
+        }
 
-                // Stay on the form with a spinner until the server confirms
-                // the join (or rejects it, which re-enables the form).
-                if let AppState::JoinLobbyForm { pending, .. } = &mut self.app_state {
-                    *pending = true;
-                }
-            }
-            Err(e) => {
-                eprintln!("Failed to connect to server: {}", e);
-                // Stay on the join form so the user can retry; surface the failure.
-                self.last_error =
-                    Some((format!("Couldn't connect to server: {e}"), Instant::now()));
-            }
+        // Stay on the form with a spinner until the server confirms
+        // the join (or rejects it, which re-enables the form).
+        if let AppState::JoinLobbyForm { pending, .. } = &mut self.app_state {
+            *pending = Some(JoinScreenRequest::Join);
+        }
+    }
+
+    fn handle_spectate_lobby(&mut self, room_id: String, room_name: String) {
+        if !self.ensure_server_connection() {
+            return;
+        }
+
+        if let Some(sender) = &self.sender {
+            crate::messaging::send_server_message(
+                sender,
+                ClientMessage::SpectateRoom {
+                    room_id: room_id.clone(),
+                },
+            );
+        }
+
+        // The server answers with the game state; that transition happens in
+        // handle_server_message when it arrives.
+        if let AppState::JoinLobbyForm { pending, .. } = &mut self.app_state {
+            *pending = Some(JoinScreenRequest::Spectate { room_id, room_name });
         }
     }
 
@@ -1221,8 +1356,14 @@ impl TemplateApp {
                 game,
                 room_id,
                 waiting_for_server,
+                is_spectator,
                 ..
             } => {
+                // Spectators have no hand; nothing to place.
+                if *is_spectator {
+                    return;
+                }
+
                 if *waiting_for_server {
                     // Quietly ignore: the previous move is still in flight and
                     // the top panel already shows the waiting indicator.
@@ -1629,6 +1770,7 @@ mod tests {
             room_id: "ROOM".to_string(),
             lobby_name: "Room".to_string(),
             waiting_for_server: true,
+            is_spectator: false,
         };
 
         TemplateApp::handle_server_message(

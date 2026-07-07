@@ -327,6 +327,15 @@ redacted views (design agreed, queued in DEVELOPMENT_ROADMAP.md):
 4. Rework the state-sync integration tests: the invariant becomes "each client
    sees its own hand and everyone's counts", not "all clients see all hands".
 
+**Spectators (added 2026-07) sharpen this trade-off.** `SpectateRoom` gives
+any connection the same full `GameStateUpdate` stream the players get, and a
+*public* room can be spectated by strangers who found it in the lobby
+directory. Spectating a public game therefore reveals every hand to anyone on
+the server. This is consistent with the trust model above (public rooms are
+opt-in, private rooms stay code-only), but it moves the redaction trigger
+closer: if public rooms see real use between strangers, spectator connections
+should be the first to get redacted views (`view_for` with *no* own hand).
+
 ## Connection Lifecycle
 
 ### 1. Client Connects

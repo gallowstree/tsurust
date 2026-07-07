@@ -29,6 +29,18 @@ pub fn normalize_lobby_id(id: &str) -> Option<LobbyId> {
     }
 }
 
+/// Whether a room is listed in the server's public lobby directory or is
+/// reachable only by sharing its room code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum Visibility {
+    /// Listed in the lobby browser; anyone can join or spectate.
+    Public,
+    /// Unlisted; joining requires the room code. The default, so messages
+    /// and exports that predate visibility keep today's behavior.
+    #[default]
+    Private,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Lobby {
     pub id: LobbyId,
@@ -36,6 +48,9 @@ pub struct Lobby {
     pub players: HashMap<PlayerID, LobbyPlayer>,
     pub started: bool,
     pub max_players: usize, // Default: 8, minimum: 2
+    /// Serde default keeps older exports/messages (no visibility) private.
+    #[serde(default)]
+    pub visibility: Visibility,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,6 +85,7 @@ impl Lobby {
             players: HashMap::new(),
             started: false,
             max_players: 8,
+            visibility: Visibility::default(),
         }
     }
 
@@ -83,6 +99,7 @@ impl Lobby {
             players: HashMap::new(),
             started: false,
             max_players: 8,
+            visibility: Visibility::default(),
         };
 
         // Auto-join creator as first player

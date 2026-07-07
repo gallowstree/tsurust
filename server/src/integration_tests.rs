@@ -14,6 +14,7 @@ use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
 use tsurust_common::board::{seg, CellCoord, Move, PlayerID, PlayerPos, Tile};
 use tsurust_common::game::Game;
+use tsurust_common::lobby::Visibility;
 use tsurust_common::protocol::{ClientMessage, RoomId, ServerMessage};
 
 use crate::handler::handle_connection;
@@ -110,6 +111,7 @@ async fn setup_two_player_game(
         ClientMessage::CreateRoom {
             room_name: "Test Room".to_string(),
             creator_name: "Alice".to_string(),
+            visibility: Visibility::Private,
         },
     )
     .await;
@@ -225,6 +227,7 @@ async fn setup_n_player_game(
         ClientMessage::CreateRoom {
             room_name: "N-Player Room".to_string(),
             creator_name: "Player1".to_string(),
+            visibility: Visibility::Private,
         },
     )
     .await;
@@ -429,6 +432,7 @@ async fn test_create_room_over_websocket() {
         ClientMessage::CreateRoom {
             room_name: "Test Room".to_string(),
             creator_name: "Alice".to_string(),
+            visibility: Visibility::Private,
         },
     )
     .await;
@@ -458,6 +462,7 @@ async fn test_join_room_notifies_both_clients() {
         ClientMessage::CreateRoom {
             room_name: "Test Room".to_string(),
             creator_name: "Alice".to_string(),
+            visibility: Visibility::Private,
         },
     )
     .await;
@@ -519,6 +524,7 @@ async fn test_full_lobby_to_game_flow() {
         ClientMessage::CreateRoom {
             room_name: "Integration Test".to_string(),
             creator_name: "Alice".to_string(),
+            visibility: Visibility::Private,
         },
     )
     .await;
@@ -629,6 +635,7 @@ async fn test_tile_placement_broadcasts_state_update() {
         ClientMessage::CreateRoom {
             room_name: "Tile Test".to_string(),
             creator_name: "Alice".to_string(),
+            visibility: Visibility::Private,
         },
     )
     .await;
@@ -760,6 +767,7 @@ async fn test_out_of_turn_placement_returns_error() {
         ClientMessage::CreateRoom {
             room_name: "Turn Test".to_string(),
             creator_name: "Alice".to_string(),
+            visibility: Visibility::Private,
         },
     )
     .await;
@@ -878,6 +886,7 @@ async fn test_disconnect_eliminates_player_and_advances_turn() {
         ClientMessage::CreateRoom {
             room_name: "Disconnect Test".to_string(),
             creator_name: "Alice".to_string(),
+            visibility: Visibility::Private,
         },
     )
     .await;
@@ -985,6 +994,7 @@ async fn test_last_player_disconnect_removes_room() {
         ClientMessage::CreateRoom {
             room_name: "Cleanup Test".to_string(),
             creator_name: "Alice".to_string(),
+            visibility: Visibility::Private,
         },
     )
     .await;
@@ -1445,6 +1455,7 @@ async fn test_reaper_removes_room_orphaned_by_second_create() {
         ClientMessage::CreateRoom {
             room_name: "First".to_string(),
             creator_name: "Alice".to_string(),
+            visibility: Visibility::Private,
         },
     )
     .await;
@@ -1461,6 +1472,7 @@ async fn test_reaper_removes_room_orphaned_by_second_create() {
         ClientMessage::CreateRoom {
             room_name: "Second".to_string(),
             creator_name: "Alice".to_string(),
+            visibility: Visibility::Private,
         },
     )
     .await;
@@ -1557,6 +1569,7 @@ async fn test_placing_a_tile_before_game_starts_returns_error() {
         ClientMessage::CreateRoom {
             room_name: "Lobby Phase Test".to_string(),
             creator_name: "Alice".to_string(),
+            visibility: Visibility::Private,
         },
     )
     .await;
@@ -1628,5 +1641,122 @@ async fn test_tile_placed_away_from_pawn_returns_error() {
     assert!(
         message.contains("current cell"),
         "error should explain the placement rule, got: {message}"
+    );
+}
+
+#[tokio::test]
+async fn test_spectator_sees_the_game_but_cannot_act() {
+    let (addr, _server) = start_test_server().await;
+    let (mut alice, _bob, room_id, alice_id, _bob_id, game) = setup_two_player_game(addr).await;
+
+    // A third connection spectates the in-progress game and immediately
+    // receives the authoritative state.
+    let mut carol = connect_client(addr).await;
+    send(
+        &mut carol,
+        ClientMessage::SpectateRoom {
+            room_id: room_id.clone(),
+        },
+    )
+    .await;
+    let msg = recv_where(&mut carol, |m| {
+        matches!(m, ServerMessage::GameStateUpdate { .. })
+    })
+    .await;
+    let ServerMessage::GameStateUpdate { state, .. } = msg else {
+        unreachable!()
+    };
+    assert_eq!(state.players.len(), 2);
+    assert!(state.board.history.is_empty());
+
+    // Spectators have no player identity; impersonating one is rejected.
+    let alice_pos = game
+        .players
+        .iter()
+        .find(|p| p.id == alice_id)
+        .expect("alice is in the game")
+        .pos;
+    let tile = game.hands[&alice_id][0];
+    send(
+        &mut carol,
+        ClientMessage::PlaceTile {
+            room_id: room_id.clone(),
+            player_id: alice_id,
+            mov: Move {
+                tile,
+                cell: alice_pos.cell,
+                player_id: alice_id,
+            },
+        },
+    )
+    .await;
+    let err = recv_where(&mut carol, |m| matches!(m, ServerMessage::Error { .. })).await;
+    let ServerMessage::Error { message } = err else {
+        unreachable!()
+    };
+    assert!(
+        message.contains("cannot act as player"),
+        "spectator move should be rejected by identity check, got: {message}"
+    );
+
+    // A real move by Alice reaches the spectator via the room broadcast.
+    send(
+        &mut alice,
+        ClientMessage::PlaceTile {
+            room_id: room_id.clone(),
+            player_id: alice_id,
+            mov: Move {
+                tile,
+                cell: alice_pos.cell,
+                player_id: alice_id,
+            },
+        },
+    )
+    .await;
+    let update = recv_where(&mut carol, |m| {
+        matches!(m, ServerMessage::GameStateUpdate { .. })
+    })
+    .await;
+    let ServerMessage::GameStateUpdate { state, .. } = update else {
+        unreachable!()
+    };
+    assert_eq!(
+        state.board.history.len(),
+        1,
+        "the spectator should see Alice's move"
+    );
+}
+
+#[tokio::test]
+async fn test_spectating_an_unstarted_room_is_rejected() {
+    let (addr, _server) = start_test_server().await;
+
+    let mut alice = connect_client(addr).await;
+    send(
+        &mut alice,
+        ClientMessage::CreateRoom {
+            room_name: "Test Room".to_string(),
+            creator_name: "Alice".to_string(),
+            visibility: Visibility::Public,
+        },
+    )
+    .await;
+    let created = recv_where(&mut alice, |m| {
+        matches!(m, ServerMessage::RoomCreated { .. })
+    })
+    .await;
+    let ServerMessage::RoomCreated { room_id, .. } = created else {
+        unreachable!()
+    };
+
+    let mut carol = connect_client(addr).await;
+    send(&mut carol, ClientMessage::SpectateRoom { room_id }).await;
+    let err = recv_where(&mut carol, |m| matches!(m, ServerMessage::Error { .. })).await;
+    let ServerMessage::Error { message } = err else {
+        unreachable!()
+    };
+    assert!(
+        message.contains("hasn't started"),
+        "spectating a lobby-phase room should point at joining instead, got: {message}"
     );
 }

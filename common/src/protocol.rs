@@ -2,19 +2,41 @@ use serde::{Deserialize, Serialize};
 
 use crate::board::{Move, PlayerID, PlayerPos};
 use crate::game::{Game, TurnResult};
-use crate::lobby::Lobby;
+use crate::lobby::{Lobby, Visibility};
 
 pub type RoomId = String;
+
+/// One row of the public lobby directory, as shown in the join screen's
+/// browser. Carries only what the browser needs to render and act.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LobbyListing {
+    pub room_id: RoomId,
+    pub name: String,
+    pub player_count: usize,
+    pub max_players: usize,
+    /// True once the room's game has started: it can be spectated but no
+    /// longer joined.
+    pub in_progress: bool,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ClientMessage {
     CreateRoom {
         room_name: String,
         creator_name: String,
+        /// Serde default (Private) keeps messages from older clients unlisted.
+        #[serde(default)]
+        visibility: Visibility,
     },
     JoinRoom {
         room_id: RoomId,
         player_name: String,
+    },
+    /// Ask for the server's public lobby directory; answered with LobbyList.
+    ListLobbies,
+    /// Subscribe to an in-progress game's broadcasts as a non-player observer.
+    SpectateRoom {
+        room_id: RoomId,
     },
     LeaveRoom {
         room_id: RoomId,
@@ -64,6 +86,10 @@ pub enum ServerMessage {
     Error {
         message: String,
     },
+    /// The public lobby directory, in response to ListLobbies.
+    LobbyList {
+        lobbies: Vec<LobbyListing>,
+    },
     LobbyStateUpdate {
         room_id: RoomId,
         lobby: Lobby,
@@ -110,6 +136,7 @@ mod tests {
         let msg = ClientMessage::CreateRoom {
             room_name: "Test Room".to_string(),
             creator_name: "Alice".to_string(),
+            visibility: Visibility::Public,
         };
 
         let json = serde_json::to_string(&msg).expect("Failed to serialize");
@@ -120,12 +147,78 @@ mod tests {
             ClientMessage::CreateRoom {
                 room_name,
                 creator_name,
+                visibility,
             } => {
                 assert_eq!(room_name, "Test Room");
                 assert_eq!(creator_name, "Alice");
+                assert_eq!(visibility, Visibility::Public);
             }
             _ => panic!("Wrong message type after deserialization"),
         }
+    }
+
+    /// Wire compatibility: a CreateRoom from a client that predates the
+    /// visibility field must parse — and stay unlisted (private).
+    #[test]
+    fn test_create_room_without_visibility_defaults_to_private() {
+        let json = r#"{"CreateRoom":{"room_name":"Old Client","creator_name":"Alice"}}"#;
+        let deserialized: ClientMessage =
+            serde_json::from_str(json).expect("old-format CreateRoom should still parse");
+
+        let ClientMessage::CreateRoom { visibility, .. } = deserialized else {
+            panic!("Wrong message type after deserialization");
+        };
+        assert_eq!(visibility, Visibility::Private);
+    }
+
+    #[test]
+    fn test_lobby_list_serialization() {
+        let msg = ServerMessage::LobbyList {
+            lobbies: vec![
+                LobbyListing {
+                    room_id: "ABCD".to_string(),
+                    name: "Open Table".to_string(),
+                    player_count: 2,
+                    max_players: 8,
+                    in_progress: false,
+                },
+                LobbyListing {
+                    room_id: "WXYZ".to_string(),
+                    name: "Mid Game".to_string(),
+                    player_count: 3,
+                    max_players: 8,
+                    in_progress: true,
+                },
+            ],
+        };
+
+        let json = serde_json::to_string(&msg).expect("Failed to serialize");
+        let deserialized: ServerMessage =
+            serde_json::from_str(&json).expect("Failed to deserialize");
+
+        let ServerMessage::LobbyList { lobbies } = deserialized else {
+            panic!("Wrong message type after deserialization");
+        };
+        assert_eq!(lobbies.len(), 2);
+        assert_eq!(lobbies[0].room_id, "ABCD");
+        assert!(!lobbies[0].in_progress);
+        assert!(lobbies[1].in_progress);
+    }
+
+    #[test]
+    fn test_spectate_room_serialization() {
+        let msg = ClientMessage::SpectateRoom {
+            room_id: "ROOM1".to_string(),
+        };
+
+        let json = serde_json::to_string(&msg).expect("Failed to serialize");
+        let deserialized: ClientMessage =
+            serde_json::from_str(&json).expect("Failed to deserialize");
+
+        let ClientMessage::SpectateRoom { room_id } = deserialized else {
+            panic!("Wrong message type after deserialization");
+        };
+        assert_eq!(room_id, "ROOM1");
     }
 
     #[test]

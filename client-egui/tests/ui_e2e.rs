@@ -28,6 +28,11 @@ fn new_app_with_ctx() -> (Harness<'static, TemplateApp>, egui::Context) {
     let slot = std::rc::Rc::clone(&ctx_slot);
     let harness = Harness::builder()
         .with_size(egui::Vec2::new(1400.0, 900.0))
+        // Grids (forms, the lobby browser) can need several frames to settle
+        // their column widths when content arrives mid-run; the default
+        // max_steps of 4 makes run() flaky when that coincides with a
+        // server response.
+        .with_max_steps(64)
         .build_eframe(move |cc| {
             *slot.borrow_mut() = Some(cc.egui_ctx.clone());
             TemplateApp::new(cc)
@@ -139,6 +144,20 @@ fn create_room(a: &mut Harness<'_, TemplateApp>) -> String {
     })
 }
 
+/// On the create form: replace the prefilled lobby name with a unique one.
+/// All e2e tests share one in-process server, so browser-facing tests need
+/// names that can't collide with rooms from concurrently running tests.
+fn set_lobby_name(h: &mut Harness<'_, TemplateApp>, name: &str) {
+    h.get_all_by_role(egui::accesskit::Role::TextInput)
+        .find(|n| n.value().unwrap_or_default() == "Test Lobby")
+        .expect("the create form should show the prefilled lobby name")
+        .focus();
+    h.run();
+    h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::A]);
+    h.event(egui::Event::Text(name.to_string()));
+    h.run();
+}
+
 /// Drive a fresh client through the join form into the given room.
 fn join_room(b: &mut Harness<'_, TemplateApp>, room_id: &str) {
     b.run();
@@ -153,7 +172,7 @@ fn join_room(b: &mut Harness<'_, TemplateApp>, room_id: &str) {
     b.run();
     b.event(egui::Event::Text(room_id.to_string()));
     b.run();
-    b.get_by_label("Join").click();
+    b.get_by_label("Join by code").click();
 
     wait_for(b, "the server to confirm the join", |app| {
         app.current_room_id().map(|_| ())
@@ -339,7 +358,7 @@ fn joining_a_missing_room_shows_the_error_and_keeps_the_form() {
     b.run();
     b.event(egui::Event::Text("ZZZZ".to_string()));
     b.run();
-    b.get_by_label("Join").click();
+    b.get_by_label("Join by code").click();
 
     // The server's rejection lands in the error toast.
     let deadline = Instant::now() + NET_TIMEOUT;
@@ -359,7 +378,156 @@ fn joining_a_missing_room_shows_the_error_and_keeps_the_form() {
         "a failed join must not open a lobby"
     );
     assert!(b.state().current_room_id().is_none());
-    b.get_by_label("Join");
+    b.get_by_label("Join by code");
+}
+
+/// The lobby browser: a public room shows up in the join screen's directory
+/// and can be joined with a click — no room code involved — while a private
+/// room created on the same server never appears there.
+#[test]
+fn public_lobbies_are_browsable_and_private_ones_are_not() {
+    ensure_server();
+
+    // One public room…
+    let mut a = new_app();
+    a.run();
+    a.get_by_label_contains("Create Online Lobby").click();
+    a.run();
+    set_lobby_name(&mut a, "Beacon Table");
+    // The create form defaults to public; just submit.
+    a.get_by_label_contains("Create & Join").click();
+    let beacon_id = wait_for(&mut a, "public room creation", |app| {
+        app.current_room_id().map(str::to_string)
+    });
+
+    // …and one private room on the same server.
+    let mut p = new_app();
+    p.run();
+    p.get_by_label_contains("Create Online Lobby").click();
+    p.run();
+    set_lobby_name(&mut p, "Hidden Table");
+    p.get_by_label_contains("Public lobby").click(); // untick: make it private
+    p.get_by_label_contains("Create & Join").click();
+    wait_for(&mut p, "private room creation", |app| {
+        app.current_room_id().map(str::to_string)
+    });
+
+    // A fresh client browses the directory.
+    let mut b = new_app();
+    b.run();
+    b.get_by_label_contains("Join Online Lobby").click();
+
+    let deadline = Instant::now() + NET_TIMEOUT;
+    while b.query_by_label("Beacon Table").is_none() {
+        b.run_steps(2);
+        assert!(
+            Instant::now() < deadline,
+            "the public room should appear in the lobby browser"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        b.query_by_label("Hidden Table").is_none(),
+        "a private room must never appear in the browser"
+    );
+
+    // Join the public room with a click — no code was ever typed.
+    b.get_by_label("Join Beacon Table").click();
+    wait_for(&mut b, "the click-join to be confirmed", |app| {
+        (app.current_room_id() == Some(beacon_id.as_str())).then_some(())
+    });
+    wait_for(&mut b, "the joined lobby to arrive", |app| {
+        app.visible_lobby()
+            .is_some_and(|l| l.players.len() == 2)
+            .then_some(())
+    });
+}
+
+/// Spectating from the browser: an in-progress public game can be watched
+/// live. The spectator has no hand, no identity, and sees moves as they land.
+#[test]
+fn a_spectator_can_watch_a_public_game_from_the_browser() {
+    ensure_server();
+
+    // Two players start a public game.
+    let mut a = new_app();
+    a.run();
+    a.get_by_label_contains("Create Online Lobby").click();
+    a.run();
+    set_lobby_name(&mut a, "Arena Match");
+    a.get_by_label_contains("Create & Join").click();
+    let room_id = wait_for(&mut a, "room creation", |app| {
+        app.current_room_id().map(str::to_string)
+    });
+    let mut b = new_app();
+    join_room(&mut b, &room_id);
+    wait_for_both(&mut a, &mut b, "both players in the lobby", |a, b| {
+        a.visible_lobby().is_some_and(|l| l.players.len() == 2)
+            && b.visible_lobby().is_some_and(|l| l.players.len() == 2)
+    });
+    a.get_by_label("spawn r0c2e4").click();
+    b.get_by_label("spawn r5c3e0").click();
+    wait_for_both(&mut a, &mut b, "both pawns placed", |a, b| {
+        let placed = |app: &TemplateApp| {
+            app.visible_lobby().is_some_and(|l| {
+                l.players
+                    .values()
+                    .filter(|p| p.spawn_position.is_some())
+                    .count()
+                    == 2
+            })
+        };
+        placed(a) && placed(b)
+    });
+    a.get_by_label_contains("Start Game").click();
+    wait_for_both(&mut a, &mut b, "the game to start", |a, b| {
+        a.visible_game().is_some() && b.visible_game().is_some()
+    });
+
+    // A third client finds the game in the browser and spectates it.
+    let mut c = new_app();
+    c.run();
+    c.get_by_label_contains("Join Online Lobby").click();
+    let deadline = Instant::now() + NET_TIMEOUT;
+    while c.query_by_label("Arena Match").is_none() {
+        c.run_steps(2);
+        assert!(
+            Instant::now() < deadline,
+            "the in-progress game should appear in the browser"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    c.get_by_label("Spectate Arena Match").click();
+    wait_for(&mut c, "the spectator to receive the game", |app| {
+        app.visible_game().map(|_| ())
+    });
+
+    // Spectators are nobody: no hand is shown and no player is "(You)".
+    assert_eq!(c.state().client_player_id(), 0);
+    assert!(
+        c.query_by_label("hand tile 0").is_none(),
+        "spectators must not see a hand"
+    );
+    c.get_by_label("👁 Spectating");
+
+    // A move by the current player reaches the spectator live.
+    a.get_by_label("hand tile 0").click();
+    let deadline = Instant::now() + NET_TIMEOUT;
+    loop {
+        a.run_steps(2);
+        c.run_steps(2);
+        if c.state()
+            .visible_game()
+            .is_some_and(|g| g.board.history.len() == 1)
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the spectator should see the move arrive"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 /// The event-driven repaint contract: a client that is not rendering any

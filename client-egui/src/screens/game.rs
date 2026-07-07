@@ -21,6 +21,7 @@ pub fn render_game_ui(
     waiting_for_server: bool,
     lobby_name: Option<&str>,
     connection: Option<&ConnectionStatus>,
+    is_spectator: bool,
     sender: &mpsc::Sender<Message>,
     last_rotated_tile: Option<(usize, bool)>,
     player_animations: &HashMap<PlayerID, PlayerAnimation>,
@@ -48,6 +49,11 @@ pub fn render_game_ui(
 
                     if let Some(status) = connection {
                         crate::screens::connection_chip(ui, status);
+                        ui.separator();
+                    }
+
+                    if is_spectator {
+                        ui.label("👁 Spectating");
                         ui.separator();
                     }
 
@@ -215,13 +221,16 @@ pub fn render_game_ui(
             ui.separator();
         });
 
-        // Hand section - show this client's hand, not the current player's hand
-        let hand = game
-            .hands
-            .get(&client_player_id)
-            .cloned()
-            .unwrap_or_default();
-        ui.add(HandRenderer::new(hand, sender.clone()).with_last_rotated(last_rotated_tile));
+        // Hand section - show this client's hand, not the current player's
+        // hand. Spectators have no hand and can't place tiles.
+        if !is_spectator {
+            let hand = game
+                .hands
+                .get(&client_player_id)
+                .cloned()
+                .unwrap_or_default();
+            ui.add(HandRenderer::new(hand, sender.clone()).with_last_rotated(last_rotated_tile));
+        }
     });
 
     egui::CentralPanel::default().show(ui, |ui| {

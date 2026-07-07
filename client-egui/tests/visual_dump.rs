@@ -21,6 +21,8 @@ fn dump_screen_renders() {
 
     let mut harness = Harness::builder()
         .with_size(egui::Vec2::new(1400.0, 900.0))
+        // Grids can need several frames to settle their column widths.
+        .with_max_steps(64)
         .build_eframe(|cc| TemplateApp::new(cc));
 
     let save = |harness: &mut Harness<'_, TemplateApp>, name: &str| {

@@ -1,6 +1,7 @@
 use crate::room::{GameRoom, RoomPhase};
 use tsurust_common::board::{CellCoord, Move, Player, PlayerPos, Segment, Tile};
 use tsurust_common::game::Game;
+use tsurust_common::lobby::Visibility;
 
 // Helper function to create a test tile
 fn create_test_tile() -> Tile {
@@ -21,7 +22,11 @@ fn two_player_game() -> Game {
 
 /// A room whose game is in progress (rooms are born in the lobby phase).
 fn in_game_room(game: Game) -> GameRoom {
-    let mut room = GameRoom::new("TEST".to_string(), "Test Room".to_string());
+    let mut room = GameRoom::new(
+        "TEST".to_string(),
+        "Test Room".to_string(),
+        Visibility::Private,
+    );
     room.phase = RoomPhase::Playing(game);
     room
 }
@@ -101,7 +106,11 @@ fn test_place_tile_accepts_valid_move() {
 #[test]
 fn test_place_tile_rejected_during_lobby_phase() {
     // Rooms are born in the lobby phase — there is no game to place tiles in.
-    let mut room = GameRoom::new("TEST".to_string(), "Test Room".to_string());
+    let mut room = GameRoom::new(
+        "TEST".to_string(),
+        "Test Room".to_string(),
+        Visibility::Private,
+    );
 
     let mov = Move {
         tile: create_test_tile(),
@@ -126,7 +135,11 @@ fn test_failed_start_leaves_room_joinable() {
     // Starting with an unready lobby (no players placed) must fail — and must
     // NOT consume the lobby, or the room would be bricked in a phantom
     // "playing" phase with no game.
-    let mut room = GameRoom::new("TEST".to_string(), "Test Room".to_string());
+    let mut room = GameRoom::new(
+        "TEST".to_string(),
+        "Test Room".to_string(),
+        Visibility::Private,
+    );
 
     let result = room.start_game();
     assert!(result.is_err(), "an empty lobby cannot start a game");
