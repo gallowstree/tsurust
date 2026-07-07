@@ -40,7 +40,7 @@
             text-align: center;
         }
     </style>
-<link rel="modulepreload" href="https://gallowstree.github.io/tsurust/client-egui_bin-4d6165d53c0c9156.js" crossorigin="anonymous" integrity="sha384-s5ffkv0xPDukNIvMzNIthpoVXwm9HtQuMaki4TXKj2vewyCx37Y/c9PhDWYOAQuX"><link rel="modulepreload" href="https://gallowstree.github.io/tsurust/snippets/client-egui-9edd77b714be94d8/inline0.js" crossorigin="anonymous" integrity="sha384-O08BBaAoSEnEfpVbDHWa+YnQYkeZGjblpPJhxzFEk2iZdaOAXuVyIFCIUsjKkO97"><link rel="preload" href="https://gallowstree.github.io/tsurust/client-egui_bin-4d6165d53c0c9156_bg.wasm" crossorigin="anonymous" integrity="sha384-epILRWWkg7/Tyq4J5mUaqXY+Tu83Eh+ezxvLk08BRw9t8VrnBjnfV+zMOvzgJGGY" as="fetch" type="application/wasm"></head>
+<link rel="modulepreload" href="/tsurust/client-egui_bin-4198450c50d4134d.js" crossorigin="anonymous" integrity="sha384-GpidZCO5m1xa3Efj1n5eAbH75LG+XNKfFHkq73oHW7SDwA5YuQER9YxhnGe3qKhc"><link rel="modulepreload" href="/tsurust/snippets/client-egui-9edd77b714be94d8/inline0.js" crossorigin="anonymous" integrity="sha384-O08BBaAoSEnEfpVbDHWa+YnQYkeZGjblpPJhxzFEk2iZdaOAXuVyIFCIUsjKkO97"><link rel="preload" href="/tsurust/client-egui_bin-4198450c50d4134d_bg.wasm" crossorigin="anonymous" integrity="sha384-U5TjHIYTTos+1bh9k3FnU70aJ0ZFpP7N/u0l+Y/XXaemqRKj1uxu9VcWeNXWg/KI" as="fetch" type="application/wasm"></head>
 <body>
     <div id="loading" class="centered">
         <div>
@@ -59,15 +59,15 @@
         window.TSURUST_CONFIG = window.TSURUST_CONFIG || {
             // Default to localhost for development
             // GitHub Actions will inject production URL via config.js
-            wsServerUrl: "ws://127.0.0.1:8081"
+            wsServerUrl: "llename.com"
         };
     </script>
 
     <!-- Trunk will compile Rust to WASM and inject loading code here -->
     
 <script type="module">
-import init, * as bindings from 'https://gallowstree.github.io/tsurust/client-egui_bin-4d6165d53c0c9156.js';
-const wasm = await init('https://gallowstree.github.io/tsurust/client-egui_bin-4d6165d53c0c9156_bg.wasm');
+import init, * as bindings from '/tsurust/client-egui_bin-4198450c50d4134d.js';
+const wasm = await init({ module_or_path: '/tsurust/client-egui_bin-4198450c50d4134d_bg.wasm' });
 
 
 window.wasmBindings = bindings;
