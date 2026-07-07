@@ -16,7 +16,7 @@ Tsurust is a Rust implementation of the Tsuro board game with an egui-based GUI 
 - `cargo run --bin client-egui_bin` - Run the GUI client
 - `cargo run --bin server` - Run the WebSocket server
 - `cargo check --workspace` - Check compilation across all crates
-- `cargo test --workspace` - Run all tests (70+ tests across all crates)
+- `cargo test --workspace` - Run all tests (120+ across all crates, including headless UI end-to-end tests in `client-egui/tests/ui_e2e.rs` that drive the real app with `egui_kittest` against an in-process server)
 - `cargo build --workspace` - Build all crates
 
 ### Debugging
