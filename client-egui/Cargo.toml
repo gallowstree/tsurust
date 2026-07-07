@@ -36,7 +36,7 @@ chrono = { version = "0.4", features = ["serde"] }
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tracing-subscriber = "0.3"
-rfd = "0.12"
+rfd = "0.17"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 egui_kittest = { version = "0.35", features = ["eframe", "wgpu"] }
