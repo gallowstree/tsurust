@@ -8,6 +8,7 @@ use tsurust_common::lobby::Lobby;
 use crate::app::Message;
 use crate::components::LobbyBoard;
 use crate::messaging::send_ui_message;
+use crate::ws_client::ConnectionStatus;
 
 /// Copy text to clipboard using browser API
 #[cfg(target_arch = "wasm32")]
@@ -46,9 +47,10 @@ fn render_lobby_top_panel(
     ui: &mut egui::Ui,
     lobby: &Lobby,
     show_start_button: bool,
-    is_online: bool,
+    connection: Option<&ConnectionStatus>,
     sender: &mpsc::Sender<Message>,
 ) {
+    let is_online = connection.is_some();
     egui::Panel::top("top_panel")
         .resizable(true)
         .min_size(32.0)
@@ -84,6 +86,11 @@ fn render_lobby_top_panel(
                     lobby.players.len(),
                     lobby.max_players
                 ));
+
+                if let Some(status) = connection {
+                    ui.separator();
+                    crate::screens::connection_chip(ui, status);
+                }
 
                 if show_start_button {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -179,10 +186,11 @@ pub fn render_lobby_ui(
     ui: &mut egui::Ui,
     lobby: &mut Lobby,
     current_player_id: PlayerID,
-    is_online: bool,
+    connection: Option<&ConnectionStatus>,
     sender: &mpsc::Sender<Message>,
 ) {
-    render_lobby_top_panel(ui, lobby, true, is_online, sender);
+    let is_online = connection.is_some();
+    render_lobby_top_panel(ui, lobby, true, connection, sender);
 
     // Side panel before central panel: the central panel takes all remaining space.
     egui::Panel::right("right_panel").show(ui, |ui| {
@@ -230,14 +238,15 @@ pub fn render_lobby_placing_ui(
     ui: &mut egui::Ui,
     lobby: &mut Lobby,
     placing_for_id: PlayerID,
-    is_online: bool,
+    connection: Option<&ConnectionStatus>,
     sender: &mpsc::Sender<Message>,
 ) {
+    let is_online = connection.is_some();
     let placing_player = lobby.players.get(&placing_for_id);
     let player_name = placing_player.map(|p| p.name.as_str()).unwrap_or("Unknown");
     let player_color = placing_player.map(|p| p.color).unwrap_or((128, 128, 128));
 
-    render_lobby_top_panel(ui, lobby, false, is_online, sender);
+    render_lobby_top_panel(ui, lobby, false, connection, sender);
 
     // Side panel before central panel: the central panel takes all remaining space.
     egui::Panel::right("right_panel").show(ui, |ui| {

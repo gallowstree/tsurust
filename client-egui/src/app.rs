@@ -25,6 +25,33 @@ use wasm_bindgen::prelude::*;
 /// How long a transient error toast stays visible before it auto-dismisses.
 const ERROR_TOAST_DURATION: std::time::Duration = std::time::Duration::from_secs(6);
 
+/// All animation timing lives here so it can be tuned in one place.
+pub mod animation {
+    /// How fast pawns travel along their trail, in tiles per second.
+    pub const PLAYER_SPEED_TILES_PER_SEC: f32 = 2.0;
+    /// Pawn movement never animates faster than this, even for short hops.
+    pub const PLAYER_MIN_DURATION_SECS: f32 = 0.3;
+    /// Drop-in animation when a tile lands on the board.
+    pub const TILE_PLACEMENT_DURATION_SECS: f32 = 0.4;
+    /// Spin animation when a hand tile is rotated.
+    pub const TILE_ROTATION_DURATION_SECS: f32 = 0.5;
+}
+
+/// Extract a room id from the browser location, so `http://host/#ABCD` (or a
+/// served path of `/ABCD`) opens the join form prefilled with that room.
+/// Only wired up on wasm (there is no URL on native), but kept
+/// target-independent so the parsing is unit-tested natively.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+fn room_id_from_location(path: &str, hash: &str) -> Option<String> {
+    let hash = hash.trim_start_matches('#');
+    let candidate = if hash.is_empty() {
+        path.trim_matches('/')
+    } else {
+        hash
+    };
+    tsurust_common::lobby::normalize_lobby_id(candidate)
+}
+
 /// Get WebSocket server URL from browser configuration or use default
 #[cfg(target_arch = "wasm32")]
 fn get_websocket_url() -> String {
@@ -106,6 +133,9 @@ pub enum AppState {
     JoinLobbyForm {
         lobby_id: String,
         player_name: String,
+        /// True while a join request is in flight: the form shows a spinner
+        /// and stays put until the server confirms (or rejects) the join.
+        pending: bool,
     },
     Lobby(Lobby),                     // Normal lobby view (place own pawn)
     LobbyPlacingFor(Lobby, PlayerID), // Debug mode: placing pawn for specific player
@@ -213,6 +243,23 @@ impl TemplateApp {
             .and_then(|storage| eframe::get_value(storage, eframe::APP_KEY))
             .unwrap_or_default();
         app.egui_ctx = Some(cc.egui_ctx.clone());
+
+        // On the web, a room id in the URL (path or #fragment) opens the join
+        // form prefilled with it — a shareable "join my game" link.
+        #[cfg(target_arch = "wasm32")]
+        if let Some(window) = web_sys::window() {
+            let location = window.location();
+            let path = location.pathname().unwrap_or_default();
+            let hash = location.hash().unwrap_or_default();
+            if let Some(room_id) = room_id_from_location(&path, &hash) {
+                app.app_state = AppState::JoinLobbyForm {
+                    lobby_id: room_id,
+                    player_name: String::new(),
+                    pending: false,
+                };
+            }
+        }
+
         app
     }
 
@@ -268,7 +315,6 @@ impl TemplateApp {
         player_animations.clear();
 
         let now = Instant::now();
-        let animation_speed = 2.0; // tiles per second
 
         // Create animations for players who moved this turn (use current_turn_trails, not cumulative player_trails)
         for (player_id, trail) in &game.current_turn_trails {
@@ -277,7 +323,7 @@ impl TemplateApp {
             }
 
             // Calculate animation duration based on trail length
-            let duration = trail.length() as f32 / animation_speed;
+            let duration = trail.length() as f32 / animation::PLAYER_SPEED_TILES_PER_SEC;
 
             player_animations.insert(
                 *player_id,
@@ -285,7 +331,7 @@ impl TemplateApp {
                     trail: trail.clone(),
                     progress: 0.0,
                     start_time: now,
-                    duration_secs: duration.max(0.3), // Minimum 0.3 seconds
+                    duration_secs: duration.max(animation::PLAYER_MIN_DURATION_SECS),
                 },
             );
         }
@@ -335,7 +381,7 @@ impl TemplateApp {
         ui: &mut egui::Ui,
         app_state: &mut AppState,
         current_player_id: PlayerID,
-        is_online: bool,
+        connection: Option<&ConnectionStatus>,
         server_status: &LocalServerStatus,
         sender: &mpsc::Sender<Message>,
         last_rotated_tile: Option<(usize, bool)>,
@@ -353,16 +399,26 @@ impl TemplateApp {
             AppState::JoinLobbyForm {
                 lobby_id,
                 player_name,
-            } => screens::lobby_forms::render_join_lobby_form(ui, lobby_id, player_name, sender),
+                pending,
+            } => {
+                let pending = *pending;
+                screens::lobby_forms::render_join_lobby_form(
+                    ui,
+                    lobby_id,
+                    player_name,
+                    pending,
+                    sender,
+                )
+            }
             AppState::Lobby(lobby) => {
-                screens::lobby::render_lobby_ui(ui, lobby, current_player_id, is_online, sender)
+                screens::lobby::render_lobby_ui(ui, lobby, current_player_id, connection, sender)
             }
             AppState::LobbyPlacingFor(lobby, placing_for_id) => {
                 screens::lobby::render_lobby_placing_ui(
                     ui,
                     lobby,
                     *placing_for_id,
-                    is_online,
+                    connection,
                     sender,
                 )
             }
@@ -371,6 +427,7 @@ impl TemplateApp {
                 game,
                 current_player_id,
                 false,
+                None,
                 None,
                 sender,
                 last_rotated_tile,
@@ -388,6 +445,7 @@ impl TemplateApp {
                 current_player_id,
                 *waiting_for_server,
                 Some(lobby_name.as_str()),
+                connection,
                 sender,
                 last_rotated_tile,
                 player_animations,
@@ -451,13 +509,13 @@ impl eframe::App for TemplateApp {
         }
 
         // Render UI
+        let connection_status = self.game_client.as_ref().map(|c| c.status.clone());
         if let Some(tx) = &self.sender {
-            let is_online = self.game_client.is_some();
             Self::render_ui(
                 ui,
                 &mut self.app_state,
                 self.current_player_id,
-                is_online,
+                connection_status.as_ref(),
                 &self.local_server_status,
                 tx,
                 self.last_rotated_tile,
@@ -587,8 +645,24 @@ impl TemplateApp {
                     *current_player_id = player_id;
                 }
 
+                // Our own join confirmed while still on the join form (the
+                // LobbyStateUpdate that normally precedes this transitions us;
+                // this is the fallback if it arrives out of order): enter a
+                // provisional lobby that the next lobby update fills in.
+                if let AppState::JoinLobbyForm { pending: true, .. } = app_state {
+                    let mut lobby = Lobby::new(room_id.clone(), format!("Room {}", room_id));
+                    if let Err(e) = lobby.handle_event(LobbyEvent::PlayerJoined {
+                        player_id,
+                        player_name: player_name.clone(),
+                    }) {
+                        eprintln!("Failed to add self to provisional lobby: {:?}", e);
+                    }
+                    *app_state = AppState::Lobby(lobby);
+                }
                 // Update lobby state if we're in a lobby
-                if let AppState::Lobby(lobby) | AppState::LobbyPlacingFor(lobby, _) = app_state {
+                else if let AppState::Lobby(lobby) | AppState::LobbyPlacingFor(lobby, _) =
+                    app_state
+                {
                     if let Err(e) = lobby.handle_event(LobbyEvent::PlayerJoined {
                         player_id,
                         player_name: player_name.clone(),
@@ -637,7 +711,7 @@ impl TemplateApp {
                             cell: last_move.cell,
                             progress: 0.0,
                             start_time: Instant::now(),
-                            duration_secs: 0.4,
+                            duration_secs: animation::TILE_PLACEMENT_DURATION_SECS,
                         });
                     }
 
@@ -660,6 +734,10 @@ impl TemplateApp {
                 {
                     *waiting_for_server = false;
                 }
+                // A rejected join re-enables the form so the user can retry.
+                if let AppState::JoinLobbyForm { pending, .. } = app_state {
+                    *pending = false;
+                }
                 // Surface the error to the player via a transient toast.
                 *last_error = Some((message, Instant::now()));
             }
@@ -670,10 +748,20 @@ impl TemplateApp {
                 // TODO: Update lobby state when PlayerLeft event is implemented in Lobby
             }
             ServerMessage::LobbyStateUpdate { room_id: _, lobby } => {
-                if let AppState::Lobby(current_lobby)
-                | AppState::LobbyPlacingFor(current_lobby, _) = app_state
-                {
-                    *current_lobby = lobby;
+                match app_state {
+                    AppState::Lobby(current_lobby)
+                    | AppState::LobbyPlacingFor(current_lobby, _) => {
+                        *current_lobby = lobby;
+                    }
+                    // A pending join resolved: the server's first lobby state
+                    // is our cue to leave the form and enter the lobby. Our
+                    // own identity (room + player id) is NOT set here — the
+                    // PlayerJoined confirmation that follows carries it, and
+                    // its "no room yet" check must still fire.
+                    AppState::JoinLobbyForm { pending: true, .. } => {
+                        *app_state = AppState::Lobby(lobby);
+                    }
+                    _ => {}
                 }
             }
             ServerMessage::PawnPlaced {
@@ -742,6 +830,7 @@ impl TemplateApp {
         self.app_state = AppState::JoinLobbyForm {
             lobby_id: String::new(),
             player_name: "Player 1".to_string(),
+            pending: false,
         };
     }
 
@@ -796,9 +885,11 @@ impl TemplateApp {
                     );
                 }
 
-                // Create empty lobby - it will be populated when server sends PlayerJoined messages
-                let lobby = Lobby::new(lobby_id.clone(), format!("Room {}", lobby_id));
-                self.app_state = AppState::Lobby(lobby);
+                // Stay on the form with a spinner until the server confirms
+                // the join (or rejects it, which re-enables the form).
+                if let AppState::JoinLobbyForm { pending, .. } = &mut self.app_state {
+                    *pending = true;
+                }
             }
             Err(e) => {
                 eprintln!("Failed to connect to server: {}", e);
@@ -815,6 +906,10 @@ impl TemplateApp {
                 self.app_state = AppState::Lobby(lobby.clone());
             }
             _ => {
+                // Leaving for the main menu ends any online session; a stale
+                // connection would make a later local lobby look online.
+                self.game_client = None;
+                self.current_room_id = None;
                 self.app_state = AppState::MainMenu;
             }
         }
@@ -938,7 +1033,8 @@ impl TemplateApp {
                         player_id,
                         position,
                     }) {
-                        eprintln!("Failed to place pawn: {:?}", e);
+                        self.last_error =
+                            Some((format!("Can't place the pawn there: {e}"), Instant::now()));
                     }
                 }
             }
@@ -965,7 +1061,8 @@ impl TemplateApp {
                         player_id,
                         position,
                     }) {
-                        eprintln!("Failed to place pawn: {:?}", e);
+                        self.last_error =
+                            Some((format!("Can't place the pawn there: {e}"), Instant::now()));
                     } else {
                         self.app_state = AppState::Lobby(lobby.clone());
                     }
@@ -995,7 +1092,7 @@ impl TemplateApp {
 
             // Local lobby - handle locally
             if let Err(e) = lobby.handle_event(LobbyEvent::StartGame) {
-                eprintln!("Failed to start game: {:?}", e);
+                self.last_error = Some((format!("Can't start the game: {e}"), Instant::now()));
                 return;
             }
 
@@ -1005,7 +1102,7 @@ impl TemplateApp {
                     self.app_state = AppState::Game(game);
                 }
                 Err(e) => {
-                    eprintln!("Failed to convert lobby to game: {:?}", e);
+                    self.last_error = Some((format!("Can't start the game: {e}"), Instant::now()));
                 }
             }
         }
@@ -1101,11 +1198,18 @@ impl TemplateApp {
                 if let AppState::Game(game) =
                     std::mem::replace(&mut self.app_state, AppState::MainMenu)
                 {
-                    let (game, placed_cell) = Self::perform_local_tile_placement(game, tile_index);
+                    let (game, placed) = Self::perform_local_tile_placement(game, tile_index);
 
-                    // Start animations
-                    self.start_player_animations(&game);
-                    self.start_tile_placement_animation(placed_cell);
+                    match placed {
+                        Ok(cell) => {
+                            self.start_player_animations(&game);
+                            self.start_tile_placement_animation(cell);
+                        }
+                        Err(e) => {
+                            self.last_error =
+                                Some((format!("Can't place that tile: {e}"), Instant::now()));
+                        }
+                    }
 
                     // Stay in Game state even if game is over (overlay will show stats)
                     self.app_state = AppState::Game(game);
@@ -1120,16 +1224,14 @@ impl TemplateApp {
                 ..
             } => {
                 if *waiting_for_server {
-                    eprintln!("Already waiting for server response");
+                    // Quietly ignore: the previous move is still in flight and
+                    // the top panel already shows the waiting indicator.
                     return;
                 }
 
                 // Only allow placing tiles when it's this client's turn
                 if game.current_player_id != self.current_player_id {
-                    eprintln!(
-                        "Not your turn! Current player: {}, Your player: {}",
-                        game.current_player_id, self.current_player_id
-                    );
+                    self.last_error = Some(("It's not your turn yet.".to_string(), Instant::now()));
                     return;
                 }
 
@@ -1182,12 +1284,13 @@ impl TemplateApp {
         }
     }
 
-    /// Perform a tile placement in a local game (client authoritative)
-    /// Returns the updated game and the cell where the tile was placed
+    /// Perform a tile placement in a local game (client authoritative).
+    /// Returns the updated game and the placed cell, or the engine's
+    /// rejection message for the caller to surface.
     fn perform_local_tile_placement(
         mut game: Game,
         tile_index: usize,
-    ) -> (Game, tsurust_common::board::CellCoord) {
+    ) -> (Game, Result<tsurust_common::board::CellCoord, String>) {
         let player_cell = game
             .players
             .iter()
@@ -1210,11 +1313,8 @@ impl TemplateApp {
         };
 
         match game.perform_move(mov) {
-            Ok(_turn_result) => (game, player_cell),
-            Err(error) => {
-                eprintln!("Failed to place tile: {}", error);
-                (game, player_cell)
-            }
+            Ok(_turn_result) => (game, Ok(player_cell)),
+            Err(error) => (game, Err(error.to_string())),
         }
     }
 
@@ -1223,7 +1323,7 @@ impl TemplateApp {
             cell,
             progress: 0.0,
             start_time: Instant::now(),
-            duration_secs: 0.4,
+            duration_secs: animation::TILE_PLACEMENT_DURATION_SECS,
         });
     }
 
@@ -1488,6 +1588,20 @@ impl TemplateApp {
 mod tests {
     use super::*;
     use tsurust_common::board::{seg, Player, Tile};
+
+    /// URL-based room joining: `/ABCD` or `#ABCD` should yield a normalized
+    /// room id; anything else should be ignored.
+    #[test]
+    fn room_ids_are_parsed_from_url_path_or_fragment() {
+        assert_eq!(room_id_from_location("/ABCD", ""), Some("ABCD".into()));
+        assert_eq!(room_id_from_location("/abcd/", ""), Some("ABCD".into()));
+        assert_eq!(room_id_from_location("/", "#WXYZ"), Some("WXYZ".into()));
+        // The fragment wins over the path when both are present.
+        assert_eq!(room_id_from_location("/ABCD", "#WXYZ"), Some("WXYZ".into()));
+        assert_eq!(room_id_from_location("/", ""), None);
+        assert_eq!(room_id_from_location("/index.html", ""), None);
+        assert_eq!(room_id_from_location("/toolong", "#nope!"), None);
+    }
 
     /// Local tile rotations are presentation-only and must survive a
     /// GameStateUpdate; the server's (unrotated) tiles would otherwise snap

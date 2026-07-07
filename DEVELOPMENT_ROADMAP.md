@@ -30,15 +30,6 @@
 ### **Phase 3: Polish & Advanced Features** (Future)
 **Goal**: Code quality, type safety, and enhanced features
 
-#### High Priority:
-1. **UI Enhancements**
-   - Visual error messages for invalid moves
-   - Connection status indicators
-   - Loading states for network operations
-   - Improve animation timing configurability
-   - URL-based room joining: navigating to `http://hostname:port/<roomID>` should attempt to join that room
-
-#### Lower Priority:
 1. **Type System Improvements**
    - Convert `TileEndpoint` to enum with named directions
 

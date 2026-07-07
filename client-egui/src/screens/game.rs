@@ -11,6 +11,7 @@ use crate::board_renderer::BoardRenderer;
 use crate::hand_renderer::HandRenderer;
 use crate::messaging::send_ui_message;
 use crate::player_card::PlayerCard;
+use crate::ws_client::ConnectionStatus;
 
 #[allow(clippy::too_many_arguments)]
 pub fn render_game_ui(
@@ -19,6 +20,7 @@ pub fn render_game_ui(
     client_player_id: PlayerID,
     waiting_for_server: bool,
     lobby_name: Option<&str>,
+    connection: Option<&ConnectionStatus>,
     sender: &mpsc::Sender<Message>,
     last_rotated_tile: Option<(usize, bool)>,
     player_animations: &HashMap<PlayerID, PlayerAnimation>,
@@ -40,18 +42,21 @@ pub fn render_game_ui(
                     send_ui_message(sender, Message::ExportGame);
                 }
 
-                // Show lobby name and/or waiting indicator on the right
+                // Connection state, lobby name and waiting indicator on the right
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.add_space(10.0);
 
+                    if let Some(status) = connection {
+                        crate::screens::connection_chip(ui, status);
+                        ui.separator();
+                    }
+
                     if waiting_for_server {
                         ui.label("⏳ Waiting for server...");
+                        ui.separator();
                     }
 
                     if let Some(name) = lobby_name {
-                        if waiting_for_server {
-                            ui.separator();
-                        }
                         ui.label(format!("📋 {}", name));
                     }
                 });

@@ -52,7 +52,7 @@ impl Widget for TileButton {
         });
 
         // Handle animation
-        let animation_duration = 0.5; // seconds - longer for visibility
+        let animation_duration = crate::app::animation::TILE_ROTATION_DURATION_SECS;
         let is_animating = self.rotation_progress < 1.0;
 
         if is_animating {

@@ -41,7 +41,8 @@ impl<'a> PlayerCard<'a> {
 
 impl<'a> Widget for PlayerCard<'a> {
     fn ui(self, ui: &mut Ui) -> Response {
-        let desired_size = Vec2::new(120.0, 60.0);
+        // Wide enough for names like "Test Player 2 (You)" at this font size
+        let desired_size = Vec2::new(180.0, 60.0);
         let (rect, response) = ui.allocate_exact_size(desired_size, Sense::hover());
 
         if ui.is_rect_visible(rect) {
@@ -164,7 +165,7 @@ impl<'a> Widget for PlayerCard<'a> {
 
             // Winner indication (crown)
             if self.is_winner {
-                let crown_pos = rect.min + Vec2::new(100.0, 10.0);
+                let crown_pos = rect.right_top() + Vec2::new(-26.0, 10.0);
                 ui.painter().text(
                     crown_pos,
                     egui::Align2::LEFT_TOP,

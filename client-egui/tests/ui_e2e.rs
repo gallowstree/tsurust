@@ -201,6 +201,10 @@ fn two_clients_create_join_and_play_a_turn_over_a_real_server() {
         },
     );
 
+    // The online lobby shows the connection status chip.
+    a.get_by_label_contains("Connected");
+    b.get_by_label_contains("Connected");
+
     // --- Both players place pawns by clicking spawn spots on the board ---
     a.get_by_label("spawn r0c2e4").click();
     wait_for(&mut a, "A's pawn placement to be confirmed", |app| {
@@ -316,6 +320,46 @@ fn two_clients_create_join_and_play_a_turn_over_a_real_server() {
         rotated,
         "B's local tile rotation should survive the server's game state update"
     );
+}
+
+/// A rejected join must not strand the user: the error surfaces in the toast
+/// and the app stays on the join form, re-enabled for another attempt.
+#[test]
+fn joining_a_missing_room_shows_the_error_and_keeps_the_form() {
+    ensure_server();
+
+    let mut b = new_app();
+    b.run();
+    b.get_by_label_contains("Join Online Lobby").click();
+    b.run();
+    b.get_all_by_role(egui::accesskit::Role::TextInput)
+        .find(|node| node.value().unwrap_or_default().is_empty())
+        .expect("the join form should show an empty lobby-id field")
+        .focus();
+    b.run();
+    b.event(egui::Event::Text("ZZZZ".to_string()));
+    b.run();
+    b.get_by_label("Join").click();
+
+    // The server's rejection lands in the error toast.
+    let deadline = Instant::now() + NET_TIMEOUT;
+    while b.query_by_label_contains("not found").is_none() {
+        b.run_steps(2);
+        assert!(
+            Instant::now() < deadline,
+            "the server's rejection should surface in the error toast"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    // Still on the join form — no phantom lobby, no room membership — and the
+    // form is present for a retry.
+    assert!(
+        b.state().visible_lobby().is_none(),
+        "a failed join must not open a lobby"
+    );
+    assert!(b.state().current_room_id().is_none());
+    b.get_by_label("Join");
 }
 
 /// The event-driven repaint contract: a client that is not rendering any
