@@ -211,6 +211,35 @@ impl Game {
         self.players.iter().filter(|p| p.alive).count() <= 1
     }
 
+    /// How many tiles each player currently holds. Tile *counts* aren't secret
+    /// (opponents' hand sizes are shown in the UI); the tile identities are.
+    pub fn hand_counts(&self) -> HashMap<PlayerID, usize> {
+        self.hands.iter().map(|(id, hand)| (*id, hand.len())).collect()
+    }
+
+    /// Number of tiles left in the deck.
+    pub fn deck_count(&self) -> usize {
+        self.deck.remaining()
+    }
+
+    /// A copy of this game redacted so `viewer` sees only what it may legitimately
+    /// see: every hand except the viewer's is emptied and the deck order is hidden.
+    /// A `viewer` of `None` (a spectator) sees no hands at all. This is what the
+    /// server sends across the connection boundary so opponents' tiles and the
+    /// upcoming draws never reach a client that could read them off the wire.
+    /// Counts survive redaction — read them from [`hand_counts`](Self::hand_counts)
+    /// / [`deck_count`](Self::deck_count) on the full game before redacting.
+    pub fn view_for(&self, viewer: Option<PlayerID>) -> Game {
+        let mut view = self.clone();
+        for (id, hand) in view.hands.iter_mut() {
+            if Some(*id) != viewer {
+                hand.clear();
+            }
+        }
+        view.deck = Deck::new_empty();
+        view
+    }
+
     pub fn perform_move(&mut self, mov: Move) -> Result<TurnResult, MoveError> {
         // Validate it's this player's turn
         if mov.player_id != self.current_player_id {
@@ -536,12 +565,8 @@ impl Game {
         let mut game_state = self.clone();
 
         // Capture counts before filtering
-        let hand_counts: HashMap<PlayerID, usize> = self
-            .hands
-            .iter()
-            .map(|(id, hand)| (*id, hand.len()))
-            .collect();
-        let deck_count = self.deck.remaining();
+        let hand_counts = self.hand_counts();
+        let deck_count = self.deck_count();
 
         // If game is not completed and a player perspective is specified, filter hands
         if !metadata.completed {
@@ -954,6 +979,38 @@ mod tests {
         // But counts should still be available
         assert_eq!(export.hand_counts.get(&1), Some(&3));
         assert_eq!(export.hand_counts.get(&2), Some(&3));
+    }
+
+    #[test]
+    fn test_view_for_hides_other_hands_and_the_deck() {
+        let game = Game::new(vec![
+            Player::new(1, PlayerPos::new(0, 2, 5)),
+            Player::new(2, PlayerPos::new(5, 3, 0)),
+        ]);
+        assert!(game.deck.remaining() > 0, "a fresh game has a stocked deck");
+
+        // Player 1's view keeps player 1's hand and hides everyone else's.
+        let view = game.view_for(Some(1));
+        assert_eq!(view.hands[&1], game.hands[&1], "the viewer keeps their hand");
+        assert!(view.hands[&2].is_empty(), "opponents' tiles are hidden");
+        assert_eq!(view.deck.remaining(), 0, "the deck order is hidden");
+
+        // The full game reports true counts; the message layer captures these
+        // before redacting so the UI can still show opponents' tile totals.
+        assert_eq!(game.hand_counts()[&1], 3);
+        assert_eq!(game.hand_counts()[&2], 3);
+        assert_eq!(game.deck_count(), game.deck.remaining());
+
+        // A spectator (no id) sees no hands at all.
+        let spectator = game.view_for(None);
+        assert!(
+            spectator.hands.values().all(|h| h.is_empty()),
+            "a spectator sees no tiles"
+        );
+        assert_eq!(spectator.deck.remaining(), 0);
+        // But the board, players, and current turn are untouched.
+        assert_eq!(spectator.current_player_id, game.current_player_id);
+        assert_eq!(spectator.players.len(), game.players.len());
     }
 
     #[test]

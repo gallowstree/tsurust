@@ -2,6 +2,7 @@
 ///
 /// Each test spins up a real server on an OS-assigned port, connects real
 /// WebSocket clients, and exchanges actual protocol messages.
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -175,16 +176,38 @@ async fn setup_two_player_game(
         },
     )
     .await;
-    let ServerMessage::GameStarted { game, .. } = recv_where(&mut alice, |m| {
+    // Each client's GameStarted is redacted to only its own hand, so rebuild
+    // the full game for test convenience by splicing in Bob's own hand.
+    let ServerMessage::GameStarted {
+        game: alice_game, ..
+    } = recv_where(&mut alice, |m| {
         matches!(m, ServerMessage::GameStarted { .. })
     })
     .await
     else {
         panic!("Expected GameStarted");
     };
-    recv_where(&mut bob, |m| matches!(m, ServerMessage::GameStarted { .. })).await;
+    let ServerMessage::GameStarted { game: bob_game, .. } =
+        recv_where(&mut bob, |m| matches!(m, ServerMessage::GameStarted { .. })).await
+    else {
+        panic!("Expected GameStarted");
+    };
+    let game = merge_own_hands(alice_game, &[(bob_id, &bob_game)]);
 
     (alice, bob, room_id, alice_id, bob_id, game)
+}
+
+/// The server redacts each client's view to only its own hand, so no single
+/// GameStarted/GameStateUpdate carries every hand. Rebuild the full game for
+/// test convenience by taking one client's view as the base and splicing in
+/// each other client's own (visible) hand.
+fn merge_own_hands(mut base: Game, others: &[(PlayerID, &Game)]) -> Game {
+    for (id, view) in others {
+        if let Some(hand) = view.hands.get(id) {
+            base.hands.insert(*id, hand.clone());
+        }
+    }
+    base
 }
 
 // Distinct, valid edge spawn positions — one per player (up to four).
@@ -292,22 +315,28 @@ async fn setup_n_player_game(
         },
     )
     .await;
-    let mut game = None;
+    // Each client sees a GameStarted redacted to its own hand; collect them all
+    // and merge each player's own hand into a single full game (client index i
+    // is player_ids[i]).
+    let mut per_client: Vec<Game> = Vec::with_capacity(clients.len());
     for client in clients.iter_mut() {
         let ServerMessage::GameStarted { game: g, .. } =
             recv_where(client, |m| matches!(m, ServerMessage::GameStarted { .. })).await
         else {
             panic!("Expected GameStarted");
         };
-        game = Some(g);
+        per_client.push(g);
     }
+    let base = per_client[0].clone();
+    let others: Vec<(PlayerID, &Game)> = player_ids
+        .iter()
+        .copied()
+        .zip(per_client.iter())
+        .skip(1)
+        .collect();
+    let game = merge_own_hands(base, &others);
 
-    (
-        clients,
-        room_id,
-        player_ids,
-        game.expect("at least one GameStarted"),
-    )
+    (clients, room_id, player_ids, game)
 }
 
 /// The board cell a player currently occupies in the given game state.
@@ -364,17 +393,31 @@ fn find_surviving_move(game: &Game, player_id: PlayerID) -> Move {
     panic!("no surviving move found for player {player_id}");
 }
 
+/// One client's redacted view of the game plus the tile counts it was told.
+/// After redaction a client sees only its own hand, so cross-client agreement is
+/// checked on the shared fields and the counts, not on the raw `hands` map.
+struct StateView {
+    game: Game,
+    hand_counts: HashMap<PlayerID, usize>,
+    deck_count: usize,
+}
+
 /// Receive, from every client in order, the next GameStateUpdate whose state
 /// satisfies `accept`. The predicate lets callers skip stale updates (e.g. an
 /// earlier disconnect broadcast) and wait for the one they care about.
-async fn collect_states(
+async fn collect_views(
     clients: &mut [ClientWs],
     accept: impl Fn(&Game) -> bool + Copy,
-) -> Vec<Game> {
-    let mut states = Vec::with_capacity(clients.len());
+) -> Vec<StateView> {
+    let mut views = Vec::with_capacity(clients.len());
     for client in clients.iter_mut() {
-        let state = loop {
-            let ServerMessage::GameStateUpdate { state, .. } = recv_where(client, |m| {
+        let view = loop {
+            let ServerMessage::GameStateUpdate {
+                state,
+                hand_counts,
+                deck_count,
+                ..
+            } = recv_where(client, |m| {
                 matches!(m, ServerMessage::GameStateUpdate { .. })
             })
             .await
@@ -382,36 +425,61 @@ async fn collect_states(
                 unreachable!("recv_where matched GameStateUpdate")
             };
             if accept(&state) {
-                break state;
+                break StateView {
+                    game: state,
+                    hand_counts,
+                    deck_count,
+                };
             }
         };
-        states.push(state);
+        views.push(view);
     }
-    states
+    views
 }
 
-/// Assert every client's snapshot agrees on the authoritative game fields.
-fn assert_states_agree(states: &[Game]) {
+/// Rebuild the full game from per-client redacted views. `views[i]` is the view
+/// held by the client for `ids[i]`, so splice each client's own hand back in.
+fn merge_views(views: &[StateView], ids: &[PlayerID]) -> Game {
+    let mut full = views[0].game.clone();
+    for (view, id) in views.iter().zip(ids) {
+        if let Some(hand) = view.game.hands.get(id) {
+            full.hands.insert(*id, hand.clone());
+        }
+    }
+    full
+}
+
+/// Assert every client's snapshot agrees on the authoritative game fields. The
+/// raw `hands` map is intentionally *not* compared — redaction makes each client
+/// see only its own tiles — so agreement is checked on the tile counts instead.
+fn assert_states_agree(views: &[StateView]) {
     let positions = |g: &Game| {
         g.players
             .iter()
             .map(|p| (p.id, p.pos, p.alive))
             .collect::<Vec<_>>()
     };
-    let first = &states[0];
-    for other in &states[1..] {
+    let first = &views[0];
+    for other in &views[1..] {
         assert_eq!(
-            other.current_player_id, first.current_player_id,
+            other.game.current_player_id, first.game.current_player_id,
             "clients disagree on current player"
         );
         assert_eq!(
-            other.board.history, first.board.history,
+            other.game.board.history, first.game.board.history,
             "clients disagree on board history"
         );
-        assert_eq!(other.hands, first.hands, "clients disagree on hands");
         assert_eq!(
-            positions(other),
-            positions(first),
+            other.hand_counts, first.hand_counts,
+            "clients disagree on hand counts"
+        );
+        assert_eq!(
+            other.deck_count, first.deck_count,
+            "clients disagree on deck count"
+        );
+        assert_eq!(
+            positions(&other.game),
+            positions(&first.game),
             "clients disagree on player positions"
         );
     }
@@ -1041,35 +1109,32 @@ async fn test_players_receive_distinct_disjoint_hands() {
 }
 
 /// After a tile is placed, both clients receive a GameStateUpdate carrying the
-/// same authoritative state. Regression guard for client desync.
+/// same authoritative board/turn/counts — but each sees only its *own* hand
+/// (redaction). Regression guard for client desync and for the info-leak fix.
 #[tokio::test]
 async fn test_both_clients_observe_identical_state_after_move() {
-    let (mut alice, mut bob, room_id, alice_id, _bob_id, game) =
+    let (mut alice, mut bob, room_id, alice_id, bob_id, game) =
         setup_two_player_game(start_test_server().await.0).await;
 
-    let tile = game
-        .hands
-        .get(&alice_id)
-        .and_then(|h| h.first())
-        .copied()
-        .expect("Alice should have a tile");
+    // A surviving move keeps Alice in the game so her hand refills — the
+    // "each client sees only its own hand" check below needs both players to
+    // still hold tiles (a self-eliminating opener would empty Alice's hand).
+    let mov = find_surviving_move(&game, alice_id);
 
     send(
         &mut alice,
         ClientMessage::PlaceTile {
             room_id: room_id.clone(),
             player_id: alice_id,
-            mov: Move {
-                tile,
-                cell: CellCoord { row: 0, col: 2 },
-                player_id: alice_id,
-            },
+            mov,
         },
     )
     .await;
 
     let ServerMessage::GameStateUpdate {
-        state: alice_state, ..
+        state: alice_state,
+        hand_counts: alice_counts,
+        ..
     } = recv_where(&mut alice, |m| {
         matches!(m, ServerMessage::GameStateUpdate { .. })
     })
@@ -1078,7 +1143,9 @@ async fn test_both_clients_observe_identical_state_after_move() {
         panic!()
     };
     let ServerMessage::GameStateUpdate {
-        state: bob_state, ..
+        state: bob_state,
+        hand_counts: bob_counts,
+        ..
     } = recv_where(&mut bob, |m| {
         matches!(m, ServerMessage::GameStateUpdate { .. })
     })
@@ -1100,9 +1167,18 @@ async fn test_both_clients_observe_identical_state_after_move() {
         alice_state.board.history, bob_state.board.history,
         "both clients agree on the board"
     );
+    // Tile counts agree; the tiles themselves are redacted per recipient.
     assert_eq!(
-        alice_state.hands, bob_state.hands,
-        "both clients agree on all hands"
+        alice_counts, bob_counts,
+        "both clients agree on all hand counts"
+    );
+    assert!(
+        !alice_state.hands[&alice_id].is_empty() && alice_state.hands[&bob_id].is_empty(),
+        "Alice sees only her own hand"
+    );
+    assert!(
+        !bob_state.hands[&bob_id].is_empty() && bob_state.hands[&alice_id].is_empty(),
+        "Bob sees only his own hand"
     );
     let positions = |g: &Game| {
         g.players
@@ -1144,10 +1220,18 @@ async fn test_consecutive_turns_keep_clients_in_sync() {
     else {
         panic!()
     };
-    recv_where(&mut bob, |m| {
+    // Bob's own view carries Bob's hand (Alice's view redacts it), so read his
+    // tile from Bob's update rather than Alice's.
+    let ServerMessage::GameStateUpdate {
+        state: after_alice_on_bob,
+        ..
+    } = recv_where(&mut bob, |m| {
         matches!(m, ServerMessage::GameStateUpdate { .. })
     })
-    .await;
+    .await
+    else {
+        panic!()
+    };
     assert_eq!(
         after_alice.current_player_id, bob_id,
         "turn should pass to Bob"
@@ -1161,7 +1245,7 @@ async fn test_consecutive_turns_keep_clients_in_sync() {
         .expect("Bob should be in the state");
     assert!(bob_player.alive, "Bob should be alive for his turn");
     let bob_cell = bob_player.pos.cell;
-    let bob_tile = after_alice
+    let bob_tile = after_alice_on_bob
         .hands
         .get(&bob_id)
         .and_then(|h| h.first())
@@ -1182,6 +1266,7 @@ async fn test_consecutive_turns_keep_clients_in_sync() {
     .await;
     let ServerMessage::GameStateUpdate {
         state: after_bob_on_alice,
+        hand_counts: alice_counts,
         ..
     } = recv_where(&mut alice, |m| {
         matches!(m, ServerMessage::GameStateUpdate { .. })
@@ -1192,6 +1277,7 @@ async fn test_consecutive_turns_keep_clients_in_sync() {
     };
     let ServerMessage::GameStateUpdate {
         state: after_bob_on_bob,
+        hand_counts: bob_counts,
         ..
     } = recv_where(&mut bob, |m| {
         matches!(m, ServerMessage::GameStateUpdate { .. })
@@ -1211,8 +1297,8 @@ async fn test_consecutive_turns_keep_clients_in_sync() {
         "both clients agree on the board after two turns"
     );
     assert_eq!(
-        after_bob_on_alice.hands, after_bob_on_bob.hands,
-        "both clients agree on all hands after two turns"
+        alice_counts, bob_counts,
+        "both clients agree on all hand counts after two turns"
     );
 }
 
@@ -1270,11 +1356,15 @@ async fn test_three_players_agree_on_state_after_move() {
     )
     .await;
 
-    let states = collect_states(&mut clients, |_| true).await;
-    assert_states_agree(&states);
-    assert_eq!(states[0].board.history.len(), 1, "exactly one tile placed");
+    let views = collect_views(&mut clients, |_| true).await;
+    assert_states_agree(&views);
     assert_eq!(
-        states[0].current_player_id, ids[1],
+        views[0].game.board.history.len(),
+        1,
+        "exactly one tile placed"
+    );
+    assert_eq!(
+        views[0].game.current_player_id, ids[1],
         "turn should pass to the second player"
     );
 }
@@ -1310,14 +1400,15 @@ async fn test_four_player_turn_order_cycles_through_players() {
         )
         .await;
 
-        let states = collect_states(&mut clients, |_| true).await;
-        assert_states_agree(&states);
+        let views = collect_views(&mut clients, |_| true).await;
+        assert_states_agree(&views);
         assert_eq!(
-            states[0].board.history.len(),
+            views[0].game.board.history.len(),
             turn + 1,
             "one tile placed per turn"
         );
-        state = states.into_iter().next().expect("a state per client");
+        // Rebuild the full game so the next turn can read that player's hand.
+        state = merge_views(&views, &ids);
     }
 
     assert_eq!(
@@ -1371,13 +1462,14 @@ async fn test_disconnected_player_is_skipped_in_turn_order() {
     .await;
 
     // Skip the disconnect's empty-history update; take the post-move one.
-    let states = collect_states(&mut clients, |g| !g.board.history.is_empty()).await;
-    assert_states_agree(&states);
+    let views = collect_views(&mut clients, |g| !g.board.history.is_empty()).await;
+    assert_states_agree(&views);
     assert_eq!(
-        states[0].current_player_id, ids[2],
+        views[0].game.current_player_id, ids[2],
         "turn should skip eliminated player 2 and land on player 3"
     );
-    let p2 = states[0]
+    let p2 = views[0]
+        .game
         .players
         .iter()
         .find(|p| p.id == ids[1])
@@ -1407,9 +1499,9 @@ async fn test_current_player_disconnect_passes_turn_in_rotation_order() {
         },
     )
     .await;
-    let states = collect_states(&mut clients, |g| !g.board.history.is_empty()).await;
+    let views = collect_views(&mut clients, |g| !g.board.history.is_empty()).await;
     assert_eq!(
-        states[0].current_player_id, ids[1],
+        views[0].game.current_player_id, ids[1],
         "player 2 should be current before the disconnect"
     );
 
@@ -1668,6 +1760,11 @@ async fn test_spectator_sees_the_game_but_cannot_act() {
     };
     assert_eq!(state.players.len(), 2);
     assert!(state.board.history.is_empty());
+    // Spectators are redacted to no hands at all — they can watch, not peek.
+    assert!(
+        state.hands.values().all(|h| h.is_empty()),
+        "a spectator must not receive any player's tiles"
+    );
 
     // Spectators have no player identity; impersonating one is rejected.
     let alice_pos = game

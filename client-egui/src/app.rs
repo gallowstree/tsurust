@@ -156,10 +156,13 @@ pub enum AppState {
     LobbyPlacingFor(Lobby, PlayerID), // Debug mode: placing pawn for specific player
     Game(Game),                       // Local game - client authoritative
     OnlineGame {
-        game: Game, // Server's authoritative state
+        game: Game, // Server's authoritative state (redacted: only our own hand)
         room_id: String,
         lobby_name: String,       // Display name of the lobby/game
         waiting_for_server: bool, // Show loading state during server round-trip
+        /// Every player's hand size, from the server. The redacted `game` only
+        /// carries our own tiles, so opponents' counts come from here.
+        hand_counts: std::collections::HashMap<PlayerID, usize>,
         /// Watching only: no hand, no moves; just the live board.
         is_spectator: bool,
     },
@@ -454,6 +457,8 @@ impl TemplateApp {
                 false,
                 None,
                 None,
+                // Local games hold every hand, so counts come from the game itself.
+                None,
                 false,
                 sender,
                 last_rotated_tile,
@@ -464,6 +469,7 @@ impl TemplateApp {
                 game,
                 waiting_for_server,
                 lobby_name,
+                hand_counts,
                 is_spectator,
                 ..
             } => screens::game::render_game_ui(
@@ -473,6 +479,7 @@ impl TemplateApp {
                 *waiting_for_server,
                 Some(lobby_name.as_str()),
                 connection,
+                Some(hand_counts),
                 *is_spectator,
                 sender,
                 last_rotated_tile,
@@ -722,7 +729,12 @@ impl TemplateApp {
                     }
                 }
             }
-            ServerMessage::GameStateUpdate { room_id, mut state } => {
+            ServerMessage::GameStateUpdate {
+                room_id,
+                mut state,
+                hand_counts,
+                ..
+            } => {
                 // A pending spectate resolved: enter the game as an observer.
                 if let AppState::JoinLobbyForm {
                     pending:
@@ -744,6 +756,7 @@ impl TemplateApp {
                             room_id,
                             lobby_name,
                             waiting_for_server: false,
+                            hand_counts,
                             is_spectator: true,
                         };
                         return;
@@ -754,9 +767,11 @@ impl TemplateApp {
                 if let AppState::OnlineGame {
                     game,
                     waiting_for_server,
+                    hand_counts: current_counts,
                     ..
                 } = app_state
                 {
+                    *current_counts = hand_counts;
                     // Rotation is presentation-only (the server matches tiles
                     // rotation-invariantly), so keep the locally rotated tile
                     // wherever the server's hand still holds the same tile in
@@ -861,7 +876,12 @@ impl TemplateApp {
                     }
                 }
             }
-            ServerMessage::GameStarted { room_id, game } => {
+            ServerMessage::GameStarted {
+                room_id,
+                game,
+                hand_counts,
+                ..
+            } => {
                 // Get lobby name from current lobby state
                 let lobby_name = match app_state {
                     AppState::Lobby(lobby) | AppState::LobbyPlacingFor(lobby, _) => {
@@ -876,6 +896,7 @@ impl TemplateApp {
                     room_id,
                     lobby_name,
                     waiting_for_server: false,
+                    hand_counts,
                     is_spectator: false,
                 };
             }
@@ -1770,14 +1791,12 @@ mod tests {
             room_id: "ROOM".to_string(),
             lobby_name: "Room".to_string(),
             waiting_for_server: true,
+            hand_counts: server_game.hand_counts(),
             is_spectator: false,
         };
 
         TemplateApp::handle_server_message(
-            ServerMessage::GameStateUpdate {
-                room_id: "ROOM".to_string(),
-                state: server_game.clone(),
-            },
+            ServerMessage::game_state_update("ROOM".to_string(), &server_game),
             &mut Some("ROOM".to_string()),
             &mut { me },
             &mut app_state,

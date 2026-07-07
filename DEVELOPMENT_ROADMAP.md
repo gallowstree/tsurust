@@ -13,14 +13,7 @@
    - Online lobby buttons clarified with "Online" prefix
    - Maintain sample game for quick testing
 
-2. **Server-Side Improvements**
-   - Per-connection redacted game views, when online play grows beyond trusted
-     groups (decision + design in CLIENT_SERVER.md "Trust Model & Hidden
-     Information"): `Game::view_for` in common, redaction at the connection
-     boundary in `handler.rs`, `hand_counts`/`deck_count` protocol fields,
-     reworked state-sync test invariants
-
-3. **Testing & Polish**
+2. **Testing & Polish**
    - Test network latency and disconnections
    - Session-resume reconnection (proposals/004, Option A) — only if disconnect
      telemetry or user reports justify it; fail-closed handling (Option B) is in place

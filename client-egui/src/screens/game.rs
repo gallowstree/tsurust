@@ -21,6 +21,10 @@ pub fn render_game_ui(
     waiting_for_server: bool,
     lobby_name: Option<&str>,
     connection: Option<&ConnectionStatus>,
+    // Authoritative per-player hand sizes for online games, where the redacted
+    // game only carries our own tiles. `None` for local games, which hold every
+    // hand and so report counts straight from `game.hands`.
+    hand_counts: Option<&HashMap<PlayerID, usize>>,
     is_spectator: bool,
     sender: &mpsc::Sender<Message>,
     last_rotated_tile: Option<(usize, bool)>,
@@ -174,7 +178,14 @@ pub fn render_game_ui(
                 };
 
                 for player in sorted_players {
-                    let hand_size = game.hands.get(&player.id).map(|h| h.len()).unwrap_or(0);
+                    // Prefer the authoritative counts (online play redacts other
+                    // players' tiles, so game.hands would read 0 for opponents);
+                    // fall back to the local game's own hands.
+                    let hand_size = hand_counts
+                        .and_then(|counts| counts.get(&player.id).copied())
+                        .unwrap_or_else(|| {
+                            game.hands.get(&player.id).map(|h| h.len()).unwrap_or(0)
+                        });
                     let is_current = player.id == game.current_player_id;
                     let is_winner = winner_id == Some(player.id);
 

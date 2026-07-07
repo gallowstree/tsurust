@@ -83,6 +83,10 @@ pub async fn handle_connection(
                 }
             } => {
                 if let Some(update) = update {
+                    // Redact the full broadcast for this connection's viewer:
+                    // players see only their own hand, spectators (current_player_id
+                    // == None) see none. Hidden tiles never reach the wire.
+                    let update = update.redacted_for(current_player_id);
                     match serde_json::to_string(&update) {
                         Ok(json) => {
                             if let Err(e) = ws.send(Message::Text(json.into())).await {
@@ -271,10 +275,9 @@ async fn handle_client_message(
             *current_room = Some(room_id.clone());
             *current_player_id = None;
 
-            let response = ServerMessage::GameStateUpdate {
-                room_id: room_id.clone(),
-                state: game.clone(),
-            };
+            // Spectators see no hands: redact for `None`.
+            let response =
+                ServerMessage::game_state_update(room_id.clone(), game).redacted_for(None);
             let json = serde_json::to_string(&response)
                 .map_err(|e| format!("Failed to serialize game state: {}", e))?;
             ws.send(Message::Text(json.into()))
@@ -318,10 +321,10 @@ async fn handle_client_message(
                 .game()
                 .ok_or_else(|| format!("Room '{}' has not started its game", room_id))?;
 
-            let response = ServerMessage::GameStateUpdate {
-                room_id: room_id.clone(),
-                state: game.clone(),
-            };
+            // Redact for the requesting player (or None if this connection is a
+            // spectator that used GetGameState directly).
+            let response = ServerMessage::game_state_update(room_id.clone(), game)
+                .redacted_for(*current_player_id);
             let json = serde_json::to_string(&response)
                 .map_err(|e| format!("Failed to serialize response: {}", e))?;
             ws.send(Message::Text(json.into()))

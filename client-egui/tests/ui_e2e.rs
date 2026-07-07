@@ -266,6 +266,18 @@ fn two_clients_create_join_and_play_a_turn_over_a_real_server() {
         "the creator should have the first turn"
     );
 
+    // --- Redaction: neither client can read the other's tiles off the wire ---
+    let a_game = a.state().visible_game().expect("A should be in the game");
+    assert!(
+        !a_game.hands[&1].is_empty() && a_game.hands[&2].is_empty(),
+        "A sees only her own hand; B's tiles are hidden"
+    );
+    let b_game = b.state().visible_game().expect("B should be in the game");
+    assert!(
+        !b_game.hands[&2].is_empty() && b_game.hands[&1].is_empty(),
+        "B sees only his own hand; A's tiles are hidden"
+    );
+
     // --- B rotates a hand tile locally (presentation-only planning) ---
     // Pick a rotation-asymmetric tile so the survival assertion below can't
     // pass by accident.

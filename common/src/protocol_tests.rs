@@ -25,14 +25,8 @@ fn test_server_message_serialization() {
             player_id: 1,
             position: PlayerPos::new(0, 0, 4),
         },
-        ServerMessage::GameStarted {
-            room_id: "TEST123".to_string(),
-            game: create_test_game(),
-        },
-        ServerMessage::GameStateUpdate {
-            room_id: "TEST123".to_string(),
-            state: create_test_game(),
-        },
+        ServerMessage::game_started("TEST123".to_string(), create_test_game()),
+        ServerMessage::game_state_update("TEST123".to_string(), &create_test_game()),
         ServerMessage::TurnCompleted {
             room_id: "TEST123".to_string(),
             result: TurnResult::TurnAdvanced {

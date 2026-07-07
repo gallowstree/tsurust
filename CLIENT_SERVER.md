@@ -301,40 +301,40 @@ Using `tokio::sync::broadcast` for room updates:
 - **Non-blocking**: Slow clients don't block fast ones
 - **Backpressure**: Lagging clients get errors and can resync
 
-### Trust Model & Hidden Information (decided 2026-07)
+### Trust Model & Hidden Information (redaction implemented 2026-07)
 
-`GameStateUpdate`/`GameStarted` broadcast the full `Game` — including every
-player's hand and the deck order — to every client in the room. The honest
-client only renders the viewer's own hand, but any client inspecting the wire
-(browser devtools is enough) can read opponents' hands and upcoming draws.
+Hidden information is redacted **per connection at the connection boundary**, so
+the tiles a client isn't entitled to see never travel to it — inspecting the
+wire (browser devtools) reveals nothing an honest client wouldn't show.
 
-**Decision: accepted for the current trust model.** Online play targets small
-groups of people who know each other; the in-game advantage from peeking is
-modest in Tsuro; and fixing it properly touches the protocol and the client.
-This is a *documented limitation*, not an endorsement — the server otherwise
-enforces all rules (turn order, identity, placement, phase).
+How it works:
+1. `Game::view_for(viewer: Option<PlayerID>) -> Game` (`common/src/game.rs`)
+   returns a copy with every hand except the viewer's emptied and the deck order
+   hidden. `viewer == None` (a spectator) sees *no* hands at all.
+2. The room's `broadcast` channel stays server-internal and carries the **full**
+   state. Each connection task redacts on egress: `ServerMessage::redacted_for(
+   viewer)` is applied to every `GameStateUpdate`/`GameStarted` before it is
+   serialized to that client (the broadcast-forward arm in `handler.rs`), keyed
+   off the connection's own `current_player_id`. The direct `SpectateRoom`
+   (viewer `None`) and `GetGameState` responses redact the same way.
+3. `GameStateUpdate`/`GameStarted` carry `hand_counts: HashMap<PlayerID, usize>`
+   and `deck_count: usize`, computed from the full state *before* redaction, so
+   the UI still shows opponents' tile counts and the deck size. The client reads
+   opponents' counts from `hand_counts` (its redacted `Game` holds only its own
+   tiles); `ServerMessage::game_state_update`/`game_started` are the constructors
+   that populate the counts at the broadcast sites.
+4. State-sync invariant: clients agree on the board, turn, positions, and
+   **counts**; each client's raw `hands` map holds only its own tiles. The
+   integration tests assert this (see `assert_states_agree`, and the
+   "each sees only its own hand" checks in the two-client and spectator tests).
 
-**When online play grows beyond trusted groups**, implement per-connection
-redacted views (design agreed, queued in DEVELOPMENT_ROADMAP.md):
-1. `Game::view_for(viewer: PlayerID) -> Game` in `common` — other players'
-   hands emptied, deck emptied (reuse `Game::export`'s filtering logic).
-2. Redact at the connection boundary in `handler.rs`: the broadcast channel
-   stays server-internal and carries full state; each connection task applies
-   `view_for(current_player_id)` to `GameStateUpdate`/`GameStarted` (and the
-   `GetGameState` response) before serializing to its client.
-3. Add `hand_counts: HashMap<PlayerID, usize>` and `deck_count: usize` to
-   those messages so the UI can keep showing opponents' tile counts.
-4. Rework the state-sync integration tests: the invariant becomes "each client
-   sees its own hand and everyone's counts", not "all clients see all hands".
-
-**Spectators (added 2026-07) sharpen this trade-off.** `SpectateRoom` gives
-any connection the same full `GameStateUpdate` stream the players get, and a
-*public* room can be spectated by strangers who found it in the lobby
-directory. Spectating a public game therefore reveals every hand to anyone on
-the server. This is consistent with the trust model above (public rooms are
-opt-in, private rooms stay code-only), but it moves the redaction trigger
-closer: if public rooms see real use between strangers, spectator connections
-should be the first to get redacted views (`view_for` with *no* own hand).
+**Remaining trust assumptions.** The server still trusts a client's *own* moves
+only insofar as the engine validates them (turn order, identity, placement,
+phase — all enforced). Tile counts and the board are public by design. There is
+no per-account authentication yet, so identity is per-connection: a reconnecting
+player is a new connection (see the fail-closed disconnect handling). Spectators
+and public rooms are safe under redaction — a stranger who spectates a public
+game sees the board and counts, never anyone's tiles.
 
 ## Connection Lifecycle
 

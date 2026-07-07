@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::board::{Move, PlayerID, PlayerPos};
@@ -77,7 +79,17 @@ pub enum ServerMessage {
     },
     GameStateUpdate {
         room_id: RoomId,
+        /// Redacted for the recipient at the connection boundary: only the
+        /// recipient's own hand is populated (a spectator's is empty), and the
+        /// deck order is hidden. Tile totals live in `hand_counts`/`deck_count`.
         state: Game,
+        /// Every player's hand size, so the UI can still show opponents' tile
+        /// counts even though the tiles themselves are redacted.
+        #[serde(default)]
+        hand_counts: HashMap<PlayerID, usize>,
+        /// Tiles remaining in the (hidden) deck.
+        #[serde(default)]
+        deck_count: usize,
     },
     TurnCompleted {
         room_id: RoomId,
@@ -101,8 +113,64 @@ pub enum ServerMessage {
     },
     GameStarted {
         room_id: RoomId,
+        /// Redacted for the recipient, as with `GameStateUpdate`.
         game: Game,
+        #[serde(default)]
+        hand_counts: HashMap<PlayerID, usize>,
+        #[serde(default)]
+        deck_count: usize,
     },
+}
+
+impl ServerMessage {
+    /// Build a `GameStateUpdate` carrying the full game plus its tile counts.
+    /// The full state is fine on the server-internal broadcast channel; it is
+    /// redacted per-recipient with [`redacted_for`](Self::redacted_for) on the
+    /// way out to each client.
+    pub fn game_state_update(room_id: RoomId, game: &Game) -> ServerMessage {
+        ServerMessage::GameStateUpdate {
+            room_id,
+            state: game.clone(),
+            hand_counts: game.hand_counts(),
+            deck_count: game.deck_count(),
+        }
+    }
+
+    /// Build a `GameStarted` carrying the full game plus its tile counts.
+    pub fn game_started(room_id: RoomId, game: Game) -> ServerMessage {
+        ServerMessage::GameStarted {
+            room_id,
+            hand_counts: game.hand_counts(),
+            deck_count: game.deck_count(),
+            game,
+        }
+    }
+
+    /// Redact a server→client message for `viewer` (a player id, or `None` for a
+    /// spectator). Only the game-state messages carry secrets — their `Game` is
+    /// replaced by [`Game::view_for`], hiding other players' tiles and the deck
+    /// order — while their tile *counts* are preserved. Every other variant
+    /// passes through unchanged. Must only be applied to a full-state message
+    /// (the counts are recomputed from the state before it is redacted).
+    pub fn redacted_for(self, viewer: Option<PlayerID>) -> ServerMessage {
+        match self {
+            ServerMessage::GameStateUpdate { room_id, state, .. } => {
+                ServerMessage::GameStateUpdate {
+                    hand_counts: state.hand_counts(),
+                    deck_count: state.deck_count(),
+                    state: state.view_for(viewer),
+                    room_id,
+                }
+            }
+            ServerMessage::GameStarted { room_id, game, .. } => ServerMessage::GameStarted {
+                hand_counts: game.hand_counts(),
+                deck_count: game.deck_count(),
+                game: game.view_for(viewer),
+                room_id,
+            },
+            other => other,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -568,10 +636,7 @@ mod tests {
     #[test]
     fn test_server_message_game_state_update_serialization() {
         let game = sample_mid_game();
-        let msg = ServerMessage::GameStateUpdate {
-            room_id: "ROOM1".to_string(),
-            state: game.clone(),
-        };
+        let msg = ServerMessage::game_state_update("ROOM1".to_string(), &game);
 
         let json = serde_json::to_string(&msg).expect("Failed to serialize");
         let deserialized: ServerMessage =
@@ -580,6 +645,8 @@ mod tests {
         let ServerMessage::GameStateUpdate {
             room_id,
             state: round_tripped,
+            hand_counts,
+            deck_count,
         } = deserialized
         else {
             panic!("Wrong message type after deserialization");
@@ -591,8 +658,10 @@ mod tests {
             !round_tripped.board.history.is_empty(),
             "the sample game should have a move in its history"
         );
-        // Every integer-keyed map must round-trip with all of its keys intact.
+        // The full-state constructor keeps every hand and reports the counts.
         assert_eq!(round_tripped.hands, game.hands);
+        assert_eq!(hand_counts, game.hand_counts());
+        assert_eq!(deck_count, game.deck_count());
         for id in game.hands.keys() {
             assert!(round_tripped.stats.contains_key(id), "stats lost key {id}");
             assert!(
@@ -605,10 +674,7 @@ mod tests {
     #[test]
     fn test_server_message_game_started_serialization() {
         let game = sample_mid_game();
-        let msg = ServerMessage::GameStarted {
-            room_id: "ROOM1".to_string(),
-            game: game.clone(),
-        };
+        let msg = ServerMessage::game_started("ROOM1".to_string(), game.clone());
 
         let json = serde_json::to_string(&msg).expect("Failed to serialize");
         let deserialized: ServerMessage =
@@ -617,6 +683,8 @@ mod tests {
         let ServerMessage::GameStarted {
             room_id,
             game: round_tripped,
+            hand_counts,
+            deck_count,
         } = deserialized
         else {
             panic!("Wrong message type after deserialization");
@@ -624,6 +692,60 @@ mod tests {
         assert_eq!(room_id, "ROOM1");
         assert_eq!(round_tripped.current_player_id, game.current_player_id);
         assert_eq!(round_tripped.hands, game.hands);
+        assert_eq!(hand_counts, game.hand_counts());
+        assert_eq!(deck_count, game.deck_count());
         assert_eq!(round_tripped.players.len(), game.players.len());
+    }
+
+    /// Redacting a game-state message hides other players' tiles and the deck
+    /// order while preserving the counts. A spectator (`None`) sees no hands.
+    #[test]
+    fn test_redacted_for_hides_hands_but_keeps_counts() {
+        let game = sample_mid_game();
+        let full = ServerMessage::game_state_update("ROOM1".to_string(), &game);
+
+        // Player 1's view: their hand stays, everyone else's is emptied.
+        let ServerMessage::GameStateUpdate {
+            state,
+            hand_counts,
+            deck_count,
+            ..
+        } = full.clone().redacted_for(Some(1))
+        else {
+            panic!("redaction must preserve the variant");
+        };
+        assert_eq!(state.hands[&1], game.hands[&1], "the viewer keeps their hand");
+        assert!(state.hands[&2].is_empty(), "opponents' tiles are hidden");
+        assert_eq!(state.deck_count(), 0, "the deck order is hidden");
+        assert_eq!(hand_counts, game.hand_counts(), "counts survive redaction");
+        assert_eq!(deck_count, game.deck_count());
+
+        // A spectator sees no hands at all.
+        let ServerMessage::GameStateUpdate { state, .. } = full.redacted_for(None) else {
+            panic!("redaction must preserve the variant");
+        };
+        assert!(
+            state.hands.values().all(|h| h.is_empty()),
+            "a spectator sees no tiles"
+        );
+    }
+
+    /// Redaction leaves non-game messages untouched.
+    #[test]
+    fn test_redacted_for_passes_through_other_messages() {
+        let msg = ServerMessage::PlayerJoined {
+            room_id: "ROOM1".to_string(),
+            player_id: 2,
+            player_name: "Bob".to_string(),
+        };
+        let redacted = msg.clone().redacted_for(Some(1));
+        assert_eq!(
+            std::mem::discriminant(&msg),
+            std::mem::discriminant(&redacted)
+        );
+        let ServerMessage::PlayerJoined { player_name, .. } = redacted else {
+            panic!("PlayerJoined should pass through unchanged");
+        };
+        assert_eq!(player_name, "Bob");
     }
 }

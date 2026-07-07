@@ -94,12 +94,10 @@ impl GameRoom {
             .perform_move(mov)
             .map_err(|e| format!("Invalid move: {}", e))?;
 
-        // Broadcast game state update to all clients in this room
-        // This contains all information clients need (game state, current player, etc.)
-        let state_update = ServerMessage::GameStateUpdate {
-            room_id: self.id.clone(),
-            state: game.clone(),
-        };
+        // Broadcast game state update to all clients in this room. The channel
+        // is server-internal and carries the full state; each connection task
+        // redacts it for its own client before sending (see handler.rs).
+        let state_update = ServerMessage::game_state_update(self.id.clone(), game);
         if self.update_tx.send(state_update).is_err() {
             // Benign: broadcast::send only fails when no client is subscribed
             tracing::debug!(room_id = %self.id, "no subscribers for GameStateUpdate broadcast");
@@ -176,10 +174,7 @@ impl GameRoom {
 
                 // Broadcast updated game state; clients derive a win from
                 // is_game_over() when one player remains
-                let state_update = ServerMessage::GameStateUpdate {
-                    room_id: self.id.clone(),
-                    state: game.clone(),
-                };
+                let state_update = ServerMessage::game_state_update(self.id.clone(), game);
                 self.broadcast(state_update);
             }
         }
@@ -217,11 +212,8 @@ impl GameRoom {
             "game started"
         );
 
-        // Broadcast game started to all clients
-        let game_started = ServerMessage::GameStarted {
-            room_id: self.id.clone(),
-            game,
-        };
+        // Broadcast game started to all clients (redacted per-recipient on egress)
+        let game_started = ServerMessage::game_started(self.id.clone(), game);
         self.broadcast(game_started);
 
         Ok(())
