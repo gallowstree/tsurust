@@ -20,6 +20,9 @@ The project is organized as a Cargo workspace with three main crates:
 - **`client-egui/`** - GUI client built with [egui](https://github.com/emilk/egui)
 - **`server/`** - WebSocket server for online multiplayer
 
+See [ARCHITECTURE.md](ARCHITECTURE.md) for how the pieces fit together, and
+[DEPLOYMENT.md](DEPLOYMENT.md) for shipping the server and web client.
+
 ## Getting Started
 
 ### Prerequisites
@@ -55,7 +58,8 @@ python3 -m http.server 8000
 
 3. Open http://localhost:8000/web/ in your browser
 
-See `client-egui/web/README.md` for deployment options.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the canonical Trunk build and hosting the
+web client.
 
 **Native Desktop - Local Game**
 ```bash
@@ -76,10 +80,11 @@ cargo run --bin client-egui_bin
 ```
 
 3. In each client:
-   - Click "Host Game" (first player) or "Join Game" (other players)
-   - Enter the lobby code
-   - Place starting pawns
-   - Click "Start Game"
+   - First player: click "Create Online Lobby" (choose public or private)
+   - Others: click "Join Online Lobby" — pick a public room from the browser,
+     or enter a private room's 4-character code. In-progress public games can be
+     watched via "Spectate".
+   - Place starting pawns, then the host clicks "Start Game"
 
 ### Testing
 
@@ -118,8 +123,8 @@ tsurust/
 │   │   ├── deck.rs       # Tile deck
 │   │   ├── lobby.rs      # Multiplayer lobby
 │   │   ├── protocol.rs   # Network protocol messages
-│   │   └── trail.rs      # Player trail visualization
-│   └── tests/            # Integration tests
+│   │   └── trail.rs      # Topological player-path data
+│   └── ...
 │
 ├── client-egui/      # GUI client
 │   └── src/
@@ -153,12 +158,8 @@ RUST_LOG=debug cargo run --bin server
 
 ## Roadmap
 
-See `DEVELOPMENT_ROADMAP.md` for detailed development plans and technical debt tracking.
-
-Current priorities:
-- Server-side improvements (disconnect handling, room cleanup)
-- Comprehensive integration tests
-- Animation system for player movement
+See [DEVELOPMENT_ROADMAP.md](DEVELOPMENT_ROADMAP.md) for planned work and the
+technical-debt log.
 
 ## Contributing
 

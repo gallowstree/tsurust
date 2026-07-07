@@ -1,48 +1,32 @@
 # Development Roadmap
 
-## Current Development Priority
+Active TODOs and known technical debt only. Completed work lives in git history,
+not here (see the documentation policy in CLAUDE.md).
 
-### **Phase 2: Client-Server Integration** (Active)
-**Goal**: Complete the multiplayer WebSocket implementation
+## Planned work
 
-#### Tasks:
+### Networking
+- Session-resume reconnection (`proposals/004`, Option A) — only if disconnect
+  telemetry or user reports justify it; the current behavior is fail-closed.
+- Exercise network latency and flaky-connection handling.
 
-1. **UI Improvements for Online/Offline Modes**
-   - Distinguish local vs online game modes in main menu
-   - Local Game button creates offline multiplayer lobby
-   - Online lobby buttons clarified with "Online" prefix
-   - Maintain sample game for quick testing
+### Features
+- AI opponents that can join multiplayer games.
+- Tournament / ranking system.
+- Spectator game-history scrubbing (step back through moves while watching live).
+- Custom game variants and rule modifications.
 
-2. **Testing & Polish**
-   - Test network latency and disconnections
-   - Session-resume reconnection (proposals/004, Option A) — only if disconnect
-     telemetry or user reports justify it; fail-closed handling (Option B) is in place
+## Technical debt
 
----
-
-### **Phase 3: Polish & Advanced Features** (Future)
-**Goal**: Code quality, type safety, and enhanced features
-
-1. **Type System Improvements**
-   - Convert `TileEndpoint` to enum with named directions
-
-2. **Advanced Features**
-   - Add AI opponents that can join multiplayer games
-   - Tournament/ranking system
-   - Spectator game-history scrubbing (step back through moves while
-     watching live; live spectating itself works via SpectateRoom)
-   - Custom game variants and rule modifications
-
-
-
-## Technical Debt Log
-
-### Medium Priority
-- `common/src/lib.rs:14` - Rename TileEndpoint references to "entry point"
-- `common/src/board.rs:14` - Convert TileEndpoint from usize to enum
-- Unicode glyph rendering - Consider runtime detection if more rendering issues occur
-- Head-on pawn collisions (both die in real Tsuro) are not implemented — document
-  as a house rule or implement
-- Real-Tsuro fidelity variant (draw one tile per turn + dragon-tile queue) — the
+- Convert `TileEndpoint` from `usize` to an enum with named directions, and
+  rename lingering "TileEndpoint" references to "entry point"
+  (`common/src/board.rs`, `common/src/lib.rs`).
+- Unicode glyph rendering — consider runtime detection if more rendering issues
+  surface.
+- Head-on pawn collisions (both pawns die in real Tsuro) are not implemented —
+  decide: bless as a house rule, or implement.
+- Real-Tsuro fidelity variant (draw one tile per turn + dragon-tile queue). The
   current refill-to-3 rule is a deliberate house variant; if fidelity becomes a
-  goal, implement both together as one feature (Phase 3, custom game variants)
+  goal, implement both together as one feature (with custom game variants).
+- Two GitHub Pages deploy workflows (`ci.yml`'s `deploy-pages` job vs the dormant
+  `deploy-pages.yml`) — reconcile to one.

@@ -1,9 +1,13 @@
 # Proposal 004: WebSocket Reconnection Strategy
 
-**Status:** Draft
+**Status:** Decided — Option B (fail-closed) shipped; Option A deferred.
 **Author:** Claude
 **Date:** 2026-05-07
 **Estimated Effort:** Option A: 4-5 days · Option B: 0.5 day
+
+> Option B is implemented (`client-egui/src/ws_client.rs` — `ConnectionStatus`,
+> no reconnect machinery). This doc is kept as the design-of-record for Option A,
+> should session-resume ever be justified (see the roadmap's Networking item).
 
 ---
 
