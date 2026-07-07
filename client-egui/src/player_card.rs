@@ -105,9 +105,14 @@ impl<'a> Widget for PlayerCard<'a> {
                 );
             }
 
-            // Player name (color name) with "(You)" indicator
+            // Player name (color name) with "(You)" indicator. Lobby-created
+            // players use a palette color_to_name doesn't know, so fall back
+            // to the player's actual name instead of showing "Unknown".
             let name_pos = rect.min + Vec2::new(32.0, 12.0);
-            let name = color_to_name(self.player.color);
+            let name = match color_to_name(self.player.color) {
+                "Unknown" => self.player.name.as_str(),
+                known => known,
+            };
             let display_name = if self.is_you {
                 format!("{} (You)", name)
             } else {

@@ -5,6 +5,7 @@
 //! broadcast → client loop, driven through actual widget interactions.
 #![cfg(not(target_arch = "wasm32"))]
 
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use egui_kittest::kittest::Queryable;
@@ -17,27 +18,53 @@ use client_egui::TemplateApp;
 const NET_TIMEOUT: Duration = Duration::from_secs(10);
 
 fn new_app() -> Harness<'static, TemplateApp> {
-    Harness::builder()
-        .with_size(egui::Vec2::new(1400.0, 900.0))
-        .build_eframe(|cc| TemplateApp::new(cc))
+    new_app_with_ctx().0
 }
 
-/// Bind the real server to an ephemeral port inside this process. The
-/// returned runtime must stay alive for the duration of the test.
-fn start_server() -> (tokio::runtime::Runtime, String) {
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .enable_all()
-        .build()
-        .expect("tokio runtime should build");
-    let listener = rt
-        .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
-        .expect("an ephemeral port should be bindable");
-    let addr = listener
-        .local_addr()
-        .expect("bound listener should have an address");
-    rt.spawn(tsurust_server::serve(listener, Duration::from_secs(300)));
-    (rt, format!("ws://{}", addr))
+/// Also hands back the app's `egui::Context`, for tests that need to observe
+/// repaint requests without driving frames.
+fn new_app_with_ctx() -> (Harness<'static, TemplateApp>, egui::Context) {
+    let ctx_slot = std::rc::Rc::new(std::cell::RefCell::new(None));
+    let slot = std::rc::Rc::clone(&ctx_slot);
+    let harness = Harness::builder()
+        .with_size(egui::Vec2::new(1400.0, 900.0))
+        .build_eframe(move |cc| {
+            *slot.borrow_mut() = Some(cc.egui_ctx.clone());
+            TemplateApp::new(cc)
+        });
+    let ctx = ctx_slot
+        .borrow_mut()
+        .take()
+        .expect("the eframe creation closure should have run");
+    (harness, ctx)
+}
+
+/// Start one shared in-process server for the whole test binary and point
+/// WS_SERVER_URL at it. Rooms are independent, so tests can share a server;
+/// per-test servers would race on the process-wide env var when tests run
+/// in parallel.
+fn ensure_server() {
+    static SERVER_URL: OnceLock<String> = OnceLock::new();
+    SERVER_URL.get_or_init(|| {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("tokio runtime should build");
+        let listener = rt
+            .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+            .expect("an ephemeral port should be bindable");
+        let addr = listener
+            .local_addr()
+            .expect("bound listener should have an address");
+        rt.spawn(tsurust_server::serve(listener, Duration::from_secs(300)));
+        // Keep the server alive for the rest of the test run.
+        std::mem::forget(rt);
+
+        let url = format!("ws://{}", addr);
+        std::env::set_var("WS_SERVER_URL", &url);
+        url
+    });
 }
 
 /// Advance frames until `read` yields a value. Uses `run_steps` rather than
@@ -98,6 +125,41 @@ fn click_at(harness: &mut Harness<'_, TemplateApp>, pos: egui::Pos2) {
     harness.run_steps(4);
 }
 
+/// Drive a fresh client through the create-room form; returns the room id
+/// the server assigned.
+fn create_room(a: &mut Harness<'_, TemplateApp>) -> String {
+    a.run();
+    a.get_by_label_contains("Create Online Lobby").click();
+    a.run();
+    // The form is prefilled ("Test Lobby" / "Player 1"); just submit it.
+    a.get_by_label_contains("Create & Join").click();
+
+    wait_for(a, "the server to confirm room creation", |app| {
+        app.current_room_id().map(str::to_string)
+    })
+}
+
+/// Drive a fresh client through the join form into the given room.
+fn join_room(b: &mut Harness<'_, TemplateApp>, room_id: &str) {
+    b.run();
+    b.get_by_label_contains("Join Online Lobby").click();
+    b.run();
+    // Focus the (empty) lobby-id field, then type into it: text events go to
+    // the focused widget, and kittest's type_text doesn't focus by itself.
+    b.get_all_by_role(egui::accesskit::Role::TextInput)
+        .find(|node| node.value().unwrap_or_default().is_empty())
+        .expect("the join form should show an empty lobby-id field")
+        .focus();
+    b.run();
+    b.event(egui::Event::Text(room_id.to_string()));
+    b.run();
+    b.get_by_label("Join").click();
+
+    wait_for(b, "the server to confirm the join", |app| {
+        app.current_room_id().map(|_| ())
+    });
+}
+
 #[test]
 fn main_menu_boots_and_opens_a_local_lobby() {
     let mut harness = new_app();
@@ -117,40 +179,14 @@ fn main_menu_boots_and_opens_a_local_lobby() {
 
 #[test]
 fn two_clients_create_join_and_play_a_turn_over_a_real_server() {
-    let (_rt, ws_url) = start_server();
-    std::env::set_var("WS_SERVER_URL", &ws_url);
+    ensure_server();
 
-    // --- Client A creates a room through the UI ---
+    // --- Client A creates a room, client B joins it, all through the UI ---
     let mut a = new_app();
-    a.run();
-    a.get_by_label_contains("Create Online Lobby").click();
-    a.run();
-    // The form is prefilled ("Test Lobby" / "Player 1"); just submit it.
-    a.get_by_label_contains("Create & Join").click();
-
-    let room_id = wait_for(&mut a, "the server to confirm room creation", |app| {
-        app.current_room_id().map(str::to_string)
-    });
-
-    // --- Client B joins that room through the UI ---
+    let room_id = create_room(&mut a);
     let mut b = new_app();
-    b.run();
-    b.get_by_label_contains("Join Online Lobby").click();
-    b.run();
-    // Focus the (empty) lobby-id field, then type into it: text events go to
-    // the focused widget, and kittest's type_text doesn't focus by itself.
-    b.get_all_by_role(egui::accesskit::Role::TextInput)
-        .find(|node| node.value().unwrap_or_default().is_empty())
-        .expect("the join form should show an empty lobby-id field")
-        .focus();
-    b.run();
-    b.event(egui::Event::Text(room_id.clone()));
-    b.run();
-    b.get_by_label("Join").click();
+    join_room(&mut b, &room_id);
 
-    wait_for(&mut b, "the server to confirm the join", |app| {
-        app.current_room_id().map(|_| ())
-    });
     assert_eq!(a.state().client_player_id(), 1);
     assert_eq!(b.state().client_player_id(), 2);
 
@@ -279,5 +315,66 @@ fn two_clients_create_join_and_play_a_turn_over_a_real_server() {
         b.state().visible_game().expect("B in game").hands[&2][slot],
         rotated,
         "B's local tile rotation should survive the server's game state update"
+    );
+}
+
+/// The event-driven repaint contract: a client that is not rendering any
+/// frames must still be woken (via `Context::request_repaint` from the
+/// WebSocket thread) when the server broadcasts something. This is what the
+/// `connect_with_wakeup` change replaced per-frame polling with — if it
+/// breaks, an idle client's UI silently stops reflecting other players'
+/// actions until the user wiggles the mouse.
+#[test]
+fn a_server_broadcast_wakes_an_idle_client() {
+    ensure_server();
+
+    let mut a = new_app();
+    let room_id = create_room(&mut a);
+    let (mut b, b_ctx) = new_app_with_ctx();
+    join_room(&mut b, &room_id);
+
+    wait_for_both(
+        &mut a,
+        &mut b,
+        "both lobbies to show two players",
+        |a, b| {
+            a.visible_lobby().is_some_and(|l| l.players.len() == 2)
+                && b.visible_lobby().is_some_and(|l| l.players.len() == 2)
+        },
+    );
+
+    // Let B settle into a truly idle lobby: no frames driven from here on,
+    // and no repaint request pending. (The lobby screen has no animations,
+    // so it does settle — unlike the game screen's border glow.)
+    let deadline = Instant::now() + NET_TIMEOUT;
+    while b_ctx.has_requested_repaint() {
+        b.run_steps(1);
+        assert!(
+            Instant::now() < deadline,
+            "B should settle into an idle lobby with no repaint pending"
+        );
+    }
+
+    // A places a pawn. The resulting broadcast must wake idle B: its socket
+    // thread requests a repaint even though nobody is driving B's frames.
+    a.get_by_label("spawn r0c2e4").click();
+    let deadline = Instant::now() + NET_TIMEOUT;
+    while !b_ctx.has_requested_repaint() {
+        a.run_steps(1);
+        assert!(
+            Instant::now() < deadline,
+            "the pawn broadcast should request a repaint on idle B"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+
+    // And the frame that the wakeup triggers actually drains the message.
+    b.run_steps(2);
+    assert!(
+        b.state()
+            .visible_lobby()
+            .and_then(|l| l.players.get(&1))
+            .is_some_and(|p| p.spawn_position.is_some()),
+        "the woken frame should show A's pawn on B's lobby board"
     );
 }

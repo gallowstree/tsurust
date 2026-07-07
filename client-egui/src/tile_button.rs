@@ -1,6 +1,6 @@
 use std::sync::mpsc;
 
-use eframe::egui::{vec2, Frame, Rect, Sense, Widget, WidgetInfo, WidgetType};
+use eframe::egui::{vec2, Rect, Sense, Widget, WidgetInfo, WidgetType};
 
 use tsurust_common::board::*;
 
@@ -86,52 +86,52 @@ impl Widget for TileButton {
             }
         }
 
-        Frame::canvas(ui.style()).show(ui, |ui| {
-            let painter = ui.painter();
-            let rect = response.rect;
+        // Paint directly on the allocated rect: wrapping this in a Frame would
+        // allocate extra layout space and draw a stray empty box after the tile.
+        let painter = ui.painter();
+        let rect = response.rect;
 
-            // Calculate current rotation angle for animation
-            // The tile data has already been rotated, so we need to show it rotating FROM old TO new
-            // This means we start at the NEGATIVE of the rotation and animate to 0
-            let rotation_angle = if self.rotation_progress < 1.0 {
-                let target_angle = self.target_rotation_steps as f32 * std::f32::consts::FRAC_PI_2;
+        // Calculate current rotation angle for animation
+        // The tile data has already been rotated, so we need to show it rotating FROM old TO new
+        // This means we start at the NEGATIVE of the rotation and animate to 0
+        let rotation_angle = if self.rotation_progress < 1.0 {
+            let target_angle = self.target_rotation_steps as f32 * std::f32::consts::FRAC_PI_2;
 
-                // Ease-out cubic for smooth deceleration
-                let eased_progress = 1.0 - (1.0 - self.rotation_progress).powi(3);
+            // Ease-out cubic for smooth deceleration
+            let eased_progress = 1.0 - (1.0 - self.rotation_progress).powi(3);
 
-                // Start at -target_angle (old position) and animate to 0 (new position)
-                -target_angle * (1.0 - eased_progress)
-            } else {
-                0.0 // No rotation when animation is complete
-            };
+            // Start at -target_angle (old position) and animate to 0 (new position)
+            -target_angle * (1.0 - eased_progress)
+        } else {
+            0.0 // No rotation when animation is complete
+        };
 
-            // Draw tile with rotation
-            paint_tile_with_rotation(
-                &self.tile,
-                Rect::from_center_size(rect.center(), vec2(139., 139.)),
-                painter,
-                rotation_angle,
-            );
+        // Draw tile with rotation
+        paint_tile_with_rotation(
+            &self.tile,
+            Rect::from_center_size(rect.center(), vec2(139., 139.)),
+            painter,
+            rotation_angle,
+        );
 
-            // Draw hover overlay on top so rotation indicators are visible
-            if response.hovered() {
-                if let Some(pos) = response.hover_pos() {
-                    let pos = to_screen.inverse().transform_pos(pos);
-                    if pos.x < 1. {
-                        // Hovering over left rotation area - show both buttons, highlight left
-                        paint_tile_button_hoverlay_with_highlight(rect, painter, Some(false));
-                    } else if pos.x > 2. {
-                        // Hovering over right rotation area - show both buttons, highlight right
-                        paint_tile_button_hoverlay_with_highlight(rect, painter, Some(true));
-                    } else {
-                        // Hovering over center placement area - show both buttons, no highlight
-                        paint_tile_button_hoverlay_with_highlight(rect, painter, None);
-                    }
+        // Draw hover overlay on top so rotation indicators are visible
+        if response.hovered() {
+            if let Some(pos) = response.hover_pos() {
+                let pos = to_screen.inverse().transform_pos(pos);
+                if pos.x < 1. {
+                    // Hovering over left rotation area - show both buttons, highlight left
+                    paint_tile_button_hoverlay_with_highlight(rect, painter, Some(false));
+                } else if pos.x > 2. {
+                    // Hovering over right rotation area - show both buttons, highlight right
+                    paint_tile_button_hoverlay_with_highlight(rect, painter, Some(true));
                 } else {
-                    paint_tile_button_hoverlay(rect, painter);
+                    // Hovering over center placement area - show both buttons, no highlight
+                    paint_tile_button_hoverlay_with_highlight(rect, painter, None);
                 }
+            } else {
+                paint_tile_button_hoverlay(rect, painter);
             }
-        });
+        }
         response
     }
 }

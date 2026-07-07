@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use eframe::egui::{vec2, Frame, Rect, Response, Sense, StrokeKind, Ui, Widget};
+use eframe::egui::{vec2, Rect, Response, Sense, StrokeKind, Ui, Widget};
 use eframe::emath::Vec2;
 use eframe::epaint::{Color32, Stroke};
 use egui::Pos2;
@@ -54,16 +54,14 @@ impl Widget for BoardRenderer<'_> {
 
         background(ui, board_rect);
 
-        ui.vertical_centered(|ui| {
-            render_board_tiles(
-                ui,
-                self.history,
-                self.tile_trails,
-                self.players,
-                board_rect,
-                self.tile_placement_animation,
-            );
-        });
+        render_board_tiles(
+            ui,
+            self.history,
+            self.tile_trails,
+            self.players,
+            board_rect,
+            self.tile_placement_animation,
+        );
 
         // Render player trails on top with higher opacity so tile paths don't show through as much
         for player in self.players.iter() {
@@ -166,67 +164,67 @@ fn render_board_tiles(
     board_rect: Rect,
     tile_placement_animation: &Option<TilePlacementAnimation>,
 ) {
-    Frame::canvas(ui.style()).show(ui, |ui| {
-        let painter = ui.painter();
+    // Paint directly: a Frame here would allocate layout space next to the
+    // already-allocated board rect and draw a stray empty box there.
+    let painter = ui.painter();
 
-        for mov in history {
-            // Check if this tile is being animated
-            let is_animating = tile_placement_animation
-                .as_ref()
-                .map(|anim| anim.cell == mov.cell)
-                .unwrap_or(false);
+    for mov in history {
+        // Check if this tile is being animated
+        let is_animating = tile_placement_animation
+            .as_ref()
+            .map(|anim| anim.cell == mov.cell)
+            .unwrap_or(false);
 
-            let rect = rect_at_coord(mov.cell, board_rect);
+        let rect = rect_at_coord(mov.cell, board_rect);
 
-            // Get player paths for this tile
-            let mut player_paths = HashMap::new();
-            // Find trail entries for this cell coordinate
-            for (cell_coord, trail_entries) in tile_trails {
-                if cell_coord == &mov.cell {
-                    for &(player_id, segment_key) in trail_entries {
-                        // Find player color
-                        if let Some(player) = players.iter().find(|p| p.id == player_id) {
-                            let player_color =
-                                Color32::from_rgb(player.color.0, player.color.1, player.color.2);
-                            player_paths.insert(segment_key, (player_id, player_color));
-                        }
+        // Get player paths for this tile
+        let mut player_paths = HashMap::new();
+        // Find trail entries for this cell coordinate
+        for (cell_coord, trail_entries) in tile_trails {
+            if cell_coord == &mov.cell {
+                for &(player_id, segment_key) in trail_entries {
+                    // Find player color
+                    if let Some(player) = players.iter().find(|p| p.id == player_id) {
+                        let player_color =
+                            Color32::from_rgb(player.color.0, player.color.1, player.color.2);
+                        player_paths.insert(segment_key, (player_id, player_color));
                     }
-                    break;
                 }
-            }
-
-            if is_animating {
-                // Render with animation effects
-                let anim = tile_placement_animation.as_ref().unwrap();
-
-                // Ease-out cubic for smooth deceleration
-                let eased_progress = 1.0 - (1.0 - anim.progress).powi(3);
-
-                // Calculate animation parameters
-                let scale = 0.80 + eased_progress * 0.20; // Scale from 80% to 100%
-                let drop_offset = (1.0 - eased_progress) * 30.0; // Drop from 30px above
-                let alpha = eased_progress; // Fade in from 0 to 1
-
-                // Apply transformations
-                let center = rect.center();
-                let scaled_size = rect.size() * scale;
-                let animated_rect =
-                    Rect::from_center_size(center - Vec2::new(0.0, drop_offset), scaled_size);
-
-                crate::rendering::paint_tile_with_trails_rotation_and_alpha(
-                    &mov.tile,
-                    animated_rect,
-                    painter,
-                    &player_paths,
-                    0.0,
-                    alpha,
-                );
-            } else {
-                // Normal rendering
-                paint_tile_with_trails(&mov.tile, rect, painter, &player_paths);
+                break;
             }
         }
-    });
+
+        if is_animating {
+            // Render with animation effects
+            let anim = tile_placement_animation.as_ref().unwrap();
+
+            // Ease-out cubic for smooth deceleration
+            let eased_progress = 1.0 - (1.0 - anim.progress).powi(3);
+
+            // Calculate animation parameters
+            let scale = 0.80 + eased_progress * 0.20; // Scale from 80% to 100%
+            let drop_offset = (1.0 - eased_progress) * 30.0; // Drop from 30px above
+            let alpha = eased_progress; // Fade in from 0 to 1
+
+            // Apply transformations
+            let center = rect.center();
+            let scaled_size = rect.size() * scale;
+            let animated_rect =
+                Rect::from_center_size(center - Vec2::new(0.0, drop_offset), scaled_size);
+
+            crate::rendering::paint_tile_with_trails_rotation_and_alpha(
+                &mov.tile,
+                animated_rect,
+                painter,
+                &player_paths,
+                0.0,
+                alpha,
+            );
+        } else {
+            // Normal rendering
+            paint_tile_with_trails(&mov.tile, rect, painter, &player_paths);
+        }
+    }
 }
 
 fn path_index_position(i: TileEndpoint) -> Vec2 {
