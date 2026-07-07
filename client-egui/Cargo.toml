@@ -18,9 +18,9 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 tsurust_common = { path = "../common" }
-egui = "0.29.1"
-eframe = { version = "0.29.1", default-dependencies = false, features = [
-    "accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
+egui = "0.35"
+eframe = { version = "0.35", features = [
+    "accesskit",     # Make egui compatible with screen readers. NOTE: adds a lot of dependencies.
     "default_fonts", # Embed the default egui fonts.
     "glow",          # Use the glow rendering backend. Alternative: "wgpu".
     "persistence",   # Enable restoring app state when restarting the app.
@@ -37,6 +37,9 @@ chrono = { version = "0.4", features = ["serde"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tracing-subscriber = "0.3"
 rfd = "0.12"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+egui_kittest = { version = "0.35", features = ["eframe"] }
 
 # web:
 [target.'cfg(target_arch = "wasm32")'.dependencies]

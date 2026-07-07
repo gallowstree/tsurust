@@ -1,6 +1,6 @@
 use std::sync::mpsc;
 
-use eframe::egui::{self, Context};
+use eframe::egui;
 
 use tsurust_common::board::PlayerID;
 use tsurust_common::lobby::Lobby;
@@ -43,16 +43,16 @@ fn render_player_color_circle(ui: &mut egui::Ui, color: (u8, u8, u8), radius: f3
 
 /// Render the top panel with lobby information
 fn render_lobby_top_panel(
-    ctx: &Context,
+    ui: &mut egui::Ui,
     lobby: &Lobby,
     show_start_button: bool,
     is_online: bool,
     sender: &mpsc::Sender<Message>,
 ) {
-    egui::TopBottomPanel::top("top_panel")
+    egui::Panel::top("top_panel")
         .resizable(true)
-        .min_height(32.0)
-        .show(ctx, |ui| {
+        .min_size(32.0)
+        .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.add_space(10.0);
 
@@ -176,26 +176,16 @@ fn render_debug_tools(
 }
 
 pub fn render_lobby_ui(
-    ctx: &Context,
+    ui: &mut egui::Ui,
     lobby: &mut Lobby,
     current_player_id: PlayerID,
     is_online: bool,
     sender: &mpsc::Sender<Message>,
 ) {
-    render_lobby_top_panel(ctx, lobby, true, is_online, sender);
+    render_lobby_top_panel(ui, lobby, true, is_online, sender);
 
-    egui::CentralPanel::default().show(ctx, |ui| {
-        ui.vertical_centered(|ui| {
-            ui.add_space(20.0);
-            ui.heading("Select your starting position");
-            ui.label("Click on any board edge to place your pawn");
-            ui.add_space(20.0);
-
-            render_lobby_board(ui, lobby, current_player_id, sender);
-        });
-    });
-
-    egui::SidePanel::right("right_panel").show(ctx, |ui| {
+    // Side panel before central panel: the central panel takes all remaining space.
+    egui::Panel::right("right_panel").show(ui, |ui| {
         ui.vertical(|ui| {
             render_player_list(ui, lobby, current_player_id, None);
 
@@ -213,6 +203,17 @@ pub fn render_lobby_ui(
             }
         });
     });
+
+    egui::CentralPanel::default().show(ui, |ui| {
+        ui.vertical_centered(|ui| {
+            ui.add_space(20.0);
+            ui.heading("Select your starting position");
+            ui.label("Click on any board edge to place your pawn");
+            ui.add_space(20.0);
+
+            render_lobby_board(ui, lobby, current_player_id, sender);
+        });
+    });
 }
 
 fn render_lobby_board(
@@ -226,7 +227,7 @@ fn render_lobby_board(
 }
 
 pub fn render_lobby_placing_ui(
-    ctx: &Context,
+    ui: &mut egui::Ui,
     lobby: &mut Lobby,
     placing_for_id: PlayerID,
     is_online: bool,
@@ -236,26 +237,10 @@ pub fn render_lobby_placing_ui(
     let player_name = placing_player.map(|p| p.name.as_str()).unwrap_or("Unknown");
     let player_color = placing_player.map(|p| p.color).unwrap_or((128, 128, 128));
 
-    render_lobby_top_panel(ctx, lobby, false, is_online, sender);
+    render_lobby_top_panel(ui, lobby, false, is_online, sender);
 
-    egui::CentralPanel::default().show(ctx, |ui| {
-        ui.vertical_centered(|ui| {
-            ui.add_space(20.0);
-
-            ui.horizontal(|ui| {
-                ui.heading("Placing pawn for:");
-                render_player_color_circle(ui, player_color, 8.0);
-                ui.heading(player_name);
-            });
-
-            ui.label("Click on any board edge to place their pawn");
-            ui.add_space(20.0);
-
-            render_lobby_board(ui, lobby, placing_for_id, sender);
-        });
-    });
-
-    egui::SidePanel::right("right_panel").show(ctx, |ui| {
+    // Side panel before central panel: the central panel takes all remaining space.
+    egui::Panel::right("right_panel").show(ui, |ui| {
         ui.vertical(|ui| {
             render_player_list(ui, lobby, placing_for_id, Some(placing_for_id));
 
@@ -271,6 +256,23 @@ pub fn render_lobby_placing_ui(
             if ui.button("⬅ Back to Lobby").clicked() {
                 send_ui_message(sender, Message::BackToMainMenu);
             }
+        });
+    });
+
+    egui::CentralPanel::default().show(ui, |ui| {
+        ui.vertical_centered(|ui| {
+            ui.add_space(20.0);
+
+            ui.horizontal(|ui| {
+                ui.heading("Placing pawn for:");
+                render_player_color_circle(ui, player_color, 8.0);
+                ui.heading(player_name);
+            });
+
+            ui.label("Click on any board edge to place their pawn");
+            ui.add_space(20.0);
+
+            render_lobby_board(ui, lobby, placing_for_id, sender);
         });
     });
 }

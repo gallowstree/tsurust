@@ -1,6 +1,6 @@
 use std::sync::mpsc;
 
-use eframe::egui::{self, Context};
+use eframe::egui;
 
 use tsurust_common::game::Game;
 
@@ -10,16 +10,16 @@ use crate::messaging::send_ui_message;
 use crate::replay_state::{PlaybackStatus, ReplayState};
 
 pub fn render_replay_viewer_ui(
-    ctx: &Context,
+    ui: &mut egui::Ui,
     replay_state: &mut ReplayState,
     current_game: &Game,
     sender: &mpsc::Sender<Message>,
 ) {
     // Top panel - replay controls
-    egui::TopBottomPanel::top("replay_controls")
+    egui::Panel::top("replay_controls")
         .resizable(false)
-        .min_height(60.0)
-        .show(ctx, |ui| {
+        .min_size(60.0)
+        .show(ui, |ui| {
             ui.add_space(5.0);
 
             // First row - playback controls
@@ -121,25 +121,11 @@ pub fn render_replay_viewer_ui(
             ui.add_space(5.0);
         });
 
-    // Central panel - board view
-    egui::CentralPanel::default().show(ctx, |ui| {
-        ui.horizontal(|ui| {
-            ui.add_space(20.0);
-            ui.add(BoardRenderer::new(
-                &current_game.board.history,
-                &current_game.players,
-                &current_game.tile_trails,
-                &current_game.player_trails,
-                &std::collections::HashMap::new(), // No animations in replay
-                &None,                             // No tile placement animation
-            ));
-        });
-    });
-
-    // Right panel - replay info and player states
-    egui::SidePanel::right("replay_info")
-        .min_width(200.0)
-        .show(ctx, |ui| {
+    // Right panel - replay info and player states (before the central panel,
+    // which takes all remaining space)
+    egui::Panel::right("replay_info")
+        .min_size(200.0)
+        .show(ui, |ui| {
             ui.heading("Replay Info");
             ui.add_space(10.0);
 
@@ -242,4 +228,19 @@ pub fn render_replay_viewer_ui(
             };
             ui.label(egui::RichText::new(format!("Deck: {} tiles", deck_count)).weak());
         });
+
+    // Central panel - board view
+    egui::CentralPanel::default().show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.add_space(20.0);
+            ui.add(BoardRenderer::new(
+                &current_game.board.history,
+                &current_game.players,
+                &current_game.tile_trails,
+                &current_game.player_trails,
+                &std::collections::HashMap::new(), // No animations in replay
+                &None,                             // No tile placement animation
+            ));
+        });
+    });
 }

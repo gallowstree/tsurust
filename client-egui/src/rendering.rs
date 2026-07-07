@@ -2,7 +2,7 @@ use std::cmp::min;
 use std::collections::HashMap;
 
 use eframe::egui::{
-    emath::RectTransform, pos2, Align2, Color32, FontId, Painter, Pos2, Rect, Stroke,
+    emath::RectTransform, pos2, Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, StrokeKind,
 };
 
 use tsurust_common::board::{Board, PlayerID, Segment, Tile, TileEndpoint};
@@ -65,7 +65,12 @@ pub fn paint_tile_with_trails_rotation_and_alpha(
 
     // Draw tile background
     painter.rect_filled(rect, 4.0, bg_color);
-    painter.rect_stroke(rect, 4.0, Stroke::new(1.0, stroke_color));
+    painter.rect_stroke(
+        rect,
+        4.0,
+        Stroke::new(1.0, stroke_color),
+        StrokeKind::Middle,
+    );
 
     let to_screen = tile_to_screen_transform(rect);
     let center = rect.center();
@@ -137,7 +142,12 @@ fn rotate_point(point: Pos2, center: Pos2, angle: f32) -> Pos2 {
 pub fn paint_tile_button_hoverlay(rect: Rect, painter: &Painter) {
     let to_screen = tile_to_screen_transform(rect);
     let font_size = rect.size().x / 7.;
-    painter.rect_stroke(rect, 0.5, Stroke::new(2.0, TRANSPARENT_GOLD));
+    painter.rect_stroke(
+        rect,
+        0.5,
+        Stroke::new(2.0, TRANSPARENT_GOLD),
+        StrokeKind::Middle,
+    );
 
     let radius = font_size * 0.86;
     let rotate_cw_pos = to_screen.transform_pos(pos2(3., 1.5));
@@ -176,7 +186,12 @@ pub fn paint_tile_button_hoverlay_with_highlight(
 
     // Show border only when tile would be placed (center area, no highlight)
     if highlight.is_none() {
-        painter.rect_stroke(rect, 0.5, Stroke::new(2.0, TRANSPARENT_GOLD));
+        painter.rect_stroke(
+            rect,
+            0.5,
+            Stroke::new(2.0, TRANSPARENT_GOLD),
+            StrokeKind::Middle,
+        );
     }
 
     // Always show both rotation buttons

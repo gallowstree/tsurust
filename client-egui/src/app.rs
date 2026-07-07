@@ -304,7 +304,7 @@ impl TemplateApp {
 
     #[allow(clippy::too_many_arguments)]
     fn render_ui(
-        ctx: &Context,
+        ui: &mut egui::Ui,
         app_state: &mut AppState,
         current_player_id: PlayerID,
         is_online: bool,
@@ -315,23 +315,23 @@ impl TemplateApp {
         tile_placement_animation: &Option<TilePlacementAnimation>,
     ) {
         match app_state {
-            AppState::MainMenu => screens::main_menu::render(ctx, server_status, sender),
+            AppState::MainMenu => screens::main_menu::render(ui, server_status, sender),
             AppState::CreateLobbyForm {
                 lobby_name,
                 player_name,
             } => {
-                screens::lobby_forms::render_create_lobby_form(ctx, lobby_name, player_name, sender)
+                screens::lobby_forms::render_create_lobby_form(ui, lobby_name, player_name, sender)
             }
             AppState::JoinLobbyForm {
                 lobby_id,
                 player_name,
-            } => screens::lobby_forms::render_join_lobby_form(ctx, lobby_id, player_name, sender),
+            } => screens::lobby_forms::render_join_lobby_form(ui, lobby_id, player_name, sender),
             AppState::Lobby(lobby) => {
-                screens::lobby::render_lobby_ui(ctx, lobby, current_player_id, is_online, sender)
+                screens::lobby::render_lobby_ui(ui, lobby, current_player_id, is_online, sender)
             }
             AppState::LobbyPlacingFor(lobby, placing_for_id) => {
                 screens::lobby::render_lobby_placing_ui(
-                    ctx,
+                    ui,
                     lobby,
                     *placing_for_id,
                     is_online,
@@ -339,7 +339,7 @@ impl TemplateApp {
                 )
             }
             AppState::Game(game) => screens::game::render_game_ui(
-                ctx,
+                ui,
                 game,
                 current_player_id,
                 false,
@@ -355,7 +355,7 @@ impl TemplateApp {
                 lobby_name,
                 ..
             } => screens::game::render_game_ui(
-                ctx,
+                ui,
                 game,
                 current_player_id,
                 *waiting_for_server,
@@ -369,7 +369,7 @@ impl TemplateApp {
                 replay_state,
                 current_game,
             } => screens::replay_viewer::render_replay_viewer_ui(
-                ctx,
+                ui,
                 replay_state,
                 current_game,
                 sender,
@@ -380,7 +380,9 @@ impl TemplateApp {
 
 impl eframe::App for TemplateApp {
     /// Called each time the UI needs repainting, which may be many times per second.
-    fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+
         // Poll for server messages from the WebSocket connection
         if let Some(client) = &mut self.game_client {
             while let Some(server_msg) = client.try_recv() {
@@ -415,7 +417,7 @@ impl eframe::App for TemplateApp {
             current_game,
         } = &mut self.app_state
         {
-            if let Some(new_game) = replay_state.update(ctx) {
+            if let Some(new_game) = replay_state.update(&ctx) {
                 *current_game = new_game;
             }
         }
@@ -424,7 +426,7 @@ impl eframe::App for TemplateApp {
         if let Some(tx) = &self.sender {
             let is_online = self.game_client.is_some();
             Self::render_ui(
-                ctx,
+                ui,
                 &mut self.app_state,
                 self.current_player_id,
                 is_online,
@@ -439,8 +441,8 @@ impl eframe::App for TemplateApp {
             self.last_rotated_tile = None;
 
             // Update animations
-            self.update_player_animations(ctx);
-            self.update_tile_placement_animation(ctx);
+            self.update_player_animations(&ctx);
+            self.update_tile_placement_animation(&ctx);
         }
 
         // Fail-closed disconnect handling (see proposals/004, Option B): if the
@@ -455,7 +457,7 @@ impl eframe::App for TemplateApp {
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-                .show(ctx, |ui| {
+                .show(&ctx, |ui| {
                     ui.label(format!("Connection lost: {}", reason));
                     ui.label("Your game has ended.");
                     ui.add_space(8.0);
@@ -470,7 +472,7 @@ impl eframe::App for TemplateApp {
 
         // Transient error toast (server errors, failed connects). Rendered last so
         // it floats above whatever screen is active.
-        self.render_error_toast(ctx);
+        self.render_error_toast(&ctx);
     }
 
     /// Called by the framework to save state before shutdown.

@@ -38,8 +38,12 @@ impl<'a> LobbyBoard<'a> {
 
     fn draw_grid(&self, ui: &mut egui::Ui, rect: egui::Rect, board_size: f32) {
         // Draw outer border
-        ui.painter()
-            .rect_stroke(rect, 4.0, egui::Stroke::new(2.0, egui::Color32::LIGHT_GRAY));
+        ui.painter().rect_stroke(
+            rect,
+            4.0,
+            egui::Stroke::new(2.0, egui::Color32::LIGHT_GRAY),
+            egui::StrokeKind::Middle,
+        );
 
         let cell_size = board_size / 6.0;
 

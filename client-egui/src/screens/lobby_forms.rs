@@ -1,17 +1,17 @@
 use std::sync::mpsc;
 
-use eframe::egui::{self, Context};
+use eframe::egui;
 
 use crate::app::Message;
 use crate::messaging::send_ui_message;
 
 pub fn render_create_lobby_form(
-    ctx: &Context,
+    ui: &mut egui::Ui,
     lobby_name: &mut String,
     player_name: &mut String,
     sender: &mpsc::Sender<Message>,
 ) {
-    egui::CentralPanel::default().show(ctx, |ui| {
+    egui::CentralPanel::default().show(ui, |ui| {
         ui.vertical_centered(|ui| {
             ui.add_space(100.0);
             ui.heading("Create Lobby");
@@ -63,12 +63,12 @@ pub fn render_create_lobby_form(
 }
 
 pub fn render_join_lobby_form(
-    ctx: &Context,
+    ui: &mut egui::Ui,
     lobby_id: &mut String,
     player_name: &mut String,
     sender: &mpsc::Sender<Message>,
 ) {
-    egui::CentralPanel::default().show(ctx, |ui| {
+    egui::CentralPanel::default().show(ui, |ui| {
         ui.vertical_centered(|ui| {
             ui.add_space(100.0);
             ui.heading("Join Lobby");

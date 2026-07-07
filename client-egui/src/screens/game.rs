@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::mpsc;
 
-use eframe::egui::{self, Context};
+use eframe::egui;
 
 use tsurust_common::board::{Player, PlayerID};
 use tsurust_common::game::Game;
@@ -14,7 +14,7 @@ use crate::player_card::PlayerCard;
 
 #[allow(clippy::too_many_arguments)]
 pub fn render_game_ui(
-    ctx: &Context,
+    ui: &mut egui::Ui,
     game: &mut Game,
     client_player_id: PlayerID,
     waiting_for_server: bool,
@@ -24,10 +24,10 @@ pub fn render_game_ui(
     player_animations: &HashMap<PlayerID, PlayerAnimation>,
     tile_placement_animation: &Option<TilePlacementAnimation>,
 ) {
-    egui::TopBottomPanel::top("top_panel")
+    egui::Panel::top("top_panel")
         .resizable(true)
-        .min_height(32.0)
-        .show(ctx, |ui| {
+        .min_size(32.0)
+        .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.add_space(10.0);
                 if ui.button("🔄 Restart Game").clicked() {
@@ -58,21 +58,9 @@ pub fn render_game_ui(
             });
         });
 
-    egui::CentralPanel::default().show(ctx, |ui| {
-        ui.horizontal(|ui| {
-            ui.add_space(20.);
-            ui.add(BoardRenderer::new(
-                &game.board.history,
-                &game.players,
-                &game.tile_trails,
-                &game.player_trails,
-                player_animations,
-                tile_placement_animation,
-            ));
-        });
-    });
-
-    egui::SidePanel::right("right_panel").show(ctx, |ui| {
+    // The side panel must be added before the central panel: with Ui-scoped
+    // panels the central panel takes all remaining space.
+    egui::Panel::right("right_panel").show(ui, |ui| {
         ui.vertical(|ui| {
             let is_game_over = game.is_game_over();
 
@@ -229,5 +217,19 @@ pub fn render_game_ui(
             .cloned()
             .unwrap_or_default();
         ui.add(HandRenderer::new(hand, sender.clone()).with_last_rotated(last_rotated_tile));
+    });
+
+    egui::CentralPanel::default().show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.add_space(20.);
+            ui.add(BoardRenderer::new(
+                &game.board.history,
+                &game.players,
+                &game.tile_trails,
+                &game.player_trails,
+                player_animations,
+                tile_placement_animation,
+            ));
+        });
     });
 }

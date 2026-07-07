@@ -260,10 +260,10 @@ mod tests {
                 tile,
             });
 
-        let result = ReplayState::new(export);
-        let err = result
-            .err()
-            .expect("an unreplayable export must be rejected at load, not panic later");
+        let err = match ReplayState::new(export) {
+            Ok(_) => panic!("an unreplayable export must be rejected at load, not panic later"),
+            Err(e) => e,
+        };
         assert!(
             err.contains("can't be replayed"),
             "error should explain the file is unreplayable, got: {err}"

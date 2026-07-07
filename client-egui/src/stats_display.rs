@@ -1,4 +1,4 @@
-use egui::{Color32, Ui, Vec2, Widget};
+use egui::{Color32, StrokeKind, Ui, Vec2, Widget};
 use tsurust_common::board::Player;
 use tsurust_common::game::PlayerStats;
 
@@ -51,7 +51,8 @@ impl<'a> Widget for PlayerStatsDisplay<'a> {
             } else {
                 Color32::from_gray(100)
             };
-            ui.painter().rect_stroke(rect, 6.0, (2.0, border_color));
+            ui.painter()
+                .rect_stroke(rect, 6.0, (2.0, border_color), StrokeKind::Middle);
 
             // Player color circle
             let circle_center = rect.min + Vec2::new(20.0, 25.0);

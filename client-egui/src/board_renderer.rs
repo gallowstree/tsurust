@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use eframe::egui::{vec2, Frame, Rect, Response, Sense, Ui, Widget};
+use eframe::egui::{vec2, Frame, Rect, Response, Sense, StrokeKind, Ui, Widget};
 use eframe::emath::Vec2;
 use eframe::epaint::{Color32, Stroke};
 use egui::Pos2;
@@ -236,7 +236,8 @@ fn path_index_position(i: TileEndpoint) -> Vec2 {
 
 fn background(ui: &mut Ui, rect: Rect) {
     ui.painter().rect_filled(rect, 0.6, Color32::BLACK);
-    ui.painter().rect_stroke(rect, 0.5, Stroke::new(4.0, PINK));
+    ui.painter()
+        .rect_stroke(rect, 0.5, Stroke::new(4.0, PINK), StrokeKind::Middle);
 
     // Draw animated glowing light spinning around the border
     draw_spinning_border_glow(ui, rect);

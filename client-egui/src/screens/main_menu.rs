@@ -1,12 +1,16 @@
 use std::sync::mpsc;
 
-use eframe::egui::{self, Context};
+use eframe::egui;
 
 use crate::app::{LocalServerStatus, Message};
 use crate::messaging::send_ui_message;
 
-pub fn render(ctx: &Context, server_status: &LocalServerStatus, sender: &mpsc::Sender<Message>) {
-    egui::CentralPanel::default().show(ctx, |ui| {
+pub fn render(
+    ui: &mut egui::Ui,
+    server_status: &LocalServerStatus,
+    sender: &mpsc::Sender<Message>,
+) {
+    egui::CentralPanel::default().show(ui, |ui| {
         ui.vertical_centered(|ui| {
             ui.add_space(100.0);
             ui.heading("🐉 Tsurust");

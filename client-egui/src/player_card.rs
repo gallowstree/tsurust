@@ -1,4 +1,4 @@
-use egui::{Color32, Rect, Response, Sense, Ui, Vec2, Widget};
+use egui::{Color32, Rect, Response, Sense, StrokeKind, Ui, Vec2, Widget};
 
 use tsurust_common::board::Player;
 
@@ -65,7 +65,8 @@ impl<'a> Widget for PlayerCard<'a> {
             } else {
                 Color32::from_gray(120)
             };
-            ui.painter().rect_stroke(rect, 4.0, (1.0, border_color));
+            ui.painter()
+                .rect_stroke(rect, 4.0, (1.0, border_color), StrokeKind::Middle);
 
             // Player color circle (larger, 24px diameter)
             let circle_center = rect.min + Vec2::new(16.0, 20.0);
@@ -146,8 +147,13 @@ impl<'a> Widget for PlayerCard<'a> {
                         (Color32::TRANSPARENT, Color32::from_gray(100)) // Empty slot
                     };
 
-                    ui.painter()
-                        .rect(tile_rect, 2.0, fill_color, (1.0, stroke_color));
+                    ui.painter().rect(
+                        tile_rect,
+                        2.0,
+                        fill_color,
+                        (1.0, stroke_color),
+                        StrokeKind::Middle,
+                    );
                 }
             }
 
