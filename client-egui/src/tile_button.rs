@@ -1,6 +1,6 @@
 use std::sync::mpsc;
 
-use eframe::egui::{vec2, Frame, Rect, Sense, Widget};
+use eframe::egui::{vec2, Frame, Rect, Sense, Widget, WidgetInfo, WidgetType};
 
 use tsurust_common::board::*;
 
@@ -42,6 +42,14 @@ impl Widget for TileButton {
     fn ui(mut self, ui: &mut eframe::egui::Ui) -> eframe::egui::Response {
         let (rect, response) =
             ui.allocate_exact_size(vec2(140.0, 140.0), Sense::click().union(Sense::hover()));
+        // Label the tile for screen readers (and UI tests)
+        response.widget_info(|| {
+            WidgetInfo::labeled(
+                WidgetType::Button,
+                true,
+                format!("hand tile {}", self.index),
+            )
+        });
 
         // Handle animation
         let animation_duration = 0.5; // seconds - longer for visibility

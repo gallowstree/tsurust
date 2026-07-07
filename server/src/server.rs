@@ -20,6 +20,12 @@ pub struct GameServer {
     next_connection_id: Arc<RwLock<ConnectionId>>,
 }
 
+impl Default for GameServer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GameServer {
     pub fn new() -> Self {
         Self {

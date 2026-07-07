@@ -185,6 +185,14 @@ impl<'a> LobbyBoard<'a> {
             egui::Rect::from_center_size(spawn_center, egui::Vec2::splat(12.0)),
             egui::Sense::click(),
         );
+        // Label the spot for screen readers (and UI tests)
+        spawn_response.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::WidgetType::Button,
+                true,
+                format!("spawn r{}c{}e{}", pos.cell.row, pos.cell.col, pos.endpoint),
+            )
+        });
 
         let color = if spawn_response.hovered() {
             egui::Color32::from_rgb(100, 150, 255)

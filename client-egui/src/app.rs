@@ -216,6 +216,34 @@ impl TemplateApp {
         app
     }
 
+    /// The room this client is currently in, if any. Read-only view for
+    /// end-to-end UI tests; exposes only what's already visible on screen.
+    pub fn current_room_id(&self) -> Option<&str> {
+        self.current_room_id.as_deref()
+    }
+
+    /// This client's player id. Read-only view for end-to-end UI tests.
+    pub fn client_player_id(&self) -> PlayerID {
+        self.current_player_id
+    }
+
+    /// The game being displayed (local or online), if any. Read-only view for
+    /// end-to-end UI tests.
+    pub fn visible_game(&self) -> Option<&Game> {
+        match &self.app_state {
+            AppState::Game(game) | AppState::OnlineGame { game, .. } => Some(game),
+            _ => None,
+        }
+    }
+
+    /// The lobby being displayed, if any. Read-only view for end-to-end UI tests.
+    pub fn visible_lobby(&self) -> Option<&Lobby> {
+        match &self.app_state {
+            AppState::Lobby(lobby) | AppState::LobbyPlacingFor(lobby, _) => Some(lobby),
+            _ => None,
+        }
+    }
+
     /// Wakeup callback handed to the WebSocket client: request a repaint when a
     /// socket event arrives, so `update` gets called to drain it. This replaces
     /// polling with `request_repaint()` every frame while a connection exists.
