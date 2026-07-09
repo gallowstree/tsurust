@@ -113,6 +113,7 @@ async fn setup_two_player_game(
             room_name: "Test Room".to_string(),
             creator_name: "Alice".to_string(),
             visibility: Visibility::Private,
+            turn_timer_secs: None,
         },
     )
     .await;
@@ -251,6 +252,7 @@ async fn setup_n_player_game(
             room_name: "N-Player Room".to_string(),
             creator_name: "Player1".to_string(),
             visibility: Visibility::Private,
+            turn_timer_secs: None,
         },
     )
     .await;
@@ -337,16 +339,6 @@ async fn setup_n_player_game(
     let game = merge_own_hands(base, &others);
 
     (clients, room_id, player_ids, game)
-}
-
-/// The board cell a player currently occupies in the given game state.
-fn player_cell(game: &Game, id: PlayerID) -> CellCoord {
-    game.players
-        .iter()
-        .find(|p| p.id == id)
-        .expect("player present in game")
-        .pos
-        .cell
 }
 
 /// The first tile in a player's hand.
@@ -501,6 +493,7 @@ async fn test_create_room_over_websocket() {
             room_name: "Test Room".to_string(),
             creator_name: "Alice".to_string(),
             visibility: Visibility::Private,
+            turn_timer_secs: None,
         },
     )
     .await;
@@ -531,6 +524,7 @@ async fn test_join_room_notifies_both_clients() {
             room_name: "Test Room".to_string(),
             creator_name: "Alice".to_string(),
             visibility: Visibility::Private,
+            turn_timer_secs: None,
         },
     )
     .await;
@@ -593,6 +587,7 @@ async fn test_full_lobby_to_game_flow() {
             room_name: "Integration Test".to_string(),
             creator_name: "Alice".to_string(),
             visibility: Visibility::Private,
+            turn_timer_secs: None,
         },
     )
     .await;
@@ -704,6 +699,7 @@ async fn test_tile_placement_broadcasts_state_update() {
             room_name: "Tile Test".to_string(),
             creator_name: "Alice".to_string(),
             visibility: Visibility::Private,
+            turn_timer_secs: None,
         },
     )
     .await;
@@ -836,6 +832,7 @@ async fn test_out_of_turn_placement_returns_error() {
             room_name: "Turn Test".to_string(),
             creator_name: "Alice".to_string(),
             visibility: Visibility::Private,
+            turn_timer_secs: None,
         },
     )
     .await;
@@ -955,6 +952,7 @@ async fn test_disconnect_eliminates_player_and_advances_turn() {
             room_name: "Disconnect Test".to_string(),
             creator_name: "Alice".to_string(),
             visibility: Visibility::Private,
+            turn_timer_secs: None,
         },
     )
     .await;
@@ -1063,6 +1061,7 @@ async fn test_last_player_disconnect_removes_room() {
             room_name: "Cleanup Test".to_string(),
             creator_name: "Alice".to_string(),
             visibility: Visibility::Private,
+            turn_timer_secs: None,
         },
     )
     .await;
@@ -1244,23 +1243,15 @@ async fn test_consecutive_turns_keep_clients_in_sync() {
         .find(|p| p.id == bob_id)
         .expect("Bob should be in the state");
     assert!(bob_player.alive, "Bob should be alive for his turn");
-    let bob_cell = bob_player.pos.cell;
-    let bob_tile = after_alice_on_bob
-        .hands
-        .get(&bob_id)
-        .and_then(|h| h.first())
-        .copied()
-        .expect("Bob should have a tile");
+    // Pick from Bob's own view (it carries his hand) — and a surviving tile,
+    // since the forced-suicide rule rejects a needlessly fatal first tile.
+    let bob_mov = find_surviving_move(&after_alice_on_bob, bob_id);
     send(
         &mut bob,
         ClientMessage::PlaceTile {
             room_id: room_id.clone(),
             player_id: bob_id,
-            mov: Move {
-                tile: bob_tile,
-                cell: bob_cell,
-                player_id: bob_id,
-            },
+            mov: bob_mov,
         },
     )
     .await;
@@ -1341,11 +1332,8 @@ async fn test_three_players_agree_on_state_after_move() {
     let (mut clients, room_id, ids, game) = setup_n_player_game(addr, &[TOP, BOTTOM, LEFT]).await;
 
     let current = ids[0];
-    let mov = Move {
-        tile: first_hand_tile(&game, current),
-        cell: player_cell(&game, current),
-        player_id: current,
-    };
+    // A surviving tile, so the forced-suicide rule cannot reject the pick.
+    let mov = find_surviving_move(&game, current);
     send(
         &mut clients[0],
         ClientMessage::PlaceTile {
@@ -1385,11 +1373,9 @@ async fn test_four_player_turn_order_cycles_through_players() {
             "expected player {current} to be current on turn {turn}"
         );
 
-        let mov = Move {
-            tile: first_hand_tile(&state, current),
-            cell: player_cell(&state, current),
-            player_id: current,
-        };
+        // A surviving tile keeps every player alive through the cycle and
+        // cannot be rejected by the forced-suicide rule.
+        let mov = find_surviving_move(&state, current);
         send(
             &mut clients[turn],
             ClientMessage::PlaceTile {
@@ -1444,13 +1430,10 @@ async fn test_disconnected_player_is_skipped_in_turn_order() {
         assert!(!p2.alive, "disconnected player 2 should be eliminated");
     }
 
-    // Player 1 (still the current player) takes a turn.
+    // Player 1 (still the current player) takes a turn, with a tile the
+    // forced-suicide rule accepts.
     let current = ids[0];
-    let mov = Move {
-        tile: first_hand_tile(&game, current),
-        cell: player_cell(&game, current),
-        player_id: current,
-    };
+    let mov = find_surviving_move(&game, current);
     send(
         &mut clients[0],
         ClientMessage::PlaceTile {
@@ -1548,6 +1531,7 @@ async fn test_reaper_removes_room_orphaned_by_second_create() {
             room_name: "First".to_string(),
             creator_name: "Alice".to_string(),
             visibility: Visibility::Private,
+            turn_timer_secs: None,
         },
     )
     .await;
@@ -1565,6 +1549,7 @@ async fn test_reaper_removes_room_orphaned_by_second_create() {
             room_name: "Second".to_string(),
             creator_name: "Alice".to_string(),
             visibility: Visibility::Private,
+            turn_timer_secs: None,
         },
     )
     .await;
@@ -1662,6 +1647,7 @@ async fn test_placing_a_tile_before_game_starts_returns_error() {
             room_name: "Lobby Phase Test".to_string(),
             creator_name: "Alice".to_string(),
             visibility: Visibility::Private,
+            turn_timer_secs: None,
         },
     )
     .await;
@@ -1835,6 +1821,7 @@ async fn test_spectating_an_unstarted_room_is_rejected() {
             room_name: "Test Room".to_string(),
             creator_name: "Alice".to_string(),
             visibility: Visibility::Public,
+            turn_timer_secs: None,
         },
     )
     .await;

@@ -11,6 +11,9 @@ pub struct HandRenderer {
     tiles: Vec<Tile>,
     sender: mpsc::Sender<Message>,
     last_rotated_tile: Option<(usize, bool)>, // (tile_index, clockwise)
+    /// Per-tile: the current rotation would be rejected by the forced-suicide
+    /// rule (it kills the owner while another placement survives).
+    fatal_marks: Vec<bool>,
 }
 
 impl HandRenderer {
@@ -19,11 +22,17 @@ impl HandRenderer {
             tiles,
             sender,
             last_rotated_tile: None,
+            fatal_marks: Vec::new(),
         }
     }
 
     pub fn with_last_rotated(mut self, last_rotated: Option<(usize, bool)>) -> Self {
         self.last_rotated_tile = last_rotated;
+        self
+    }
+
+    pub fn with_fatal_marks(mut self, fatal_marks: Vec<bool>) -> Self {
+        self.fatal_marks = fatal_marks;
         self
     }
 }
@@ -41,6 +50,10 @@ impl Widget for HandRenderer {
                         if rotated_index == index {
                             button = button.with_rotation_animation(clockwise);
                         }
+                    }
+
+                    if self.fatal_marks.get(index).copied().unwrap_or(false) {
+                        button = button.with_fatal_warning();
                     }
 
                     ui.add(button);

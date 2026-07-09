@@ -97,7 +97,7 @@ pub enum Message {
     StartGameFromLobby,       // start game from lobby
     ShowCreateLobbyForm,      // show create lobby form
     ShowJoinLobbyForm,        // show join lobby form
-    CreateAndJoinLobby(String, String, Visibility), // (lobby_name, player_name, visibility)
+    CreateAndJoinLobby(String, String, Visibility, Option<u64>), // (lobby_name, player_name, visibility, turn_timer_secs)
     JoinLobbyWithId(String, String), // (lobby_id, player_name)
     RefreshLobbies,           // re-fetch the public lobby directory
     SpectateLobby(String, String), // (room_id, room_name) watch a game in progress
@@ -143,6 +143,8 @@ pub enum AppState {
         player_name: String,
         /// Whether the room will be listed in the public lobby directory.
         public: bool,
+        /// Per-turn clock for the game; the server auto-plays when it lapses.
+        turn_timer_secs: Option<u64>,
     },
     JoinLobbyForm {
         lobby_id: String,
@@ -202,6 +204,8 @@ pub struct TemplateApp {
     #[serde(skip)]
     last_error: Option<(String, Instant)>, // (message, shown_at) for the transient error toast
     #[serde(skip)]
+    turn_deadline: Option<Instant>, // When the current turn's clock lapses (from the server; None = untimed)
+    #[serde(skip)]
     egui_ctx: Option<Context>, // For repaint wakeups from the WebSocket thread
 }
 
@@ -250,6 +254,7 @@ impl Default for TemplateApp {
             current_room_id: None,
             local_server_status: LocalServerStatus::NotStarted,
             last_error: None,
+            turn_deadline: None,
             egui_ctx: None,
         }
     }
@@ -408,6 +413,7 @@ impl TemplateApp {
         last_rotated_tile: Option<(usize, bool)>,
         player_animations: &std::collections::HashMap<PlayerID, PlayerAnimation>,
         tile_placement_animation: &Option<TilePlacementAnimation>,
+        turn_deadline: Option<Instant>,
     ) {
         match app_state {
             AppState::MainMenu => screens::main_menu::render(ui, server_status, sender),
@@ -415,11 +421,13 @@ impl TemplateApp {
                 lobby_name,
                 player_name,
                 public,
+                turn_timer_secs,
             } => screens::lobby_forms::render_create_lobby_form(
                 ui,
                 lobby_name,
                 player_name,
                 public,
+                turn_timer_secs,
                 sender,
             ),
             AppState::JoinLobbyForm {
@@ -464,6 +472,8 @@ impl TemplateApp {
                 last_rotated_tile,
                 player_animations,
                 tile_placement_animation,
+                // Local games are untimed (the timer is a server feature).
+                None,
             ),
             AppState::OnlineGame {
                 game,
@@ -485,6 +495,7 @@ impl TemplateApp {
                 last_rotated_tile,
                 player_animations,
                 tile_placement_animation,
+                turn_deadline,
             ),
             AppState::ReplayViewer {
                 replay_state,
@@ -515,6 +526,7 @@ impl eframe::App for TemplateApp {
                     &mut self.player_animations,
                     &mut self.tile_placement_animation,
                     &mut self.last_error,
+                    &mut self.turn_deadline,
                 );
             }
             // No polling needed here: the ws_wakeup callback requests a repaint
@@ -556,6 +568,7 @@ impl eframe::App for TemplateApp {
                 self.last_rotated_tile,
                 &self.player_animations,
                 &self.tile_placement_animation,
+                self.turn_deadline,
             );
 
             // Clear the rotation animation state after one frame
@@ -626,8 +639,8 @@ impl TemplateApp {
             Message::StartSampleGame => self.handle_start_sample_game(),
             Message::ShowCreateLobbyForm => self.handle_show_create_lobby_form(),
             Message::ShowJoinLobbyForm => self.handle_show_join_lobby_form(),
-            Message::CreateAndJoinLobby(name, player, visibility) => {
-                self.handle_create_and_join_lobby(name, player, visibility)
+            Message::CreateAndJoinLobby(name, player, visibility, turn_timer_secs) => {
+                self.handle_create_and_join_lobby(name, player, visibility, turn_timer_secs)
             }
             Message::JoinLobbyWithId(id, player) => self.handle_join_lobby_with_id(id, player),
             Message::RefreshLobbies => self.request_lobby_list(),
@@ -668,6 +681,7 @@ impl TemplateApp {
 
     // ========== Message Handler Methods ==========
 
+    #[allow(clippy::too_many_arguments)]
     fn handle_server_message(
         server_msg: ServerMessage,
         current_room_id: &mut Option<String>,
@@ -676,6 +690,7 @@ impl TemplateApp {
         player_animations: &mut std::collections::HashMap<PlayerID, PlayerAnimation>,
         tile_placement_animation: &mut Option<TilePlacementAnimation>,
         last_error: &mut Option<(String, Instant)>,
+        turn_deadline: &mut Option<Instant>,
     ) {
         println!("[SERVER->CLIENT] Received: {:?}", server_msg);
         match server_msg {
@@ -733,8 +748,13 @@ impl TemplateApp {
                 room_id,
                 mut state,
                 hand_counts,
+                turn_deadline_secs,
                 ..
             } => {
+                // Restart the local countdown from the server's clock reading.
+                *turn_deadline =
+                    turn_deadline_secs.map(|s| Instant::now() + std::time::Duration::from_secs(s));
+
                 // A pending spectate resolved: enter the game as an observer.
                 if let AppState::JoinLobbyForm {
                     pending:
@@ -811,9 +831,16 @@ impl TemplateApp {
             ServerMessage::TurnCompleted {
                 room_id: _,
                 result: _,
+                auto_played,
             } => {
                 // Game over will be handled by GameStateUpdate
                 // No need to transition to GameOver state - overlay will show when game.is_game_over() is true
+                if auto_played {
+                    *last_error = Some((
+                        "The turn clock ran out — the server played that turn.".to_string(),
+                        Instant::now(),
+                    ));
+                }
             }
             ServerMessage::Error { message } => {
                 eprintln!("Server error: {}", message);
@@ -880,8 +907,13 @@ impl TemplateApp {
                 room_id,
                 game,
                 hand_counts,
+                turn_deadline_secs,
                 ..
             } => {
+                // Start the first turn's countdown (None for untimed rooms).
+                *turn_deadline =
+                    turn_deadline_secs.map(|s| Instant::now() + std::time::Duration::from_secs(s));
+
                 // Get lobby name from current lobby state
                 let lobby_name = match app_state {
                     AppState::Lobby(lobby) | AppState::LobbyPlacingFor(lobby, _) => {
@@ -961,6 +993,7 @@ impl TemplateApp {
             lobby_name: "Test Lobby".to_string(),
             player_name: "Player 1".to_string(),
             public: true,
+            turn_timer_secs: None,
         };
     }
 
@@ -980,6 +1013,7 @@ impl TemplateApp {
         lobby_name: String,
         player_name: String,
         visibility: Visibility,
+        turn_timer_secs: Option<u64>,
     ) {
         if self.ensure_server_connection() {
             // Send create room message via mpsc
@@ -990,12 +1024,14 @@ impl TemplateApp {
                         room_name: lobby_name.clone(),
                         creator_name: player_name.clone(),
                         visibility,
+                        turn_timer_secs,
                     },
                 );
             }
 
             let (mut lobby, player_id) = Lobby::new_with_creator(lobby_name, player_name);
             lobby.visibility = visibility;
+            lobby.turn_timer_secs = turn_timer_secs;
             self.current_player_id = player_id;
             self.app_state = AppState::Lobby(lobby);
         } else {
@@ -1801,6 +1837,7 @@ mod tests {
             &mut { me },
             &mut app_state,
             &mut std::collections::HashMap::new(),
+            &mut None,
             &mut None,
             &mut None,
         );

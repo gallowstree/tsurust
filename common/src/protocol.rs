@@ -29,6 +29,11 @@ pub enum ClientMessage {
         /// Serde default (Private) keeps messages from older clients unlisted.
         #[serde(default)]
         visibility: Visibility,
+        /// Per-turn clock for the room's game; when it lapses the server plays
+        /// for the slow player. Serde default (None) keeps older clients
+        /// creating untimed rooms.
+        #[serde(default)]
+        turn_timer_secs: Option<u64>,
     },
     JoinRoom {
         room_id: RoomId,
@@ -90,10 +95,19 @@ pub enum ServerMessage {
         /// Tiles remaining in the (hidden) deck.
         #[serde(default)]
         deck_count: usize,
+        /// Seconds the current player has left on the turn clock, measured
+        /// when the message was sent; None when the room is untimed. Clients
+        /// count down locally from receipt, so clock skew doesn't matter.
+        #[serde(default)]
+        turn_deadline_secs: Option<u64>,
     },
     TurnCompleted {
         room_id: RoomId,
         result: TurnResult,
+        /// True when the server played this turn because the player's turn
+        /// clock lapsed.
+        #[serde(default)]
+        auto_played: bool,
     },
     Error {
         message: String,
@@ -119,6 +133,9 @@ pub enum ServerMessage {
         hand_counts: HashMap<PlayerID, usize>,
         #[serde(default)]
         deck_count: usize,
+        /// As on `GameStateUpdate`.
+        #[serde(default)]
+        turn_deadline_secs: Option<u64>,
     },
 }
 
@@ -133,6 +150,7 @@ impl ServerMessage {
             state: game.clone(),
             hand_counts: game.hand_counts(),
             deck_count: game.deck_count(),
+            turn_deadline_secs: None,
         }
     }
 
@@ -143,7 +161,23 @@ impl ServerMessage {
             hand_counts: game.hand_counts(),
             deck_count: game.deck_count(),
             game,
+            turn_deadline_secs: None,
         }
+    }
+
+    /// Stamp the current player's remaining turn-clock time onto a game-state
+    /// message; other variants pass through unchanged.
+    pub fn with_turn_deadline(mut self, deadline_secs: Option<u64>) -> ServerMessage {
+        match &mut self {
+            ServerMessage::GameStateUpdate {
+                turn_deadline_secs, ..
+            }
+            | ServerMessage::GameStarted {
+                turn_deadline_secs, ..
+            } => *turn_deadline_secs = deadline_secs,
+            _ => {}
+        }
+        self
     }
 
     /// Redact a server→client message for `viewer` (a player id, or `None` for a
@@ -154,19 +188,29 @@ impl ServerMessage {
     /// (the counts are recomputed from the state before it is redacted).
     pub fn redacted_for(self, viewer: Option<PlayerID>) -> ServerMessage {
         match self {
-            ServerMessage::GameStateUpdate { room_id, state, .. } => {
-                ServerMessage::GameStateUpdate {
-                    hand_counts: state.hand_counts(),
-                    deck_count: state.deck_count(),
-                    state: state.view_for(viewer),
-                    room_id,
-                }
-            }
-            ServerMessage::GameStarted { room_id, game, .. } => ServerMessage::GameStarted {
+            ServerMessage::GameStateUpdate {
+                room_id,
+                state,
+                turn_deadline_secs,
+                ..
+            } => ServerMessage::GameStateUpdate {
+                hand_counts: state.hand_counts(),
+                deck_count: state.deck_count(),
+                state: state.view_for(viewer),
+                room_id,
+                turn_deadline_secs,
+            },
+            ServerMessage::GameStarted {
+                room_id,
+                game,
+                turn_deadline_secs,
+                ..
+            } => ServerMessage::GameStarted {
                 hand_counts: game.hand_counts(),
                 deck_count: game.deck_count(),
                 game: game.view_for(viewer),
                 room_id,
+                turn_deadline_secs,
             },
             other => other,
         }
@@ -189,13 +233,17 @@ mod tests {
             Player::new(1, PlayerPos::new(0, 2, 5)),
             Player::new(2, PlayerPos::new(5, 3, 0)),
         ]);
-        let tile = game.hands[&1][0];
-        game.perform_move(Move {
-            tile,
-            cell: CellCoord { row: 0, col: 2 },
-            player_id: 1,
-        })
-        .expect("placing a tile at the current player's cell should be legal");
+        // The dealt hand is random, so pick a placement the forced-suicide
+        // rule accepts: a surviving one when the hand has any, otherwise the
+        // (then-legal) first fatal option.
+        let mov = game
+            .survivable_moves(1)
+            .into_iter()
+            .next()
+            .or_else(|| game.playable_moves(1).into_iter().next())
+            .expect("player 1 was dealt tiles");
+        game.perform_move(mov)
+            .expect("placing a tile at the current player's cell should be legal");
         game
     }
 
@@ -205,6 +253,7 @@ mod tests {
             room_name: "Test Room".to_string(),
             creator_name: "Alice".to_string(),
             visibility: Visibility::Public,
+            turn_timer_secs: Some(60),
         };
 
         let json = serde_json::to_string(&msg).expect("Failed to serialize");
@@ -216,10 +265,12 @@ mod tests {
                 room_name,
                 creator_name,
                 visibility,
+                turn_timer_secs,
             } => {
                 assert_eq!(room_name, "Test Room");
                 assert_eq!(creator_name, "Alice");
                 assert_eq!(visibility, Visibility::Public);
+                assert_eq!(turn_timer_secs, Some(60));
             }
             _ => panic!("Wrong message type after deserialization"),
         }
@@ -565,6 +616,7 @@ mod tests {
             let msg = ServerMessage::TurnCompleted {
                 room_id: "ROOM1".to_string(),
                 result: result.clone(),
+                auto_played: true,
             };
 
             let json = serde_json::to_string(&msg).expect("Failed to serialize");
@@ -574,13 +626,25 @@ mod tests {
             let ServerMessage::TurnCompleted {
                 room_id,
                 result: round_tripped,
+                auto_played,
             } = deserialized
             else {
                 panic!("Wrong message type after deserialization");
             };
             assert_eq!(room_id, "ROOM1");
+            assert!(auto_played, "auto_played must survive the round-trip");
             assert_eq!(format!("{:?}", round_tripped), format!("{:?}", result));
         }
+
+        // Wire compatibility: a TurnCompleted from a server that predates
+        // auto_played parses as a normal (player-made) turn.
+        let json = r#"{"TurnCompleted":{"room_id":"ROOM1","result":{"TurnAdvanced":{"turn_number":1,"next_player":2,"eliminated":[]}}}}"#;
+        let deserialized: ServerMessage =
+            serde_json::from_str(json).expect("old-format TurnCompleted should still parse");
+        let ServerMessage::TurnCompleted { auto_played, .. } = deserialized else {
+            panic!("Wrong message type after deserialization");
+        };
+        assert!(!auto_played, "missing auto_played defaults to false");
     }
 
     #[test]
@@ -636,7 +700,8 @@ mod tests {
     #[test]
     fn test_server_message_game_state_update_serialization() {
         let game = sample_mid_game();
-        let msg = ServerMessage::game_state_update("ROOM1".to_string(), &game);
+        let msg = ServerMessage::game_state_update("ROOM1".to_string(), &game)
+            .with_turn_deadline(Some(42));
 
         let json = serde_json::to_string(&msg).expect("Failed to serialize");
         let deserialized: ServerMessage =
@@ -647,11 +712,17 @@ mod tests {
             state: round_tripped,
             hand_counts,
             deck_count,
+            turn_deadline_secs,
         } = deserialized
         else {
             panic!("Wrong message type after deserialization");
         };
         assert_eq!(room_id, "ROOM1");
+        assert_eq!(
+            turn_deadline_secs,
+            Some(42),
+            "the turn clock survives the wire"
+        );
         assert_eq!(round_tripped.current_player_id, game.current_player_id);
         assert_eq!(round_tripped.board.history, game.board.history);
         assert!(
@@ -685,6 +756,7 @@ mod tests {
             game: round_tripped,
             hand_counts,
             deck_count,
+            ..
         } = deserialized
         else {
             panic!("Wrong message type after deserialization");
@@ -714,7 +786,10 @@ mod tests {
         else {
             panic!("redaction must preserve the variant");
         };
-        assert_eq!(state.hands[&1], game.hands[&1], "the viewer keeps their hand");
+        assert_eq!(
+            state.hands[&1], game.hands[&1],
+            "the viewer keeps their hand"
+        );
         assert!(state.hands[&2].is_empty(), "opponents' tiles are hidden");
         assert_eq!(state.deck_count(), 0, "the deck order is hidden");
         assert_eq!(hand_counts, game.hand_counts(), "counts survive redaction");

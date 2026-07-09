@@ -1,6 +1,7 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use tokio::sync::broadcast;
+use tokio::time::Instant as TokioInstant;
 
 use tsurust_common::board::{Move, PlayerID, PlayerPos};
 use tsurust_common::game::{Game, TurnResult};
@@ -30,14 +31,26 @@ pub struct GameRoom {
     /// When this room was last created/acted on — used by the idle-room reaper
     /// as a grace period for rooms with no connected clients.
     pub last_activity: Instant,
+    /// Per-turn clock, kept here as well as in the lobby so it survives the
+    /// transition into the Playing phase. None means untimed.
+    pub turn_timer: Option<Duration>,
+    /// When the current player's clock lapses and the server plays for them.
+    /// None while in the lobby, when untimed, or once the game is over.
+    pub turn_deadline: Option<TokioInstant>,
 }
 
 impl GameRoom {
-    pub fn new(id: RoomId, room_name: String, visibility: Visibility) -> Self {
+    pub fn new(
+        id: RoomId,
+        room_name: String,
+        visibility: Visibility,
+        turn_timer_secs: Option<u64>,
+    ) -> Self {
         let (update_tx, _) = broadcast::channel(100);
 
         let mut lobby = Lobby::new(id.clone(), room_name.clone());
         lobby.visibility = visibility;
+        lobby.turn_timer_secs = turn_timer_secs;
 
         Self {
             phase: RoomPhase::Lobby(lobby),
@@ -46,6 +59,41 @@ impl GameRoom {
             visibility,
             update_tx,
             last_activity: Instant::now(),
+            turn_timer: turn_timer_secs.map(Duration::from_secs),
+            turn_deadline: None,
+        }
+    }
+
+    /// Restart the current player's clock — call whenever the turn (possibly)
+    /// changed hands. Clears the deadline for untimed or finished games.
+    pub(crate) fn reset_turn_clock(&mut self) {
+        self.turn_deadline = match (&self.phase, self.turn_timer) {
+            (RoomPhase::Playing(game), Some(timer)) if !game.is_game_over() => {
+                Some(TokioInstant::now() + timer)
+            }
+            _ => None,
+        };
+    }
+
+    /// Seconds the current player has left on their clock, for stamping onto
+    /// outgoing game-state messages.
+    pub fn turn_deadline_secs(&self) -> Option<u64> {
+        self.turn_deadline.map(|deadline| {
+            deadline
+                .saturating_duration_since(TokioInstant::now())
+                .as_secs()
+        })
+    }
+
+    /// Identifies the turn in progress: a timer armed for one generation
+    /// no-ops if the game has moved on by the time it fires. None when no
+    /// timed move is awaited (lobby phase, untimed room, game over).
+    pub fn turn_generation(&self) -> Option<(usize, PlayerID)> {
+        match &self.phase {
+            RoomPhase::Playing(game) if self.turn_deadline.is_some() && !game.is_game_over() => {
+                Some((game.board.history.len(), game.current_player_id))
+            }
+            _ => None,
         }
     }
 
@@ -94,16 +142,65 @@ impl GameRoom {
             .perform_move(mov)
             .map_err(|e| format!("Invalid move: {}", e))?;
 
-        // Broadcast game state update to all clients in this room. The channel
-        // is server-internal and carries the full state; each connection task
-        // redacts it for its own client before sending (see handler.rs).
-        let state_update = ServerMessage::game_state_update(self.id.clone(), game);
+        // A new turn began (or the game ended): restart/clear the clock, then
+        // broadcast so the state carries the fresh deadline.
+        self.reset_turn_clock();
+        self.broadcast_game_state();
+
+        Ok(result)
+    }
+
+    /// Broadcast the current game state to all clients in this room, stamped
+    /// with the turn clock. The channel is server-internal and carries the
+    /// full state; each connection task redacts it for its own client before
+    /// sending (see handler.rs).
+    fn broadcast_game_state(&self) {
+        let RoomPhase::Playing(game) = &self.phase else {
+            return;
+        };
+        let state_update = ServerMessage::game_state_update(self.id.clone(), game)
+            .with_turn_deadline(self.turn_deadline_secs());
         if self.update_tx.send(state_update).is_err() {
             // Benign: broadcast::send only fails when no client is subscribed
             tracing::debug!(room_id = %self.id, "no subscribers for GameStateUpdate broadcast");
         }
+    }
 
-        Ok(result)
+    /// Play the current player's turn for them because their clock lapsed:
+    /// a uniformly random placement that survives when one exists (the
+    /// forced-suicide rule), any placement otherwise. A player somehow left
+    /// without tiles is eliminated instead, so the game cannot stall.
+    /// Broadcasts the outcome exactly like a player-made move, plus a
+    /// `TurnCompleted { auto_played: true }` notice.
+    pub fn force_current_move(&mut self) -> Result<(), String> {
+        self.touch();
+        let RoomPhase::Playing(game) = &mut self.phase else {
+            return Err("Game has not started yet".to_string());
+        };
+        let player_id = game.current_player_id;
+
+        let Some(mov) = game.random_timeout_move(player_id) else {
+            tracing::warn!(room_id = %self.id, player_id, "turn clock lapsed with no playable tiles; eliminating");
+            game.eliminate_player(player_id);
+            self.reset_turn_clock();
+            self.broadcast_game_state();
+            return Ok(());
+        };
+
+        let result = game
+            .perform_move(mov)
+            .map_err(|e| format!("Forced move was rejected: {}", e))?;
+        tracing::info!(room_id = %self.id, player_id, result = ?result, "turn clock lapsed; move auto-played");
+
+        self.broadcast(ServerMessage::TurnCompleted {
+            room_id: self.id.clone(),
+            result,
+            auto_played: true,
+        });
+        self.reset_turn_clock();
+        self.broadcast_game_state();
+
+        Ok(())
     }
 
     pub fn broadcast(&self, message: ServerMessage) {
@@ -166,16 +263,23 @@ impl GameRoom {
             RoomPhase::Playing(game) => {
                 // Game in progress: same bookkeeping as an on-board elimination —
                 // hand back to deck, stats closed, turn passed in rotation order
+                let turn_holder = game.current_player_id;
                 game.eliminate_player(player_id);
 
                 if !game.players.iter().any(|p| p.alive) {
                     return true; // Empty room
                 }
 
+                // Restart the clock only when the turn actually changed hands
+                // (or the game ended) — a bystander's disconnect must not gift
+                // the current player extra time.
+                if game.current_player_id != turn_holder || game.is_game_over() {
+                    self.reset_turn_clock();
+                }
+
                 // Broadcast updated game state; clients derive a win from
                 // is_game_over() when one player remains
-                let state_update = ServerMessage::game_state_update(self.id.clone(), game);
-                self.broadcast(state_update);
+                self.broadcast_game_state();
             }
         }
 
@@ -204,16 +308,19 @@ impl GameRoom {
             .map_err(|e| format!("Failed to start game: {}", e))?;
 
         self.phase = RoomPhase::Playing(game.clone());
+        self.reset_turn_clock();
 
         tracing::info!(
             room_id = %self.id,
             players = ?game.players.iter().map(|p| p.id).collect::<Vec<_>>(),
             first_turn = game.current_player_id,
+            turn_timer = ?self.turn_timer,
             "game started"
         );
 
         // Broadcast game started to all clients (redacted per-recipient on egress)
-        let game_started = ServerMessage::game_started(self.id.clone(), game);
+        let game_started = ServerMessage::game_started(self.id.clone(), game)
+            .with_turn_deadline(self.turn_deadline_secs());
         self.broadcast(game_started);
 
         Ok(())

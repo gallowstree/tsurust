@@ -25,11 +25,29 @@ fn centered_column(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) 
     });
 }
 
+/// The turn-timer presets offered by the create form.
+const TURN_TIMER_OPTIONS: [(Option<u64>, &str); 5] = [
+    (None, "No timer"),
+    (Some(30), "30 seconds"),
+    (Some(60), "1 minute"),
+    (Some(180), "3 minutes"),
+    (Some(86_400), "24 hours (correspondence)"),
+];
+
+fn turn_timer_label(value: Option<u64>) -> &'static str {
+    TURN_TIMER_OPTIONS
+        .iter()
+        .find(|(v, _)| *v == value)
+        .map(|(_, label)| *label)
+        .unwrap_or("Custom")
+}
+
 pub fn render_create_lobby_form(
     ui: &mut egui::Ui,
     lobby_name: &mut String,
     player_name: &mut String,
     public: &mut bool,
+    turn_timer_secs: &mut Option<u64>,
     sender: &mpsc::Sender<Message>,
 ) {
     egui::CentralPanel::default().show(ui, |ui| {
@@ -68,6 +86,28 @@ pub fn render_create_lobby_form(
                 .weak()
                 .small(),
             );
+            ui.add_space(12.0);
+
+            ui.horizontal(|ui| {
+                ui.label("Turn timer:");
+                egui::ComboBox::from_id_salt("turn_timer_combo")
+                    .selected_text(turn_timer_label(*turn_timer_secs))
+                    .show_ui(ui, |ui| {
+                        for (value, label) in TURN_TIMER_OPTIONS {
+                            ui.selectable_value(turn_timer_secs, value, label);
+                        }
+                    });
+            });
+            if turn_timer_secs.is_some() {
+                ui.label(
+                    egui::RichText::new(
+                        "When a player's clock runs out, the server plays a random \
+                         surviving tile for them.",
+                    )
+                    .weak()
+                    .small(),
+                );
+            }
             ui.add_space(20.0);
 
             let can_create = !lobby_name.trim().is_empty() && !player_name.trim().is_empty();
@@ -85,6 +125,7 @@ pub fn render_create_lobby_form(
                         lobby_name.clone(),
                         player_name.clone(),
                         visibility,
+                        *turn_timer_secs,
                     ),
                 );
             }
@@ -100,6 +141,7 @@ pub fn render_create_lobby_form(
                             lobby_name.clone(),
                             player_name.clone(),
                             visibility,
+                            *turn_timer_secs,
                         ),
                     );
                 }

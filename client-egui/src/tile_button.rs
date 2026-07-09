@@ -18,6 +18,9 @@ pub struct TileButton {
     // Animation state
     rotation_progress: f32,     // 0.0 = no animation, 1.0 = animation complete
     target_rotation_steps: i32, // How many 90° rotations to animate (positive = CW, negative = CCW)
+    /// The engine would reject this rotation (forced-suicide rule): warn, but
+    /// keep the button interactive — rotating it may make it legal.
+    fatal: bool,
 }
 
 impl TileButton {
@@ -28,12 +31,18 @@ impl TileButton {
             sender,
             rotation_progress: 1.0, // Start with no animation
             target_rotation_steps: 0,
+            fatal: false,
         }
     }
 
     pub fn with_rotation_animation(mut self, clockwise: bool) -> Self {
         self.rotation_progress = 0.0;
         self.target_rotation_steps = if clockwise { 1 } else { -1 };
+        self
+    }
+
+    pub fn with_fatal_warning(mut self) -> Self {
+        self.fatal = true;
         self
     }
 }
@@ -114,6 +123,25 @@ impl Widget for TileButton {
             rotation_angle,
         );
 
+        // Forced-suicide warning: this rotation would be rejected by the
+        // engine while a surviving option exists.
+        if self.fatal {
+            let warn_color = eframe::egui::Color32::from_rgb(220, 70, 70);
+            painter.rect_stroke(
+                rect.shrink(2.0),
+                eframe::egui::CornerRadius::same(6),
+                eframe::egui::Stroke::new(2.0, warn_color),
+                eframe::egui::StrokeKind::Inside,
+            );
+            painter.text(
+                rect.right_top() + vec2(-14.0, 14.0),
+                eframe::egui::Align2::CENTER_CENTER,
+                "☠",
+                eframe::egui::FontId::proportional(16.0),
+                warn_color,
+            );
+        }
+
         // Draw hover overlay on top so rotation indicators are visible
         if response.hovered() {
             if let Some(pos) = response.hover_pos() {
@@ -131,6 +159,11 @@ impl Widget for TileButton {
             } else {
                 paint_tile_button_hoverlay(rect, painter);
             }
+        }
+        if self.fatal {
+            return response.on_hover_text(
+                "This rotation would eliminate you — rotate it or pick another tile.",
+            );
         }
         response
     }

@@ -120,7 +120,7 @@ pub async fn handle_connection(
     // Cleanup on disconnect
     if let (Some(room_id), Some(player_id)) = (current_room, current_player_id) {
         info!(player_id, %room_id, "player disconnected");
-        server.handle_disconnect(room_id, player_id).await;
+        GameServer::handle_disconnect(&server, room_id, player_id).await;
     }
 }
 
@@ -168,9 +168,10 @@ async fn handle_client_message(
             room_name,
             creator_name,
             visibility,
+            turn_timer_secs,
         } => {
             let (room_id, player_id) = server
-                .create_room(room_name, creator_name, visibility)
+                .create_room(room_name, creator_name, visibility, turn_timer_secs)
                 .await?;
 
             // Subscribe to room updates and send initial lobby state
@@ -276,8 +277,9 @@ async fn handle_client_message(
             *current_player_id = None;
 
             // Spectators see no hands: redact for `None`.
-            let response =
-                ServerMessage::game_state_update(room_id.clone(), game).redacted_for(None);
+            let response = ServerMessage::game_state_update(room_id.clone(), game)
+                .with_turn_deadline(room.turn_deadline_secs())
+                .redacted_for(None);
             let json = serde_json::to_string(&response)
                 .map_err(|e| format!("Failed to serialize game state: {}", e))?;
             ws.send(Message::Text(json.into()))
@@ -287,7 +289,7 @@ async fn handle_client_message(
 
         ClientMessage::LeaveRoom { room_id, player_id } => {
             verify_sender(&room_id, Some(player_id), current_room, current_player_id)?;
-            server.leave_room(room_id, player_id).await?;
+            GameServer::leave_room(server, room_id, player_id).await?;
             *update_rx = None;
             *current_room = None;
             *current_player_id = None;
@@ -308,7 +310,9 @@ async fn handle_client_message(
             // the client) by the connection loop
             let result = room.place_tile(player_id, mov)?;
             debug!(player_id, result = ?result, "tile placed");
-            // Updates are broadcast automatically by place_tile
+            // Updates are broadcast automatically by place_tile; the next
+            // player's turn clock (if any) starts now
+            GameServer::arm_turn_timer(server, room);
             drop(rooms); // Explicitly drop the lock to allow broadcast messages to be received
         }
 
@@ -324,6 +328,7 @@ async fn handle_client_message(
             // Redact for the requesting player (or None if this connection is a
             // spectator that used GetGameState directly).
             let response = ServerMessage::game_state_update(room_id.clone(), game)
+                .with_turn_deadline(room.turn_deadline_secs())
                 .redacted_for(*current_player_id);
             let json = serde_json::to_string(&response)
                 .map_err(|e| format!("Failed to serialize response: {}", e))?;
@@ -355,7 +360,9 @@ async fn handle_client_message(
                 .ok_or_else(|| format!("Room '{}' not found", room_id))?;
 
             room.start_game()?;
-            // GameStarted message is broadcast automatically by start_game
+            // GameStarted message is broadcast automatically by start_game;
+            // the first player's turn clock (if any) starts now
+            GameServer::arm_turn_timer(server, room);
         }
     }
 

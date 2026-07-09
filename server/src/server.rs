@@ -47,6 +47,7 @@ impl GameServer {
         room_name: String,
         creator_name: String,
         visibility: Visibility,
+        turn_timer_secs: Option<u64>,
     ) -> Result<(RoomId, PlayerID), String> {
         // Hold the write lock across generate-check-insert so two concurrent
         // creates can't race into the same room ID
@@ -59,7 +60,7 @@ impl GameServer {
         };
 
         let player_id = 1;
-        let mut room = GameRoom::new(room_id.clone(), room_name, visibility);
+        let mut room = GameRoom::new(room_id.clone(), room_name, visibility, turn_timer_secs);
         if let RoomPhase::Lobby(lobby) = &mut room.phase {
             lobby
                 .handle_event(LobbyEvent::PlayerJoined {
@@ -171,19 +172,70 @@ impl GameServer {
         before - rooms.len()
     }
 
-    pub async fn leave_room(&self, room_id: RoomId, player_id: PlayerID) -> Result<(), String> {
-        self.handle_disconnect(room_id, player_id).await;
+    pub async fn leave_room(
+        server: &Arc<GameServer>,
+        room_id: RoomId,
+        player_id: PlayerID,
+    ) -> Result<(), String> {
+        GameServer::handle_disconnect(server, room_id, player_id).await;
         Ok(())
     }
 
-    pub async fn handle_disconnect(&self, room_id: RoomId, player_id: PlayerID) {
-        let mut rooms = self.rooms.write().await;
+    /// `server` is an Arc so the turn timer can be re-armed when the
+    /// disconnect passes the turn to the next player.
+    pub async fn handle_disconnect(server: &Arc<GameServer>, room_id: RoomId, player_id: PlayerID) {
+        let mut rooms = server.rooms.write().await;
         if let Some(room) = rooms.get_mut(&room_id) {
             let should_remove = room.handle_disconnect(player_id);
             if should_remove {
                 tracing::info!(%room_id, "room empty, removing");
                 rooms.remove(&room_id);
+            } else {
+                // If the turn changed hands this arms the new deadline; other
+                // cases spawn a duplicate that no-ops on its generation check.
+                GameServer::arm_turn_timer(server, room);
             }
         }
+    }
+
+    /// Arm a one-shot timer for the room's current turn. The task holds only
+    /// (room id, generation): when it fires it re-checks the room, so a turn
+    /// played in the meantime — or a finished/removed game — makes it a no-op.
+    /// Duplicate arms for the same turn are harmless for the same reason.
+    /// Call after any change that may have started a new turn.
+    pub fn arm_turn_timer(server: &Arc<GameServer>, room: &GameRoom) {
+        let (Some(deadline), Some(generation)) = (room.turn_deadline, room.turn_generation())
+        else {
+            return;
+        };
+        let server = Arc::clone(server);
+        let room_id = room.id.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep_until(deadline).await;
+            GameServer::fire_turn_timer(server, room_id, generation).await;
+        });
+    }
+
+    /// Timer expiry: if the room is still waiting on the same turn, play it
+    /// for the slow player and arm the clock for the next one. Returns whether
+    /// a move was forced (stale/finished timers return false).
+    pub async fn fire_turn_timer(
+        server: Arc<GameServer>,
+        room_id: RoomId,
+        generation: (usize, PlayerID),
+    ) -> bool {
+        let mut rooms = server.rooms.write().await;
+        let Some(room) = rooms.get_mut(&room_id) else {
+            return false;
+        };
+        if room.turn_generation() != Some(generation) {
+            return false; // the awaited turn was played (or the game ended)
+        }
+        if let Err(e) = room.force_current_move() {
+            tracing::warn!(%room_id, error = %e, "failed to auto-play timed-out turn");
+            return false;
+        }
+        GameServer::arm_turn_timer(&server, room);
+        true
     }
 }

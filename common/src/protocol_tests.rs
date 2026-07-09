@@ -34,6 +34,7 @@ fn test_server_message_serialization() {
                 next_player: 2,
                 eliminated: vec![],
             },
+            auto_played: false,
         },
     ];
 
@@ -65,6 +66,7 @@ fn test_client_message_serialization() {
             room_name: "TEST123".to_string(),
             creator_name: "Alice".to_string(),
             visibility: crate::lobby::Visibility::Public,
+            turn_timer_secs: None,
         },
         ClientMessage::JoinRoom {
             room_id: "TEST123".to_string(),
@@ -145,9 +147,11 @@ fn test_game_serialization() {
 fn test_game_with_moves_serialization() {
     let mut game = create_test_game();
 
-    // Add the tile to player 1's hand first
+    // The test tile exits player 1 straight off the top edge, so it must be
+    // their whole hand — the forced-suicide rule rejects it beside a
+    // surviving alternative.
     let tile = create_test_tile();
-    game.hands.get_mut(&1).unwrap().push(tile);
+    game.hands.insert(1, vec![tile]);
 
     // Place a tile (this populates tile_trails and player_trails)
     let mov = Move {

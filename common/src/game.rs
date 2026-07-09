@@ -68,6 +68,9 @@ pub enum MoveError {
     WrongCell,
     CellOccupied,
     TileNotInHand,
+    /// Tsuro's forced-suicide rule: a self-eliminating placement is only
+    /// legal when every playable option eliminates the mover too.
+    ForcedSuicide,
 }
 
 impl std::fmt::Display for MoveError {
@@ -78,6 +81,9 @@ impl std::fmt::Display for MoveError {
             MoveError::WrongCell => "the tile must be placed on the player's current cell",
             MoveError::CellOccupied => "that cell already has a tile",
             MoveError::TileNotInHand => "the player does not have this tile in hand",
+            MoveError::ForcedSuicide => {
+                "that placement would eliminate you while another of your moves survives"
+            }
         })
     }
 }
@@ -214,7 +220,10 @@ impl Game {
     /// How many tiles each player currently holds. Tile *counts* aren't secret
     /// (opponents' hand sizes are shown in the UI); the tile identities are.
     pub fn hand_counts(&self) -> HashMap<PlayerID, usize> {
-        self.hands.iter().map(|(id, hand)| (*id, hand.len())).collect()
+        self.hands
+            .iter()
+            .map(|(id, hand)| (*id, hand.len()))
+            .collect()
     }
 
     /// Number of tiles left in the deck.
@@ -241,6 +250,83 @@ impl Game {
     }
 
     pub fn perform_move(&mut self, mov: Move) -> Result<TurnResult, MoveError> {
+        // Tsuro's forced-suicide rule: reject a self-eliminating placement
+        // while a surviving option exists. The simulation also surfaces any
+        // basic validation error before the game is touched.
+        let eliminated = self.simulate_move(mov)?;
+        if eliminated.contains(&mov.player_id) && !self.survivable_moves(mov.player_id).is_empty() {
+            return Err(MoveError::ForcedSuicide);
+        }
+        self.apply_move(mov)
+    }
+
+    /// Play a move on a clone of the game and report who it would eliminate,
+    /// without the forced-suicide rule (it is the primitive that rule is built
+    /// from). Reuses the whole engine — traversal, edge elimination, turn
+    /// bookkeeping — so it can never disagree with a real move.
+    pub fn simulate_move(&self, mov: Move) -> Result<Vec<PlayerID>, MoveError> {
+        let mut sim = self.clone();
+        let result = sim.apply_move(mov)?;
+        Ok(match result {
+            TurnResult::TurnAdvanced { eliminated, .. }
+            | TurnResult::PlayerWins { eliminated, .. }
+            | TurnResult::Extinction { eliminated, .. } => eliminated,
+        })
+    }
+
+    /// Every distinct placement available to `player_id`: each hand tile in
+    /// each of its 4 rotations on the player's (forced) cell, with rotations
+    /// that repeat a symmetric tile's shape counted once.
+    pub fn playable_moves(&self, player_id: PlayerID) -> Vec<Move> {
+        let Some(player) = self.players.iter().find(|p| p.id == player_id && p.alive) else {
+            return Vec::new();
+        };
+        let Some(hand) = self.hands.get(&player_id) else {
+            return Vec::new();
+        };
+        let mut moves: Vec<Move> = Vec::new();
+        for tile in hand {
+            let mut rotated = *tile;
+            for _ in 0..4 {
+                if !moves.iter().any(|m| m.tile == rotated) {
+                    moves.push(Move {
+                        tile: rotated,
+                        cell: player.pos.cell,
+                        player_id,
+                    });
+                }
+                rotated = rotated.rotated(true);
+            }
+        }
+        moves
+    }
+
+    /// The playable moves that do not eliminate the mover.
+    pub fn survivable_moves(&self, player_id: PlayerID) -> Vec<Move> {
+        self.playable_moves(player_id)
+            .into_iter()
+            .filter(|mov| {
+                matches!(self.simulate_move(*mov), Ok(eliminated) if !eliminated.contains(&player_id))
+            })
+            .collect()
+    }
+
+    /// A uniformly random move for a timed-out player: survivable if any
+    /// exist, otherwise any placement (the rules require a play even when
+    /// every option is fatal). `None` only when the player cannot move at all
+    /// (no tiles in hand).
+    pub fn random_timeout_move(&self, player_id: PlayerID) -> Option<Move> {
+        use rand::seq::SliceRandom;
+        let survivable = self.survivable_moves(player_id);
+        let pool = if survivable.is_empty() {
+            self.playable_moves(player_id)
+        } else {
+            survivable
+        };
+        pool.choose(&mut rand::thread_rng()).copied()
+    }
+
+    fn apply_move(&mut self, mov: Move) -> Result<TurnResult, MoveError> {
         // Validate it's this player's turn
         if mov.player_id != self.current_player_id {
             return Err(MoveError::NotYourTurn);
@@ -991,7 +1077,10 @@ mod tests {
 
         // Player 1's view keeps player 1's hand and hides everyone else's.
         let view = game.view_for(Some(1));
-        assert_eq!(view.hands[&1], game.hands[&1], "the viewer keeps their hand");
+        assert_eq!(
+            view.hands[&1], game.hands[&1],
+            "the viewer keeps their hand"
+        );
         assert!(view.hands[&2].is_empty(), "opponents' tiles are hidden");
         assert_eq!(view.deck.remaining(), 0, "the deck order is hidden");
 
@@ -1117,12 +1206,11 @@ mod tests {
         game.players[1].alive = false;
 
         // The straight tile connects endpoints 5 and 4, both on the top edge, so
-        // player 1 immediately exits the board and is eliminated.
+        // player 1 immediately exits the board and is eliminated. It must be
+        // their whole hand: with any surviving alternative the forced-suicide
+        // rule would reject this placement.
         let tile = create_straight_tile();
-        game.hands
-            .get_mut(&1)
-            .expect("player 1 has a hand")
-            .push(tile);
+        game.hands.insert(1, vec![tile]);
 
         let result = game
             .perform_move(Move {
@@ -1153,11 +1241,10 @@ mod tests {
             Player::new(2, PlayerPos::new(0, 2, 4)),
         ]);
 
+        // Fatal-only hand: the forced-suicide rule permits a self-eliminating
+        // placement only when no alternative survives.
         let tile = create_straight_tile();
-        game.hands
-            .get_mut(&1)
-            .expect("player 1 has a hand")
-            .push(tile);
+        game.hands.insert(1, vec![tile]);
 
         let result = game
             .perform_move(Move {
@@ -1325,5 +1412,130 @@ mod tests {
         // Eliminating one of the two survivors ends the game.
         assert!(game.eliminate_player(2));
         assert!(game.is_game_over(), "one player left means game over");
+    }
+
+    /// Two players; player 1 sits on the top edge of (0,2) with a hand chosen
+    /// by the test, so forced-suicide scenarios are deterministic.
+    fn suicide_rule_game(hand: Vec<Tile>) -> Game {
+        let mut game = Game::new(vec![
+            Player::new(1, PlayerPos::new(0, 2, 5)),
+            Player::new(2, PlayerPos::new(5, 3, 0)),
+        ]);
+        game.hands.insert(1, hand);
+        game
+    }
+
+    /// Fatal for a pawn at endpoint 5 of a top-edge cell in every rotation:
+    /// the segment set {(0,1),(2,3),(4,5),(6,7)} maps to itself under
+    /// rotation, and 5 → 4 stays on the top edge.
+    fn killer_tile() -> Tile {
+        Tile::new([seg(4, 5), seg(0, 1), seg(2, 3), seg(6, 7)])
+    }
+
+    /// Survivable as dealt: 5 → 0 leads down into the empty (1,2). Its 90°
+    /// rotation routes 5 → 4 (fatal), and it is 180°-symmetric, so exactly
+    /// one of its two distinct rotations survives.
+    fn survivor_tile() -> Tile {
+        Tile::new([seg(5, 0), seg(4, 1), seg(2, 3), seg(6, 7)])
+    }
+
+    fn move_of(tile: Tile) -> Move {
+        Move {
+            tile,
+            cell: CellCoord { row: 0, col: 2 },
+            player_id: 1,
+        }
+    }
+
+    #[test]
+    fn test_simulate_move_reports_eliminations_without_mutating() {
+        let game = suicide_rule_game(vec![killer_tile(), survivor_tile()]);
+
+        let eliminated = game
+            .simulate_move(move_of(killer_tile()))
+            .expect("the placement itself is valid");
+        assert_eq!(eliminated, vec![1], "the killer tile eliminates the mover");
+
+        assert!(game.board.history.is_empty(), "simulation must not mutate");
+        assert_eq!(game.current_player_id, 1);
+        assert_eq!(game.hands[&1].len(), 2);
+    }
+
+    #[test]
+    fn test_playable_moves_dedupes_symmetric_rotations() {
+        let game = suicide_rule_game(vec![killer_tile(), survivor_tile()]);
+
+        // killer: fully rotation-symmetric (1 distinct placement);
+        // survivor: 180°-symmetric (2 distinct placements).
+        assert_eq!(game.playable_moves(1).len(), 3);
+
+        let survivable = game.survivable_moves(1);
+        assert_eq!(
+            survivable.len(),
+            1,
+            "only the dealt survivor rotation lives"
+        );
+        assert!(survivable[0].tile.is_same_tile(&survivor_tile()));
+    }
+
+    #[test]
+    fn test_suicide_rejected_when_a_survivable_move_exists() {
+        let mut game = suicide_rule_game(vec![killer_tile(), survivor_tile()]);
+
+        let result = game.perform_move(move_of(killer_tile()));
+        assert_eq!(result.unwrap_err(), MoveError::ForcedSuicide);
+
+        // The rejection must leave the game untouched.
+        assert!(game.board.history.is_empty());
+        assert_eq!(game.current_player_id, 1);
+        assert_eq!(game.hands[&1].len(), 2);
+        assert!(game.players[0].alive);
+    }
+
+    #[test]
+    fn test_suicide_allowed_when_every_move_is_fatal() {
+        let mut game = suicide_rule_game(vec![killer_tile()]);
+
+        let result = game
+            .perform_move(move_of(killer_tile()))
+            .expect("with no surviving option the fatal placement is legal");
+
+        let TurnResult::PlayerWins {
+            winner, eliminated, ..
+        } = result
+        else {
+            panic!("eliminating yourself against one opponent ends the game");
+        };
+        assert_eq!(winner, 2);
+        assert_eq!(eliminated, vec![1]);
+        assert!(!game.players[0].alive);
+    }
+
+    #[test]
+    fn test_random_timeout_move_prefers_survivable() {
+        let game = suicide_rule_game(vec![killer_tile(), survivor_tile()]);
+        let mov = game
+            .random_timeout_move(1)
+            .expect("a player with tiles always has a timeout move");
+        assert!(
+            mov.tile.is_same_tile(&survivor_tile()),
+            "with a survivable option the pick never falls on the killer"
+        );
+        assert!(
+            !game
+                .simulate_move(mov)
+                .expect("the pick must be playable")
+                .contains(&1),
+            "the picked rotation itself survives"
+        );
+
+        // All-fatal hand: the pick falls back to a fatal placement.
+        let game = suicide_rule_game(vec![killer_tile()]);
+        let mov = game.random_timeout_move(1).expect("fatal moves still play");
+        assert!(mov.tile.is_same_tile(&killer_tile()));
+
+        // No tiles at all: nothing to play.
+        let game = suicide_rule_game(vec![]);
+        assert!(game.random_timeout_move(1).is_none());
     }
 }

@@ -51,6 +51,10 @@ pub struct Lobby {
     /// Serde default keeps older exports/messages (no visibility) private.
     #[serde(default)]
     pub visibility: Visibility,
+    /// Per-turn clock for the game this lobby will start; None means untimed.
+    /// Serde default keeps older messages untimed.
+    #[serde(default)]
+    pub turn_timer_secs: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,6 +90,7 @@ impl Lobby {
             started: false,
             max_players: 8,
             visibility: Visibility::default(),
+            turn_timer_secs: None,
         }
     }
 
@@ -100,6 +105,7 @@ impl Lobby {
             started: false,
             max_players: 8,
             visibility: Visibility::default(),
+            turn_timer_secs: None,
         };
 
         // Auto-join creator as first player

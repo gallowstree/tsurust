@@ -11,6 +11,11 @@ not here (see the documentation policy in CLAUDE.md).
 - Exercise network latency and flaky-connection handling.
 
 ### Features
+- Turn-timeout policy option: let a timed room choose *forfeit* (eliminate the
+  timed-out player via `Game::eliminate_player`) instead of the current
+  *auto-play a random surviving move* when the turn clock lapses — a per-room
+  `on_timeout: ForceMove | Forfeit` setting surfaced in the create-lobby form.
+  See `proposals/005` §8.2.
 - AI opponents that can join multiplayer games.
 - Tournament / ranking system.
 - Spectator game-history scrubbing (step back through moves while watching live).

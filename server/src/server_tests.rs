@@ -11,6 +11,7 @@ async fn test_create_room_assigns_player_id_1() {
             "Test Room".to_string(),
             "Alice".to_string(),
             Visibility::Private,
+            None,
         )
         .await;
 
@@ -31,6 +32,7 @@ async fn test_join_room_assigns_sequential_ids() {
             "Test Room".to_string(),
             "Alice".to_string(),
             Visibility::Private,
+            None,
         )
         .await
         .expect("Failed to create room");
@@ -64,6 +66,7 @@ async fn test_player_ids_use_max_plus_one() {
             "Test Room".to_string(),
             "Alice".to_string(),
             Visibility::Private,
+            None,
         )
         .await
         .expect("Failed to create room");
@@ -97,6 +100,7 @@ async fn test_join_after_game_started_is_rejected() {
             "Test Room".to_string(),
             "Alice".to_string(),
             Visibility::Private,
+            None,
         )
         .await
         .expect("Failed to create room");
@@ -145,6 +149,7 @@ async fn test_reap_removes_only_idle_disconnected_rooms() {
             "Idle Room".to_string(),
             "Alice".to_string(),
             Visibility::Private,
+            None,
         )
         .await
         .expect("create idle room");
@@ -153,6 +158,7 @@ async fn test_reap_removes_only_idle_disconnected_rooms() {
             "Live Room".to_string(),
             "Bob".to_string(),
             Visibility::Private,
+            None,
         )
         .await
         .expect("create live room");
@@ -190,6 +196,7 @@ async fn test_reap_leaves_fresh_rooms_within_grace_period() {
             "Fresh Room".to_string(),
             "Alice".to_string(),
             Visibility::Private,
+            None,
         )
         .await
         .expect("create room");
@@ -217,13 +224,19 @@ async fn test_create_multiple_rooms_generates_unique_ids() {
             "Room 1".to_string(),
             "Alice".to_string(),
             Visibility::Private,
+            None,
         )
         .await
         .expect("Failed to create first room");
 
     // Create second room
     let (room_id2, _) = server
-        .create_room("Room 2".to_string(), "Bob".to_string(), Visibility::Private)
+        .create_room(
+            "Room 2".to_string(),
+            "Bob".to_string(),
+            Visibility::Private,
+            None,
+        )
         .await
         .expect("Failed to create second room");
 
@@ -242,6 +255,7 @@ async fn test_lobby_directory_lists_only_public_rooms() {
             "Open Table".to_string(),
             "Alice".to_string(),
             Visibility::Public,
+            None,
         )
         .await
         .expect("Failed to create public room");
@@ -250,6 +264,7 @@ async fn test_lobby_directory_lists_only_public_rooms() {
             "Secret Table".to_string(),
             "Bob".to_string(),
             Visibility::Private,
+            None,
         )
         .await
         .expect("Failed to create private room");
@@ -279,6 +294,7 @@ async fn test_lobby_directory_marks_started_games_and_sorts_joinable_first() {
             "A Started Game".to_string(),
             "Alice".to_string(),
             Visibility::Public,
+            None,
         )
         .await
         .expect("Failed to create room");
@@ -302,6 +318,7 @@ async fn test_lobby_directory_marks_started_games_and_sorts_joinable_first() {
             "Z Open Lobby".to_string(),
             "Carol".to_string(),
             Visibility::Public,
+            None,
         )
         .await
         .expect("Failed to create room");
@@ -318,5 +335,63 @@ async fn test_lobby_directory_marks_started_games_and_sorts_joinable_first() {
     assert_eq!(
         listings[1].player_count, 2,
         "a started game reports its locked-in player count"
+    );
+}
+
+#[tokio::test]
+async fn test_fire_turn_timer_respects_turn_generation() {
+    use std::sync::Arc;
+
+    use tsurust_common::board::Player;
+    use tsurust_common::game::Game;
+
+    use crate::room::{GameRoom, RoomPhase};
+
+    let server = Arc::new(GameServer::new());
+
+    // A timed in-progress game, inserted directly (the lobby flow is covered
+    // elsewhere).
+    let game = Game::new(vec![
+        Player::new(1, PlayerPos::new(0, 0, 4)),
+        Player::new(2, PlayerPos::new(2, 5, 2)),
+    ]);
+    let mut room = GameRoom::new(
+        "TIMED".to_string(),
+        "Timed Room".to_string(),
+        Visibility::Private,
+        Some(60),
+    );
+    room.phase = RoomPhase::Playing(game);
+    room.reset_turn_clock();
+    let generation = room.turn_generation().expect("clock is running");
+    server.rooms.write().await.insert("TIMED".to_string(), room);
+
+    // The timer for the awaited turn fires: a move is forced.
+    assert!(
+        GameServer::fire_turn_timer(Arc::clone(&server), "TIMED".to_string(), generation).await,
+        "the armed generation forces a move"
+    );
+    {
+        let rooms = server.rooms.read().await;
+        let game = rooms["TIMED"].game().expect("room is playing");
+        assert_eq!(game.board.history.len(), 1, "the turn was auto-played");
+    }
+
+    // A stale timer (same generation, now outdated) is a no-op.
+    assert!(
+        !GameServer::fire_turn_timer(Arc::clone(&server), "TIMED".to_string(), generation).await,
+        "a stale generation never double-plays"
+    );
+    {
+        let rooms = server.rooms.read().await;
+        let game = rooms["TIMED"].game().expect("room is playing");
+        assert_eq!(game.board.history.len(), 1, "no second tile was placed");
+    }
+
+    // A timer for a room that no longer exists is a no-op too.
+    server.rooms.write().await.remove("TIMED");
+    assert!(
+        !GameServer::fire_turn_timer(server, "TIMED".to_string(), generation).await,
+        "a reaped room never fires"
     );
 }

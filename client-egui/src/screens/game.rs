@@ -3,7 +3,12 @@ use std::sync::mpsc;
 
 use eframe::egui;
 
-use tsurust_common::board::{Player, PlayerID};
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
+
+use tsurust_common::board::{Move, Player, PlayerID};
 use tsurust_common::game::Game;
 
 use crate::app::{Message, PlayerAnimation, TilePlacementAnimation};
@@ -30,6 +35,8 @@ pub fn render_game_ui(
     last_rotated_tile: Option<(usize, bool)>,
     player_animations: &HashMap<PlayerID, PlayerAnimation>,
     tile_placement_animation: &Option<TilePlacementAnimation>,
+    // When the current turn's clock lapses (server-timed rooms only).
+    turn_deadline: Option<Instant>,
 ) {
     egui::Panel::top("top_panel")
         .resizable(true)
@@ -64,6 +71,30 @@ pub fn render_game_ui(
                     if waiting_for_server {
                         ui.label("⏳ Waiting for server...");
                         ui.separator();
+                    }
+
+                    // Turn clock: counts down locally from the server's last
+                    // reading; when it hits zero the server plays the turn.
+                    if let Some(deadline) = turn_deadline {
+                        if !game.is_game_over() {
+                            let remaining =
+                                deadline.saturating_duration_since(Instant::now()).as_secs();
+                            let text = format!("⏱ {}:{:02}", remaining / 60, remaining % 60);
+                            if remaining <= 10 {
+                                ui.label(
+                                    egui::RichText::new(text)
+                                        .strong()
+                                        .color(egui::Color32::from_rgb(230, 80, 80)),
+                                );
+                            } else {
+                                ui.label(text);
+                            }
+                            ui.separator();
+                            // Keep the countdown ticking even when nothing else
+                            // animates.
+                            ui.ctx()
+                                .request_repaint_after(std::time::Duration::from_millis(250));
+                        }
                     }
 
                     if let Some(name) = lobby_name {
@@ -240,7 +271,12 @@ pub fn render_game_ui(
                 .get(&client_player_id)
                 .cloned()
                 .unwrap_or_default();
-            ui.add(HandRenderer::new(hand, sender.clone()).with_last_rotated(last_rotated_tile));
+            let fatal_marks = fatal_tile_marks(game, client_player_id, &hand);
+            ui.add(
+                HandRenderer::new(hand, sender.clone())
+                    .with_last_rotated(last_rotated_tile)
+                    .with_fatal_marks(fatal_marks),
+            );
         }
     });
 
@@ -257,4 +293,36 @@ pub fn render_game_ui(
             ));
         });
     });
+}
+
+/// Which hand tiles, in their current rotation, the forced-suicide rule would
+/// reject — i.e. they eliminate the owner while some other placement (any tile,
+/// any rotation) survives. All-false when it isn't the owner's turn, when no
+/// placement survives (then a fatal play is legal), or for a redacted/empty
+/// hand.
+fn fatal_tile_marks(
+    game: &Game,
+    player_id: PlayerID,
+    hand: &[tsurust_common::board::Tile],
+) -> Vec<bool> {
+    let their_turn = game.current_player_id == player_id && !game.is_game_over();
+    let Some(cell) = game
+        .players
+        .iter()
+        .find(|p| p.id == player_id && p.alive)
+        .map(|p| p.pos.cell)
+    else {
+        return vec![false; hand.len()];
+    };
+    if !their_turn || game.survivable_moves(player_id).is_empty() {
+        return vec![false; hand.len()];
+    }
+    hand.iter()
+        .map(|tile| {
+            matches!(
+                game.simulate_move(Move { tile: *tile, cell, player_id }),
+                Ok(eliminated) if eliminated.contains(&player_id)
+            )
+        })
+        .collect()
 }
