@@ -52,11 +52,85 @@ fn room_id_from_location(path: &str, hash: &str) -> Option<String> {
     tsurust_common::lobby::normalize_lobby_id(candidate)
 }
 
-/// Get WebSocket server URL from browser configuration or use default
+/// The WebSocket URL used when nothing else is configured. On the web this is a
+/// deliberate dead-end — it points at the *visitor's own* machine — so the main
+/// menu warns when it's in effect. Only useful for a host testing locally.
+pub const DEFAULT_WS_URL: &str = "ws://127.0.0.1:8080";
+
+/// Pull a `server` value out of a raw location query string
+/// (e.g. `?server=wss%3A%2F%2Fhost`), percent-decoded. This is the shareable
+/// invite path: a host sends `.../tsurust/?server=wss://their-tunnel`. Kept
+/// target-independent so it can be unit-tested natively.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+fn server_url_from_query(search: &str) -> Option<String> {
+    let search = search.trim_start_matches('?');
+    for pair in search.split('&') {
+        let mut kv = pair.splitn(2, '=');
+        if kv.next() == Some("server") {
+            let value = percent_decode(kv.next().unwrap_or(""));
+            let value = value.trim();
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Minimal `%XX`/`+` percent-decoder for query values — enough to recover a
+/// `wss://…` URL that was URL-encoded into a `?server=` link.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'%' if i + 2 < bytes.len() => {
+                match (
+                    (bytes[i + 1] as char).to_digit(16),
+                    (bytes[i + 2] as char).to_digit(16),
+                ) {
+                    (Some(hi), Some(lo)) => {
+                        out.push((hi * 16 + lo) as u8);
+                        i += 3;
+                    }
+                    _ => {
+                        out.push(bytes[i]);
+                        i += 1;
+                    }
+                }
+            }
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            b => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Resolve the initial WebSocket server URL on the web, in priority order:
+/// 1. a `?server=<url>` query param (the shareable-invite path),
+/// 2. a baked `window.TSURUST_CONFIG.wsServerUrl`,
+/// 3. the localhost default (a deliberate dead-end the UI warns about).
 #[cfg(target_arch = "wasm32")]
 fn get_websocket_url() -> String {
-    // Try to get config from window.TSURUST_CONFIG.wsServerUrl
-    if let Ok(window) = web_sys::window().ok_or("No window object") {
+    if let Some(window) = web_sys::window() {
+        // 1. Explicit ?server= param wins — this is how invite links work.
+        if let Ok(search) = window.location().search() {
+            if let Some(url) = server_url_from_query(&search) {
+                web_sys::console::log_1(
+                    &format!("Using WebSocket URL from ?server=: {}", url).into(),
+                );
+                return url;
+            }
+        }
+        // 2. Build-time config baked into index.html.
         if let Ok(config) = js_sys::Reflect::get(&window, &JsValue::from_str("TSURUST_CONFIG")) {
             if !config.is_undefined() {
                 if let Ok(ws_url) = js_sys::Reflect::get(&config, &JsValue::from_str("wsServerUrl"))
@@ -72,16 +146,22 @@ fn get_websocket_url() -> String {
         }
     }
 
-    // Fallback to default
-    let default_url = "ws://127.0.0.1:8080".to_string();
-    web_sys::console::log_1(&format!("Using default WebSocket URL: {}", default_url).into());
-    default_url
+    // 3. Fallback to the localhost default — warn, since on the web this reaches
+    //    only the visitor's own machine (the main menu shows this too).
+    web_sys::console::warn_1(
+        &format!(
+            "No ?server= or TSURUST_CONFIG set — falling back to {} (your own machine)",
+            DEFAULT_WS_URL
+        )
+        .into(),
+    );
+    DEFAULT_WS_URL.to_string()
 }
 
 /// Get WebSocket server URL for native builds
 #[cfg(not(target_arch = "wasm32"))]
 fn get_websocket_url() -> String {
-    std::env::var("WS_SERVER_URL").unwrap_or_else(|_| "ws://127.0.0.1:8080".to_string())
+    std::env::var("WS_SERVER_URL").unwrap_or_else(|_| DEFAULT_WS_URL.to_string())
 }
 
 #[derive(Debug, Clone)]
@@ -98,15 +178,15 @@ pub enum Message {
     ShowCreateLobbyForm,      // show create lobby form
     ShowJoinLobbyForm,        // show join lobby form
     CreateAndJoinLobby(String, String, Visibility, Option<u64>), // (lobby_name, player_name, visibility, turn_timer_secs)
-    JoinLobbyWithId(String, String), // (lobby_id, player_name)
-    RefreshLobbies,           // re-fetch the public lobby directory
+    JoinLobbyWithId(String, String),                             // (lobby_id, player_name)
+    RefreshLobbies,                // re-fetch the public lobby directory
     SpectateLobby(String, String), // (room_id, room_name) watch a game in progress
-    BackToMainMenu,           // return to main menu
-    DebugAddPlayer,           // debug: simulate player joining
-    DebugPlacePawn(PlayerID), // debug: place pawn for specific player
-    DebugCyclePlayer(bool),   // debug: cycle active player (true = next, false = prev)
-    StartLocalServer,         // start a local server process
-    SendToServer(ClientMessage), // send a message to the server via WebSocket
+    BackToMainMenu,                // return to main menu
+    DebugAddPlayer,                // debug: simulate player joining
+    DebugPlacePawn(PlayerID),      // debug: place pawn for specific player
+    DebugCyclePlayer(bool),        // debug: cycle active player (true = next, false = prev)
+    StartLocalServer,              // start a local server process
+    SendToServer(ClientMessage),   // send a message to the server via WebSocket
     // Export/Import
     ExportGame,   // Export current game to JSON file
     ImportReplay, // Import replay from JSON file
@@ -192,6 +272,8 @@ pub struct TemplateApp {
     #[serde(skip)]
     game_client: Option<GameClient>, // WebSocket connection to server
     #[serde(skip)]
+    server_url: String, // Effective WebSocket URL (from ?server=, baked config, or default)
+    #[serde(skip)]
     current_room_id: Option<String>, // Track current room we're in
     #[serde(skip)]
     local_server_status: LocalServerStatus, // Status of locally launched server
@@ -251,6 +333,7 @@ impl Default for TemplateApp {
             receiver: Some(receiver),
             current_player_id: 1, // Default player ID
             game_client: None,
+            server_url: get_websocket_url(),
             current_room_id: None,
             local_server_status: LocalServerStatus::NotStarted,
             last_error: None,
@@ -409,6 +492,7 @@ impl TemplateApp {
         current_player_id: PlayerID,
         connection: Option<&ConnectionStatus>,
         server_status: &LocalServerStatus,
+        server_url: &mut String,
         sender: &mpsc::Sender<Message>,
         last_rotated_tile: Option<(usize, bool)>,
         player_animations: &std::collections::HashMap<PlayerID, PlayerAnimation>,
@@ -416,7 +500,7 @@ impl TemplateApp {
         turn_deadline: Option<Instant>,
     ) {
         match app_state {
-            AppState::MainMenu => screens::main_menu::render(ui, server_status, sender),
+            AppState::MainMenu => screens::main_menu::render(ui, server_status, server_url, sender),
             AppState::CreateLobbyForm {
                 lobby_name,
                 player_name,
@@ -458,23 +542,29 @@ impl TemplateApp {
                     sender,
                 )
             }
-            AppState::Game(game) => screens::game::render_game_ui(
-                ui,
-                game,
-                current_player_id,
-                false,
-                None,
-                None,
-                // Local games hold every hand, so counts come from the game itself.
-                None,
-                false,
-                sender,
-                last_rotated_tile,
-                player_animations,
-                tile_placement_animation,
-                // Local games are untimed (the timer is a server feature).
-                None,
-            ),
+            AppState::Game(game) => {
+                // Local hot-seat play has no fixed client identity: the hand to
+                // show (and act on) belongs to whoever's turn it currently is,
+                // not the online-identity `current_player_id`.
+                let active_player = game.current_player_id;
+                screens::game::render_game_ui(
+                    ui,
+                    game,
+                    active_player,
+                    false,
+                    None,
+                    None,
+                    // Local games hold every hand, so counts come from the game itself.
+                    None,
+                    false,
+                    sender,
+                    last_rotated_tile,
+                    player_animations,
+                    tile_placement_animation,
+                    // Local games are untimed (the timer is a server feature).
+                    None,
+                )
+            }
             AppState::OnlineGame {
                 game,
                 waiting_for_server,
@@ -564,6 +654,7 @@ impl eframe::App for TemplateApp {
                 self.current_player_id,
                 connection_status.as_ref(),
                 &self.local_server_status,
+                &mut self.server_url,
                 tx,
                 self.last_rotated_tile,
                 &self.player_animations,
@@ -962,7 +1053,14 @@ impl TemplateApp {
         if self.game_client.is_some() {
             return true;
         }
-        let ws_url = get_websocket_url();
+        let ws_url = self.server_url.trim().to_string();
+        if ws_url.is_empty() {
+            self.last_error = Some((
+                "No server URL set — enter one on the main menu.".to_string(),
+                Instant::now(),
+            ));
+            return false;
+        }
         match GameClient::connect(&ws_url, self.ws_wakeup()) {
             Ok(client) => {
                 self.game_client = Some(client);
@@ -1361,19 +1459,21 @@ impl TemplateApp {
     }
 
     fn handle_tile_rotated(&mut self, tile_index: usize, clockwise: bool) {
-        // Get the player whose tiles we're viewing (always client_player_id)
-        let client_player_id = self.current_player_id;
+        let online_player_id = self.current_player_id;
 
-        // Get mutable reference to the game, whether local or online
-        let game = match &mut self.app_state {
-            AppState::Game(game) => game,
-            AppState::OnlineGame { game, .. } => game, // Rotation is client-side only
+        // Rotate the hand that's actually on screen: the current player's in a
+        // local hot-seat game, or our own (fixed identity) in an online game.
+        // Placement reads the same hand, so display and placement stay in sync.
+        let (game, hand_owner) = match &mut self.app_state {
+            AppState::Game(game) => {
+                let owner = game.current_player_id;
+                (game, owner)
+            }
+            AppState::OnlineGame { game, .. } => (game, online_player_id),
             _ => return,
         };
 
-        // Always rotate the client player's tiles (the ones being displayed)
-        // This allows planning/previewing even when it's not your turn in local games
-        if let Some(hand) = game.hands.get_mut(&client_player_id) {
+        if let Some(hand) = game.hands.get_mut(&hand_owner) {
             if tile_index < hand.len() {
                 hand[tile_index] = hand[tile_index].rotated(clockwise);
                 // Track the rotation for animation
@@ -1799,6 +1899,40 @@ mod tests {
         assert_eq!(room_id_from_location("/", ""), None);
         assert_eq!(room_id_from_location("/index.html", ""), None);
         assert_eq!(room_id_from_location("/toolong", "#nope!"), None);
+    }
+
+    /// A `?server=` invite param yields the (percent-decoded) server URL; when
+    /// it's absent we return None so the config/default fallback takes over.
+    #[test]
+    fn server_url_is_parsed_from_query() {
+        assert_eq!(
+            server_url_from_query("?server=wss://host.example:8080"),
+            Some("wss://host.example:8080".into())
+        );
+        // Percent-encoded (the shape produced by encodeURIComponent).
+        assert_eq!(
+            server_url_from_query("?server=wss%3A%2F%2Fabc123.trycloudflare.com"),
+            Some("wss://abc123.trycloudflare.com".into())
+        );
+        // Coexists with other params (e.g. a room id) in any order.
+        assert_eq!(
+            server_url_from_query("?room=ABCD&server=wss://h"),
+            Some("wss://h".into())
+        );
+        assert_eq!(server_url_from_query("?room=ABCD"), None);
+        assert_eq!(server_url_from_query(""), None);
+        // Present but empty is treated as absent.
+        assert_eq!(server_url_from_query("?server="), None);
+    }
+
+    #[test]
+    fn percent_decode_handles_escapes_and_stray_percent() {
+        assert_eq!(percent_decode("wss%3A%2F%2Fh"), "wss://h");
+        assert_eq!(percent_decode("a+b"), "a b");
+        assert_eq!(percent_decode("plain"), "plain");
+        // A truncated escape is passed through rather than dropped.
+        assert_eq!(percent_decode("100%"), "100%");
+        assert_eq!(percent_decode("bad%zz"), "bad%zz");
     }
 
     /// Local tile rotations are presentation-only and must survive a

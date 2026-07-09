@@ -196,6 +196,25 @@ fn main_menu_boots_and_opens_a_local_lobby() {
     harness.get_by_label("spawn r0c0e5");
 }
 
+/// The main menu exposes an editable Server field seeded with the resolved
+/// WebSocket URL — the entry point for pasting a host's wss:// address (or
+/// arriving via a `?server=` invite link). This is the only text input on the
+/// menu, and it must be bound to the app's `server_url`.
+#[test]
+fn main_menu_shows_a_server_field_bound_to_the_resolved_url() {
+    let mut harness = new_app();
+    harness.run();
+
+    let value = harness
+        .get_all_by_role(egui::accesskit::Role::TextInput)
+        .find_map(|n| n.value())
+        .expect("the main menu should have a Server text field");
+    assert!(
+        value.starts_with("ws"),
+        "server field should be seeded with a ws(s):// URL, got {value:?}"
+    );
+}
+
 #[test]
 fn two_clients_create_join_and_play_a_turn_over_a_real_server() {
     ensure_server();
