@@ -23,6 +23,24 @@ The project is organized as a Cargo workspace with three main crates:
 See [ARCHITECTURE.md](ARCHITECTURE.md) for how the pieces fit together, and
 [DEPLOYMENT.md](DEPLOYMENT.md) for shipping the server and web client.
 
+## Play with friends (alpha)
+
+No hosted server needed — the web client is on GitHub Pages and one player hosts
+the game from their own machine. On the host:
+
+```bash
+./host-game.sh   # runs the server + a public tunnel, prints an invite link
+```
+
+Requires [`cloudflared`](https://github.com/cloudflare/cloudflared) or `ngrok`
+(`brew install cloudflared`). Share the printed link; friends open it in Chrome
+or Firefox — no install.
+
+- **Setup & how it works:** [docs/ALPHA_SETUP.md](docs/ALPHA_SETUP.md)
+- **Invite for testers:** [docs/ALPHA_PLAYTEST.md](docs/ALPHA_PLAYTEST.md)
+- **Release scope & checklist:** [docs/ALPHA_RELEASE.md](docs/ALPHA_RELEASE.md)
+- **Deploy reference:** [DEPLOYMENT.md → Alpha](DEPLOYMENT.md#alpha-friends-host-the-server)
+
 ## Getting Started
 
 ### Prerequisites

@@ -198,6 +198,17 @@ jobs:
         run: |
           sed -i "s|wsServerUrl: \"ws://127.0.0.1:8080\"|wsServerUrl: \"${{ vars.WS_SERVER_URL }}\"|g" client-egui/dist/index.html
 
+      # Alpha "host-your-own-server" channel, published alongside the root at
+      # /tsurust/trial/. Deliberately NOT injected with WS_SERVER_URL: it keeps
+      # the localhost default so the client shows its "point me at a server"
+      # warning, while real games arrive via ?server=<wss-url> invite links
+      # (see host-game.sh / DEPLOYMENT.md → Alpha).
+      - name: Build alpha (/trial/) client
+        run: |
+          cd client-egui
+          trunk build --release --public-url /tsurust/trial/ --dist dist-trial
+          mkdir -p dist/trial && cp -R dist-trial/. dist/trial/
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
